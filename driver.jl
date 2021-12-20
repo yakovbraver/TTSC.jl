@@ -72,8 +72,11 @@ I, E = H_of_I(h0)
 ws = 2 # window half-size for taking derivatives
 E′, E″ = d_and_d²(I, E)
 
-figs = [plot() for _ in 1:3];
-figs[1] = plot(I, E, xlabel=L"I", ylabel=L"E", legend=false);
-figs[2] = plot(I[ws+1:end-ws], E′[ws+1:end-ws], xlabel=L"I", ylabel=L"dE/dI", xlims=(I[1], I[end]), legend=false);
-figs[3] = plot(I[ws+1:end-ws], E″[ws+1:end-ws], xlabel=L"I", ylabel=L"d^2E/dI^2", xlims=(I[1], I[end]), legend=false);
-plot(figs..., layout=grid(3,1))
+figs = [plot() for _ in 1:4];
+x = range(0, π, length=30)
+figs[1] = plot(x, x -> 𝑈(h0, x), xlabel=L"x", ylabel=L"U", title=L"U=\tilde{g}_\ell\cos^{2\ell}(2x)+V_L\cos^{2}(x)", legend=false);
+figs[2] = plot(I, E, xlabel=L"I", ylabel=L"E", legend=false);
+figs[3] = plot(I[ws+1:end-ws], E′[ws+1:end-ws], xlabel=L"I", ylabel=L"dE/dI", xlims=(I[1], I[end]), legend=false);
+figs[4] = plot(I[ws+1:end-ws], E″[ws+1:end-ws], xlabel=L"I", ylabel=L"d^2E/dI^2", xlims=(I[1], I[end]), legend=false);
+l = @layout [a{0.5w} grid(3,1)]
+plot(figs..., layout=l)
