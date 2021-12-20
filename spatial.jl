@@ -2,7 +2,6 @@ using SpecialFunctions: gamma
 using Combinatorics: factorial
 import Roots
 import Optim
-import Polynomials
 using QuadGK: quadgk
 
 "A type representing spatial Hamiltonian (S2)."
@@ -59,31 +58,3 @@ function H_of_I(H::SpatialHamiltonian)
     end
     I, E
 end
-
-"""
-Return the first and second derivatives of `y(x)` as a tuple `(y′, y″)`. Use window half-size `ws`.
-The values in `y′` and `y″` will correspond to the vector `x`; first and last `ws` values will contain zeros.
-"""
-function d_and_d²(x, y; ws=2)
-    N = length(y)
-    y′ = zeros(N)
-	y″ = zeros(N)
-	for i in 1+ws:N-ws
-		f = Polynomials.fit(x[i-ws:i+ws], y[i-ws:i+ws], 2)
-		y′[i] = Polynomials.derivative(f, 1)(x[i])
-		y″[i] = Polynomials.derivative(f, 2)(x[i])
-	end
-	y′, y″
-end
-
-h0 = SpatialHamiltonian(l=2, g=4.0, V_L=1.0)
-I, E = H_of_I(h0)
-
-ws = 2 # window half-size for taking derivatives
-E′, E″ = d_and_d²(I, E)
-
-figs = [plot() for _ in 1:3];
-figs[1] = plot(I, E, xlabel=L"I", ylabel=L"E");
-figs[2] = plot(I[ws+1:end-ws], E′[ws+1:end-ws], xlabel=L"I", ylabel=L"dE/dI", xlims=(I[1], I[end]));
-figs[3] = plot(I[ws+1:end-ws], E″[ws+1:end-ws], xlabel=L"I", ylabel=L"dE^2/d^2I", xlims=(I[1], I[end]));
-plot(figs..., layout=grid(3,1))
