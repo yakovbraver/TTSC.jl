@@ -5,6 +5,7 @@ using KrylovKit: eigsolve
 """
 Hamiltonian (S17) defined here as
     𝐻 = (ℎ₀ - Ω𝐼₀) + (𝐼 - 𝐼₀)²/2𝑀 + λL⋅cos(𝑠ϑ + χL) + λS⋅cos(2𝑠ϑ + χS)
+Here, λL is λL⋅AL from (S17), and λS is λS⋅AS from (S17).
 """
 Base.@kwdef mutable struct EffectiveHamiltonian
     h0::Float64
