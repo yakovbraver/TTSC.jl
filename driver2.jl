@@ -79,21 +79,3 @@ display(fig)
 fig = plot();
 title!(L"\lambda = 0.01")
 savefig("lambda0.01.pdf")
-
-E = 3000
-C = 2asin(sqrt(E / V₀))
-m = sin(C/2)
-a = 4V₀
-T_pendulum = 4 / sqrt(a) * Elliptic.K(m^2)
-
-x = C/3
-p = 1
-ϕ = asin(sin(x) / m) # the argument of sin is doubled because `x[i]` is the coordinate of equation 𝑞″ + 2𝑉₀sin(2𝑞) = 0, and not 𝑦″ + 4𝑉₀sin(𝑦) = 0
-if x > 0 && p < 0 # π/2 < phase < π
-    ϕ += 2(π/2 - ϕ)
-elseif x < 0 && p < 0 # π < phase < 3π/2
-    ϕ -= 2(π/2 + ϕ)
-end
-ϕ / 2pi
-t = 1 / sqrt(a) * Elliptic.F(ϕ, m^2)
-t/T_pendulum

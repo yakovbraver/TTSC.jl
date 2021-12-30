@@ -94,8 +94,8 @@ function 𝐼(H::SpacetimeHamiltonian, E::Real)
     return quadgk(x -> 𝑝(H.𝑈, E, x), x_min, x_max, rtol=1e-4)[1] / π # `[1]` contains the integral, `[2]` contains error
 end
 
-"Compute the `H.s`th Fourier coefficient for every function in `perturbations`."
-function compute_pₛ(H::SpacetimeHamiltonian, perturbations::Vector{Function})
+"Return the action and mass at the working point, as well as the `H.s`th Fourier coefficients for every function in `perturbations`."
+function compute_parameters(H::SpacetimeHamiltonian, perturbations::Vector{Function})
     ω = H.params[end]
     Ω = ω / H.s # our choice of the oscillation frequency (of the unperturbed system)
     Iₛ::Float64 = Roots.find_zero(x -> H.𝐸′(x) - Ω, (0, Dierckx.get_knots(H.𝐸)[end]), atol=1e-5) # find which 𝐼ₛ gives the frequency Ω
@@ -114,15 +114,17 @@ function compute_pₛ(H::SpacetimeHamiltonian, perturbations::Vector{Function})
 
     # calculate 𝑠th Fourier coefficient for every function in `perturbations`
     coeffs = Vector{Float64}(undef, length(perturbations))
+    V = Vector{Float64}(undef, length(sol.t)) # for storing perturbation evaluated in the solution points
     for (i, 𝑉) in enumerate(perturbations)
-        f = 𝑉.(sol[1, :], sol[2, :])
-        coeffs[i] = fourier_coeff(f, s, dt, T)
+        V .= 𝑉.(sol[1, :], sol[2, :])
+        coeffs[i] = fourier_coeff(V, s, dt, T) |> abs
     end
     return Iₛ, M, coeffs
 end
 
+"Calculate the `n`th Fourier coefficient of `f`. Simple trapezoid rule is used."
 function fourier_coeff(f::AbstractVector, n::Int, dt::AbstractFloat, T::AbstractFloat)
-    (sum(f[i] * cospi(2n*(i-1)*dt/T) for i = 2:length(f)-1) + (f[1] + f[end])/2) * dt/T
+    (sum(f[i] * cispi(2n*(i-1)*dt/T) for i = 2:length(f)-1) + (f[1] + f[end])/2) * dt/T
 end
 
 function compute_IΘ(H::SpacetimeHamiltonian, I_target::Real)    
