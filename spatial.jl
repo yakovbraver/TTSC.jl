@@ -24,8 +24,8 @@ end
 
 "Momentum of a particle described by Hamiltonian (S2) as a function of position `x` for the given value of energy `E`."
 function 𝑝(H::SpatialHamiltonian, E::Real, x::Real)
-    p = E - H.g_l * cos(2x)^2H.l - H.V_L * cos(x)^2
-    p < 0 ? 0 : sqrt(p) # a safeguard for the case when `x` is slightly outside of the accessible region of oscillations
+    p = E - 𝑈(H, x)
+    p < 0 ? zero(p) : sqrt(p) # a safeguard for the case when `x` is slightly outside of the accessible region of oscillations
 end
 
 """
