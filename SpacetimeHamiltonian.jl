@@ -23,7 +23,7 @@ end
 
 function SpacetimeHamiltonian(𝐻₀::Function, left_tp::Tuple{<:Real, <:Real}, right_tp::Tuple{<:Real, <:Real}, min_pos::Tuple{<:Real, <:Real}, max_pos::Tuple{<:Real, <:Real},
                               d𝑥╱d𝑡!::Function, d𝑝╱d𝑡!::Function, params::AbstractVector, s::Integer)
-    𝑈 = x -> 𝐻₀([0.0], [x], params)
+    𝑈 = x -> 𝐻₀(0.0, x, params)
     𝐸, 𝐸′, 𝐸″ = make_action_functions(𝑈, min_pos, max_pos)
     SpacetimeHamiltonian(𝐻₀, 𝑈, left_tp, right_tp, 𝐸, 𝐸′, 𝐸″, d𝑥╱d𝑡!, d𝑝╱d𝑡!, params, s)
 end
@@ -39,12 +39,12 @@ Construct the functions 𝐸(𝐼), 𝐸′(𝐼), and 𝐸″(𝐼) witing them
 """
 function make_action_functions(𝑈::Function, min_pos::Tuple{<:Real, <:Real}, max_pos::Tuple{<:Real, <:Real})
     # find position and value of the potential minimum
-    result = Optim.optimize(𝑈, min_pos[1], min_pos[2], Optim.Brent())
+    result = Optim.optimize(x -> 𝑈(first(x)), min_pos[1], min_pos[2], Optim.Brent())
     E_min = Optim.minimum(result)
     x_min = Optim.minimizer(result)
     
     # find the value of the potential maximum
-    result = Optim.optimize(x -> -𝑈(x), max_pos[1], max_pos[2], Optim.Brent())
+    result = Optim.optimize(x -> -𝑈(first(x)), max_pos[1], max_pos[2], Optim.Brent())
     E_max = -Optim.minimum(result)
     
     n_E = 100 # number of energies (and actions) to save
@@ -107,7 +107,7 @@ function compute_parameters(H::SpacetimeHamiltonian, perturbations::Vector{Funct
     tspan = (0.0, T) # we use the theoretical value of the period
     # Initial conditions; they may be chosen arbitrary as long as the total energy equals `E₀`
     q₀ = 0.0; p₀ = sqrt(E₀); # We assume that 𝐸 = 𝑝² + 𝑈(𝑥) with 𝑈(0) = 0
-    H₀_problem = HamiltonianProblem(H.𝐻₀, [p₀], [q₀], tspan, H.params)
+    H₀_problem = HamiltonianProblem(H.𝐻₀, p₀, q₀, tspan, H.params)
     dt=2e-4
     # none of RKN solvers worked (https://docs.juliahub.com/DifferentialEquations/UQdwS/6.15.0/solvers/dynamical_solve/)
     sol = DiffEq.solve(H₀_problem, DiffEq.McAte3(); dt) # McAte3 is more accurate than the automatically chosen Tsit5() 
@@ -139,10 +139,10 @@ function compute_IΘ(H::SpacetimeHamiltonian, I_target::Real)
 
     x = sol[1, :]
     p = sol[2, :]
-    E = map((x, p) -> H.𝐻₀([p], [x], H.params), x, p)
+    E = map((p, x) -> H.𝐻₀(p, x, H.params), p, x)
     I = map(x -> 𝐼(H, x), E)
 
-    # Using the exact solution (see Zaitsev, Polyanin 2.2.3.18), find phases from the coordinates
+    # Find phases from the coordinates
     Θ = similar(I)
     for i in eachindex(Θ)
         T_free = 2π / H.𝐸′(I[i]) # period of the unperturbed motion at action `I[i]`
@@ -150,26 +150,12 @@ function compute_IΘ(H::SpacetimeHamiltonian, I_target::Real)
         tspan = (0.0, T_free)
         # Initial conditions; they may be chosen arbitrary as long as the total energy equals `E₀`
         q₀ = 0.0; p₀ = sqrt(E[i]);
-        H₀_problem = HamiltonianProblem(H.𝐻₀, [p₀], [q₀], tspan, H.params)
-        # println(x[i])
-        # println(p[i])
+        H₀_problem = HamiltonianProblem(H.𝐻₀, p₀, q₀, tspan, H.params)
         sol = DiffEq.solve(H₀_problem, DiffEq.McAte3(); dt=2e-4)
         # plot(sol) |> display
         
         bracket = x[i] > 0 ? (T_free/2, T_free) : (0.0, T_free/2)
         t = Roots.find_zero(t -> sol(t)[1] - p[i], bracket, Roots.A42(), xrtol=1e-3)
-        
-        # integrator = DiffEq.init(H₀_problem, DiffEq.McAte3(); dt)
-        # t_final = 0.0
-        # flag = u[1]
-        # for (u, t) in DiffEq.tuples(integrator)
-        #     println(u[1])
-        #     if isapprox(u[1], x[i]; atol=3e-3) && sign(u[2]) == sign(p[i])
-        #         t_final = t
-        #         break
-        #     end
-        # end
-        # println("t = $t")
         
         Θ[i] = rem2pi(t / T_free * 2π - pi/2, RoundDown) # `-2π*(i-1)/H.s` is the -ω𝑡/𝑠 term that transforms to the moving frame. We have 𝑡ₙ = 𝑛𝑇, and ω𝑡ₙ = 2π𝑛
     end
