@@ -7,7 +7,11 @@ theme(:dark, size=(700, 600))
 
 include("SpacetimeHamiltonian.jl")
 
-function 𝐻₀(x, p, params)
+# function 𝐻₀(x, p, params)
+#     p[1]^2 + params[1]*sin(x[1])^2
+# end
+
+function 𝐻₀(p, x, params)
     p[1]^2 + params[1]*sin(x[1])^2
 end
 
@@ -45,7 +49,7 @@ end
 plot_actions(H)
 
 ### Set main parameters
-Iₛ, M, coeffs = compute_pₛ(H, Function[𝑉])
+Iₛ, M, coeffs = compute_parameters(H, Function[𝑉])
 @code_warntype compute_pₛ(H, Function[𝑉])
 ### Calculate isoenergies
 

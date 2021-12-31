@@ -23,7 +23,7 @@ end
 
 function SpacetimeHamiltonian(𝐻₀::Function, left_tp::Tuple{<:Real, <:Real}, right_tp::Tuple{<:Real, <:Real}, min_pos::Tuple{<:Real, <:Real}, max_pos::Tuple{<:Real, <:Real},
                               d𝑥╱d𝑡!::Function, d𝑝╱d𝑡!::Function, params::AbstractVector, s::Integer)
-    𝑈 = x -> 𝐻₀([x], [0.0], params)
+    𝑈 = x -> 𝐻₀([0.0], [x], params)
     𝐸, 𝐸′, 𝐸″ = make_action_functions(𝑈, min_pos, max_pos)
     SpacetimeHamiltonian(𝐻₀, 𝑈, left_tp, right_tp, 𝐸, 𝐸′, 𝐸″, d𝑥╱d𝑡!, d𝑝╱d𝑡!, params, s)
 end
@@ -107,7 +107,7 @@ function compute_parameters(H::SpacetimeHamiltonian, perturbations::Vector{Funct
     tspan = (0.0, T) # we use the theoretical value of the period
     # Initial conditions; they may be chosen arbitrary as long as the total energy equals `E₀`
     q₀ = 0.0; p₀ = sqrt(E₀); # We assume that 𝐸 = 𝑝² + 𝑈(𝑥) with 𝑈(0) = 0
-    H₀_problem = HamiltonianProblem(H.𝐻₀, [q₀], [p₀], tspan, H.params)
+    H₀_problem = HamiltonianProblem(H.𝐻₀, [p₀], [q₀], tspan, H.params)
     dt=2e-4
     # none of RKN solvers worked (https://docs.juliahub.com/DifferentialEquations/UQdwS/6.15.0/solvers/dynamical_solve/)
     sol = DiffEq.solve(H₀_problem, DiffEq.McAte3(); dt) # McAte3 is more accurate than the automatically chosen Tsit5() 
@@ -116,7 +116,7 @@ function compute_parameters(H::SpacetimeHamiltonian, perturbations::Vector{Funct
     coeffs = Vector{Float64}(undef, length(perturbations))
     V = Vector{Float64}(undef, length(sol.t)) # for storing perturbation evaluated in the solution points
     for (i, 𝑉) in enumerate(perturbations)
-        V .= 𝑉.(sol[1, :], sol[2, :])
+        V .= 𝑉.(sol[2, :], sol[1, :])
         coeffs[i] = fourier_coeff(V, s, dt, T) |> abs
     end
     return Iₛ, M, coeffs
@@ -130,7 +130,7 @@ end
 function compute_IΘ(H::SpacetimeHamiltonian, I_target::Real)    
     ω = H.params[end]
     T_external = 2π / ω # period of the external driving
-    n_T = 100 # number of periods of the external driving to calculate evolution for
+    n_T = 50 # number of periods of the external driving to calculate evolution for
     tspan = (0.0, n_T * T_external)
     
     x₀ = 0.0; p₀ = sqrt(H.𝐸(I_target));
@@ -139,28 +139,39 @@ function compute_IΘ(H::SpacetimeHamiltonian, I_target::Real)
 
     x = sol[1, :]
     p = sol[2, :]
-    E = map((x, p) -> H.𝐻₀([x], [p], H.params), x, p)
+    E = map((x, p) -> H.𝐻₀([p], [x], H.params), x, p)
     I = map(x -> 𝐼(H, x), E)
 
     # Using the exact solution (see Zaitsev, Polyanin 2.2.3.18), find phases from the coordinates
-    V₀ = H.params[1]
     Θ = similar(I)
     for i in eachindex(Θ)
-        C = 2asin(sqrt(E[i] / V₀))
-        m = sin(C/2)
-        a = 4V₀
-        T_pendulum = 4 / sqrt(a) * Elliptic.K(m^2)
+        T_free = 2π / H.𝐸′(I[i]) # period of the unperturbed motion at action `I[i]`
 
-        ϕ = asin(sin(x[i]) / m) # the argument of sin is doubled because `x[i]` is the coordinate of equation 𝑞″ + 2𝑉₀sin(2𝑞) = 0, and not 𝑦″ + 4𝑉₀sin(𝑦) = 0
-        if x[i] > 0 && p[i] < 0 # π/2 < phase < π
-            ϕ += 2(π/2 - ϕ)
-        elseif x[i] < 0 && p[i] < 0 # π < phase < 3π/2
-            ϕ -= 2(π/2 + ϕ)
-        end
-        t = 1 / sqrt(a) * Elliptic.F(ϕ, m^2)
+        tspan = (0.0, T_free)
+        # Initial conditions; they may be chosen arbitrary as long as the total energy equals `E₀`
+        q₀ = 0.0; p₀ = sqrt(E[i]);
+        H₀_problem = HamiltonianProblem(H.𝐻₀, [p₀], [q₀], tspan, H.params)
+        # println(x[i])
+        # println(p[i])
+        sol = DiffEq.solve(H₀_problem, DiffEq.McAte3(); dt=2e-4)
+        # plot(sol) |> display
         
-        t < 0 && (t += T_pendulum)
-        Θ[i] = rem2pi(t / T_pendulum * 2π +pi/2, RoundDown) # `-2π*(i-1)/H.s` is the -ω𝑡/𝑠 term that transforms to the moving frame. We have 𝑡ₙ = 𝑛𝑇, and ω𝑡ₙ = 2π𝑛
+        bracket = x[i] > 0 ? (T_free/2, T_free) : (0.0, T_free/2)
+        t = Roots.find_zero(t -> sol(t)[1] - p[i], bracket, Roots.A42(), xrtol=1e-3)
+        
+        # integrator = DiffEq.init(H₀_problem, DiffEq.McAte3(); dt)
+        # t_final = 0.0
+        # flag = u[1]
+        # for (u, t) in DiffEq.tuples(integrator)
+        #     println(u[1])
+        #     if isapprox(u[1], x[i]; atol=3e-3) && sign(u[2]) == sign(p[i])
+        #         t_final = t
+        #         break
+        #     end
+        # end
+        # println("t = $t")
+        
+        Θ[i] = rem2pi(t / T_free * 2π - pi/2, RoundDown) # `-2π*(i-1)/H.s` is the -ω𝑡/𝑠 term that transforms to the moving frame. We have 𝑡ₙ = 𝑛𝑇, and ω𝑡ₙ = 2π𝑛
     end
     return I, Θ
 end
