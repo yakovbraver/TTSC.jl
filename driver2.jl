@@ -11,12 +11,8 @@ function 𝐻₀(p, x, params)
     p^2 + params[1]*sin(x)^2
 end
 
-function d𝑥╱d𝑡!(dx, x, p, params, t)
-    dx[1] = 2p[1] + params[2] * params[3] * sin(params[3]*t)
-end
-
-function d𝑝╱d𝑡!(dp, x, p, params, t)
-    dp[1] = -params[1] * sin(2x[1])
+function 𝐻(p, x, params, t)
+    p^2 + params[1]*sin(x)^2 + p * params[2] * params[3] * sin(params[3]*t)
 end
 
 function 𝑉(x::Real, p::Real)
@@ -26,7 +22,7 @@ end
 V₀ = 4320.0; ω = 240.0; λ = 0.01;
 s = 3 # freely chosen parameters
 params = [V₀, λ, ω]
-H = SpacetimeHamiltonian(𝐻₀, (π/2, π), (π, 3π/2), (2.5, 3.5), (4.5, 5.5), d𝑥╱d𝑡!, d𝑝╱d𝑡!, params, s)
+H = SpacetimeHamiltonian(𝐻₀, (π/2, π), (π, 3π/2), (2.5, 3.5), (4.5, 5.5), 𝐻, params, s)
 
 function plot_actions(H::SpacetimeHamiltonian)
     figs = [plot() for _ in 1:4];
@@ -62,7 +58,7 @@ end
 ϑ = range(0, 2π, length=50)
 I = vcat(0:2:30, 30.5:0.5:42)
 
-plot_isoenergies(ϑ, I; M, λ, ω, pₛ, Iₛ, s)
+plot_isoenergies(ϑ, I; M, λ, ω, coeffs[1], Iₛ, s)
 savefig("lambda_0.025/isoenergies.pdf")
 
 ### Calculate evolutions of Hamiltonian (11)

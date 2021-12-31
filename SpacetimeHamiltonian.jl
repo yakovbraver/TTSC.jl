@@ -15,17 +15,16 @@ mutable struct SpacetimeHamiltonian
     𝐸::Dierckx.Spline1D # energy at the given angle, function 𝐸(𝐼)
     𝐸′::Function    # oscillation frequency at the given angle, function 𝐸′(𝐼)
     𝐸″::Function    # effective mass at the given angle, function 𝐸″(𝐼)
-    d𝑥╱d𝑡!::Function
-    d𝑝╱d𝑡!::Function
+    𝐻::Function
     params::Vector{Float64} # a vector of parameters, will be shared among 𝐻₀, d𝑥╱d𝑡!, and d𝑝╱d𝑡!; the last element should contain external frequency
     s::Int  # resonance number
 end
 
 function SpacetimeHamiltonian(𝐻₀::Function, left_tp::Tuple{<:Real, <:Real}, right_tp::Tuple{<:Real, <:Real}, min_pos::Tuple{<:Real, <:Real}, max_pos::Tuple{<:Real, <:Real},
-                              d𝑥╱d𝑡!::Function, d𝑝╱d𝑡!::Function, params::AbstractVector, s::Integer)
+    𝐻::Function, params::AbstractVector, s::Integer)
     𝑈 = x -> 𝐻₀(0.0, x, params)
     𝐸, 𝐸′, 𝐸″ = make_action_functions(𝑈, min_pos, max_pos)
-    SpacetimeHamiltonian(𝐻₀, 𝑈, left_tp, right_tp, 𝐸, 𝐸′, 𝐸″, d𝑥╱d𝑡!, d𝑝╱d𝑡!, params, s)
+    SpacetimeHamiltonian(𝐻₀, 𝑈, left_tp, right_tp, 𝐸, 𝐸′, 𝐸″, 𝐻, params, s)
 end
 
 "Momentum 𝑝(𝑥) = √[𝐸 - 𝑈(𝑥)] of a particle of energy `E`."
@@ -106,8 +105,8 @@ function compute_parameters(H::SpacetimeHamiltonian, perturbations::Vector{Funct
     T = 2π / Ω
     tspan = (0.0, T) # we use the theoretical value of the period
     # Initial conditions; they may be chosen arbitrary as long as the total energy equals `E₀`
-    q₀ = 0.0; p₀ = sqrt(E₀); # We assume that 𝐸 = 𝑝² + 𝑈(𝑥) with 𝑈(0) = 0
-    H₀_problem = HamiltonianProblem(H.𝐻₀, p₀, q₀, tspan, H.params)
+    x₀ = 0.0; p₀ = sqrt(E₀); # We assume that 𝐸 = 𝑝² + 𝑈(𝑥) with 𝑈(0) = 0
+    H₀_problem = HamiltonianProblem(H.𝐻₀, p₀, x₀, tspan, H.params)
     dt=2e-4
     # none of RKN solvers worked (https://docs.juliahub.com/DifferentialEquations/UQdwS/6.15.0/solvers/dynamical_solve/)
     sol = DiffEq.solve(H₀_problem, DiffEq.McAte3(); dt) # McAte3 is more accurate than the automatically chosen Tsit5() 
@@ -130,15 +129,14 @@ end
 function compute_IΘ(H::SpacetimeHamiltonian, I_target::Real)    
     ω = H.params[end]
     T_external = 2π / ω # period of the external driving
-    n_T = 50 # number of periods of the external driving to calculate evolution for
+    n_T = 200 # number of periods of the external driving to calculate evolution for
     tspan = (0.0, n_T * T_external)
     
     x₀ = 0.0; p₀ = sqrt(H.𝐸(I_target));
-    H_problem = DynamicalODEProblem(H.d𝑥╱d𝑡!, H.d𝑝╱d𝑡!, [x₀], [p₀], tspan, params)
+    H_problem = HamiltonianProblem(H.𝐻, p₀, x₀, tspan, params)
     sol = DiffEq.solve(H_problem, DiffEq.KahanLi8(); dt=2e-4, saveat=T_external)
-
-    x = sol[1, :]
-    p = sol[2, :]
+    p = sol[1, :]
+    x = sol[2, :]
     E = map((p, x) -> H.𝐻₀(p, x, H.params), p, x)
     I = map(x -> 𝐼(H, x), E)
 
@@ -149,15 +147,15 @@ function compute_IΘ(H::SpacetimeHamiltonian, I_target::Real)
 
         tspan = (0.0, T_free)
         # Initial conditions; they may be chosen arbitrary as long as the total energy equals `E₀`
-        q₀ = 0.0; p₀ = sqrt(E[i]);
-        H₀_problem = HamiltonianProblem(H.𝐻₀, p₀, q₀, tspan, H.params)
+        x₀ = 0.0; p₀ = sqrt(E[i]);
+        H₀_problem = HamiltonianProblem(H.𝐻₀, p₀, x₀, tspan, H.params)
         sol = DiffEq.solve(H₀_problem, DiffEq.McAte3(); dt=2e-4)
         # plot(sol) |> display
         
         bracket = x[i] > 0 ? (T_free/2, T_free) : (0.0, T_free/2)
         t = Roots.find_zero(t -> sol(t)[1] - p[i], bracket, Roots.A42(), xrtol=1e-3)
         
-        Θ[i] = rem2pi(t / T_free * 2π - pi/2, RoundDown) # `-2π*(i-1)/H.s` is the -ω𝑡/𝑠 term that transforms to the moving frame. We have 𝑡ₙ = 𝑛𝑇, and ω𝑡ₙ = 2π𝑛
+        Θ[i] = mod2pi(t / T_free * 2π - pi/2) # `-2π*(i-1)/H.s` is the -ω𝑡/𝑠 term that transforms to the moving frame. We have 𝑡ₙ = 𝑛𝑇, and ω𝑡ₙ = 2π𝑛
     end
     return I, Θ
 end
