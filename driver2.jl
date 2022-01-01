@@ -1,9 +1,7 @@
-using Plots, LaTeXStrings, ProgressBars
+using Plots, LaTeXStrings
 pyplot()
 plotlyjs()
 theme(:dark, size=(700, 600))
-
-### Calculate the spatial Hamiltonian as a function of the action, and compute the associated derivatives
 
 include("SpacetimeHamiltonian.jl")
 
@@ -15,14 +13,14 @@ function 𝐻(p, x, params, t)
     p^2 + params[1]*sin(x)^2 + p * params[2] * params[3] * sin(params[3]*t)
 end
 
-function 𝑉(x::Real, p::Real)
+function 𝑉(p::Real, x::Real)
     p
 end
 
 V₀ = 4320.0; ω = 240.0; λ = 0.01;
-s = 3 # freely chosen parameters
+s = 3
 params = [V₀, λ, ω]
-H = SpacetimeHamiltonian(𝐻₀, (π/2, π), (π, 3π/2), (2.5, 3.5), (4.5, 5.5), 𝐻, params, s)
+H = SpacetimeHamiltonian(𝐻₀, 𝐻, (π/2, π), (π, 3π/2), (2.5, 3.5), (4.5, 5.5), params, s)
 
 function plot_actions(H::SpacetimeHamiltonian)
     figs = [plot() for _ in 1:4];
@@ -40,11 +38,13 @@ end
 
 plot_actions(H)
 
-### Set main parameters
-Iₛ, M, coeffs = compute_parameters(H, Function[𝑉])
-### Calculate isoenergies
+### Make a plot of the motion in the (𝐼, ϑ) phase-space in the secular approximation
 
-function plot_isoenergies(ϑ::AbstractVector, I::AbstractVector; M, λ, ω, pₛ, Iₛ, s)
+Iₛ, M, coeffs = compute_parameters(H, Function[𝑉])
+
+function plot_isoenergies(; M, λ, ω, pₛ, Iₛ, s)
+    ϑ = range(0, 2π, length=50)
+    I = vcat(0:2:30, 30.5:0.5:42)
     E = Matrix{Float64}(undef, length(ϑ), length(I))
     for i in eachindex(I), t in eachindex(ϑ)
         E[t, i] = (I[i]-Iₛ)^2/2M - λ*ω*abs(pₛ)*cos(s*ϑ[t])
@@ -55,18 +55,15 @@ function plot_isoenergies(ϑ::AbstractVector, I::AbstractVector; M, λ, ω, pₛ
     title!(L"\lambda = %$(round(λ, sigdigits=2))")
 end
 
-ϑ = range(0, 2π, length=50)
-I = vcat(0:2:30, 30.5:0.5:42)
-
-plot_isoenergies(ϑ, I; M, λ, ω, coeffs[1], Iₛ, s)
+plot_isoenergies(; pₛ=coeffs[1], M, λ, ω, Iₛ, s)
 savefig("lambda_0.025/isoenergies.pdf")
 
-### Calculate evolutions of Hamiltonian (11)
+### Make an "exact" plot of the motion in the (𝐼, ϑ) phase-space
 
 fig = plot();
-for I in [2:2:34; Iₛ; 36:39]
-    I, Θ = compute_IΘ(H, I)
-    scatter!(Θ, I, xlabel=L"\theta", ylabel=L"I", markerstrokewidth=0, markeralpha=0.6, label=false)
+for i in [2:2:34; Iₛ; 36:39]
+    I, Θ = compute_IΘ(H, i)
+    scatter!(mod2pi.(Θ.+pi/2), I, xlabel=L"\theta", ylabel=L"I", markerstrokewidth=0, markeralpha=0.6, label=false)
     # scatter!(Θ, I, xlabel=L"\Theta=\theta-\omega t/s", ylabel=L"I", markerstrokewidth=0, markeralpha=0.6, label=false)
 end
 display(fig)
