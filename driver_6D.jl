@@ -1,3 +1,5 @@
+# The driving script used to analyse Hamiltonians (9) and (13) from arXiv:2012.02783
+
 using Plots, LaTeXStrings
 pyplot()
 plotlyjs()
