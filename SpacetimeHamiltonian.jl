@@ -22,36 +22,52 @@ end
 
 """
 Construct a `SpacetimeHamiltonian` object. `min_pos` and `max_pos` are the bracketing intervals for the minimum and the maximum
-of the spatial potential.
+of the spatial potential.`turnpoint` is required if the potential is not symmetric, see [`turning_point_intervals`](@ref).
 """
-function SpacetimeHamiltonian(𝐻₀::Function, 𝐻::Function, left_tp::Tuple{<:Real, <:Real}, right_tp::Tuple{<:Real, <:Real},
-                              min_pos::Tuple{<:Real, <:Real}, max_pos::Tuple{<:Real, <:Real},
-                              params::AbstractVector, s::Integer)
+function SpacetimeHamiltonian(𝐻₀::Function, 𝐻::Function, params::AbstractVector, s::Integer,
+                              min_pos::Tuple{<:Real, <:Real}, max_pos::Tuple{<:Real, <:Real}, turnpoint::Union{Real, Nothing}=nothing)
     𝑈 = x -> 𝐻₀(0.0, x, params)
-    𝐸, 𝐸′, 𝐸″ = make_action_functions(𝑈, min_pos, max_pos)
+    left_tp, right_tp = turning_point_intervals(𝑈, min_pos, max_pos, turnpoint)
+    𝐸, 𝐸′, 𝐸″ = make_action_functions(𝑈, right_tp...)
     SpacetimeHamiltonian(𝐻₀, 𝐻, 𝑈, left_tp, right_tp, 𝐸, 𝐸′, 𝐸″, params, s)
 end
 
-"Momentum 𝑝(𝑥) = √[𝐸 - 𝑈(𝑥)] of a particle of energy `E`."
-function 𝑝(𝑈::Function, E::Real, x::Real)
-    p = E - 𝑈(x)
-    p < 0 ? zero(p) : sqrt(p) # a safeguard for the case when `x` is slightly outside of the accessible region of oscillations
+"""
+Return the possible intervals of the turning points for motion in the potential 𝑈. A minimum and a maximum of the potential will be found
+using the bracketing intervals `min_pos` and `max_pos`. If the heights of the "walls" of potential are not equal, a `turnpoint` has to be provided.
+For example, if the left wall is higher than the right one, the left turning point will be searched for in the interval (`turnpoint`, `x_min`).
+"""
+function turning_point_intervals(𝑈::Function, min_pos::Tuple{<:Real, <:Real}, max_pos::Tuple{<:Real, <:Real}, turnpoint::Union{Real, Nothing})
+    # find position of the potential minimum
+    result = Optim.optimize(x -> 𝑈(first(x)), min_pos[1], min_pos[2], Optim.Brent())
+    x_min = Optim.minimizer(result)
+    
+    # find position the potential maximum
+    result = Optim.optimize(x -> -𝑈(first(x)), max_pos[1], max_pos[2], Optim.Brent())
+    x_max = Optim.minimizer(result)
+    E_max = -Optim.minimum(result)
+
+    if x_max > x_min
+        right_tp = (x_min, x_max)
+        # if the `turnpoint` is not provided, calculate the left turning point assuming a symmetric well; 
+        # otherwise, find the coordinate of the point giving `E_max` on the left wall
+        x_max_left = turnpoint === nothing ? x_min - (x_max - x_min) :
+                                             Roots.find_zero(x -> 𝑈(x) - E_max, (turnpoint, x_min), Roots.A42(), xrtol=1e-3)
+        left_tp = (x_max_left, x_min)
+    else
+        left_tp = (x_max, x_min)
+        x_max_right = turnpoint === nothing ? x_min + (x_min - x_max) :
+                                              Roots.find_zero(x -> 𝑈(x) - E_max, (x_min, turnpoint), Roots.A42(), xrtol=1e-3)
+        right_tp = (x_min, x_max_right)
+    end
+    left_tp, right_tp
 end
 
 "Construct and return the functions 𝐸(𝐼), 𝐸′(𝐼), and 𝐸″(𝐼)."
-function make_action_functions(𝑈::Function, min_pos::Tuple{<:Real, <:Real}, max_pos::Tuple{<:Real, <:Real})
-    # find position and value of the potential minimum
-    result = Optim.optimize(x -> 𝑈(first(x)), min_pos[1], min_pos[2], Optim.Brent())
-    E_min = Optim.minimum(result)
-    x_min = Optim.minimizer(result)
-    
-    # find the value of the potential maximum
-    result = Optim.optimize(x -> -𝑈(first(x)), max_pos[1], max_pos[2], Optim.Brent())
-    E_max = -Optim.minimum(result)
-    
+function make_action_functions(𝑈::Function, x_min::Real, x_max::Real)
     n_E = 100 # number of energies (and actions) to save
     I = Vector{Float64}(undef, n_E) # for storing values of the action variable
-    E = range(E_min+1e-4, E_max-1e-4, length=n_E) # energies inside the potential "well"
+    E = range(1.001𝑈(x_min), 0.999𝑈(x_max), length=n_E) # energies inside the potential "well"
 
     x_max = x_min # initialise `x_max` -- the second turning point
     for i in eachindex(E)
@@ -74,6 +90,12 @@ function turning_points(𝑈::Function, E::Real, a::Union{<:Real, Tuple{<:Real, 
     x_min = Roots.find_zero(x -> 𝑈(x) - E, a, atol=1e-5)
     x_max = Roots.find_zero(x -> 𝑈(x) - E, b, atol=1e-5)
     return x_min, x_max
+end
+
+"Momentum 𝑝(𝑥) = √[𝐸 - 𝑈(𝑥)] of a particle of energy `E`."
+function 𝑝(𝑈::Function, E::Real, x::Real)
+    p = E - 𝑈(x)
+    p < 0 ? zero(p) : sqrt(p) # a safeguard for the case when `x` is slightly outside of the accessible region of oscillations
 end
 
 """

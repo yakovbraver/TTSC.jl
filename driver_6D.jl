@@ -22,7 +22,8 @@ end
 V₀ = 4320.0; ω = 240.0; λ = 0.01;
 s = 3
 params = [V₀, λ, ω]
-H = SpacetimeHamiltonian(𝐻₀, 𝐻, (π/2, π), (π, 3π/2), (2.5, 3.5), (4.5, 5.5), params, s)
+plot(range(0, 2π, length=200), x -> 𝐻₀(0, x, params))
+H = SpacetimeHamiltonian(𝐻₀, 𝐻, params, s, (3.0, 3.2), (1.4, 1.6))
 
 function plot_actions(H::SpacetimeHamiltonian)
     figs = [plot() for _ in 1:4];
