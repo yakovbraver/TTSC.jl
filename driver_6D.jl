@@ -43,7 +43,7 @@ plot_actions(H)
 
 ### Make a plot of the motion in the (𝐼, ϑ) phase-space in the secular approximation
 
-Iₛ, M, coeffs = compute_parameters(H, Function[𝑉])
+Iₛ, M, coeffs = compute_parameters(H, Function[𝑉], [s])
 
 function plot_isoenergies(; M, λ, ω, pₛ, Iₛ, s)
     ϑ = range(0, 2π, length=50)

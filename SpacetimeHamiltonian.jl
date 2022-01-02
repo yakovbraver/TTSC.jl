@@ -117,8 +117,12 @@ function 𝐼(H::SpacetimeHamiltonian, E::Real)
     return quadgk(x -> 𝑝(H.𝑈, E, x), x_min, x_max, rtol=1e-4)[1] / π
 end
 
-"Return the action and mass at the working point, as well as the `H.s`th Fourier coefficients for every function in `perturbations`."
-function compute_parameters(H::SpacetimeHamiltonian, perturbations::Vector{Function})
+"""
+Return the action and mass at the working point. Also return the 𝑚th Fourier coefficient for every function in `perturbations`,
+where the integer numbers 𝑚 are specified in `m`. `perturbations` are the spatial functions that couple the temporal perturbations,
+and their signature is `f(p, x) = ...`.
+"""
+function compute_parameters(H::SpacetimeHamiltonian, perturbations::Vector{Function}, m::Vector{<:Integer})
     ω = H.params[end]
     Ω = ω / H.s # our choice of the oscillation frequency (of the unperturbed system)
     Iₛ::Float64 = Roots.find_zero(x -> H.𝐸′(x) - Ω, 0.8last(Dierckx.get_knots(H.𝐸)), atol=1e-5) # find which 𝐼ₛ gives the frequency Ω
@@ -139,7 +143,7 @@ function compute_parameters(H::SpacetimeHamiltonian, perturbations::Vector{Funct
     V = Vector{Float64}(undef, length(sol.t)) # for storing perturbation evaluated in the solution points
     for (i, 𝑉) in enumerate(perturbations)
         V .= 𝑉.(sol[1, :], sol[2, :])
-        coeffs[i] = fourier_coeff(V, s, dt, T)
+        coeffs[i] = fourier_coeff(V, m[i], dt, T)
     end
     return Iₛ, M, coeffs
 end
