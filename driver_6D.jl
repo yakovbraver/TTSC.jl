@@ -58,7 +58,8 @@ function plot_isoenergies(; M, λ, ω, pₛ, Iₛ, s)
     title!(L"\lambda = %$(round(λ, sigdigits=2))")
 end
 
-plot_isoenergies(; pₛ=coeffs[1], M, λ, ω, Iₛ, s)
+pₛ = abs(coeffs[1])
+plot_isoenergies(; pₛ, M, λ, ω, Iₛ, s)
 savefig("lambda_0.025/isoenergies.pdf")
 
 ### Make an "exact" plot of the motion in the (𝐼, ϑ) phase-space

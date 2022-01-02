@@ -121,10 +121,9 @@ end
 function compute_parameters(H::SpacetimeHamiltonian, perturbations::Vector{Function})
     ω = H.params[end]
     Ω = ω / H.s # our choice of the oscillation frequency (of the unperturbed system)
-    Iₛ::Float64 = Roots.find_zero(x -> H.𝐸′(x) - Ω, (0, Dierckx.get_knots(H.𝐸)[end]), atol=1e-5) # find which 𝐼ₛ gives the frequency Ω
+    Iₛ::Float64 = Roots.find_zero(x -> H.𝐸′(x) - Ω, 0.8last(Dierckx.get_knots(H.𝐸)), atol=1e-5) # find which 𝐼ₛ gives the frequency Ω
     E₀::Float64 = H.𝐸(Iₛ)     # energy of the system oscillating at the frequency Ω
     M::Float64 = 1 / H.𝐸″(Iₛ) # "mass" of the system oscillating at the frequency Ω
-
     # evolve the unperturbed system for one period 
     T = 2π / Ω
     tspan = (0.0, T) # we use the theoretical value of the period
@@ -136,11 +135,11 @@ function compute_parameters(H::SpacetimeHamiltonian, perturbations::Vector{Funct
     sol = DiffEq.solve(H₀_problem, DiffEq.McAte3(); dt) # McAte3 is more accurate than the automatically chosen Tsit5() 
 
     # calculate 𝑠th Fourier coefficient for every function in `perturbations`
-    coeffs = Vector{Float64}(undef, length(perturbations))
+    coeffs = Vector{ComplexF64}(undef, length(perturbations))
     V = Vector{Float64}(undef, length(sol.t)) # for storing perturbation evaluated in the solution points
     for (i, 𝑉) in enumerate(perturbations)
         V .= 𝑉.(sol[1, :], sol[2, :])
-        coeffs[i] = fourier_coeff(V, s, dt, T) |> abs
+        coeffs[i] = fourier_coeff(V, s, dt, T)
     end
     return Iₛ, M, coeffs
 end
