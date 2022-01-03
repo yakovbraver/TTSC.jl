@@ -1,4 +1,4 @@
-# The driving script used to analyse Hamiltonians (9) and (13) from arXiv:2012.02783
+# The driving script for the analysis of Hamiltonians (9) and (13) from arXiv:2012.02783
 
 using Plots, LaTeXStrings
 pyplot()
@@ -61,15 +61,14 @@ end
 
 pₛ = abs(coeffs[1])
 plot_isoenergies(; pₛ, M, λ, ω, Iₛ, s)
-savefig("lambda_0.025/isoenergies.pdf")
+savefig("exact-isoenergies.pdf")
 
 ### Make an "exact" plot of the motion in the (𝐼, ϑ) phase-space
 
 fig = plot();
 for i in [2:2:34; Iₛ; 36:39]
-    I, Θ = compute_IΘ(H, i)
+    I, Θ = compute_IΘ(H, i, n_T=200)
     scatter!(mod2pi.(Θ.+pi/2), I, xlabel=L"\theta", ylabel=L"I", markerstrokewidth=0, markeralpha=0.6, label=false)
-    # scatter!(Θ, I, xlabel=L"\Theta=\theta-\omega t/s", ylabel=L"I", markerstrokewidth=0, markeralpha=0.6, label=false)
 end
 display(fig)
 

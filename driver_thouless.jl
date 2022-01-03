@@ -31,7 +31,7 @@ g = 400; l = 2;
 gₗ = 2g*factorial(l) / √π / gamma(l + 0.5)
 Vₗ = 100
 
-λₛ = 80; λₗ = 10; ω = 160;
+λₛ = 8; λₗ = 1; ω = 160;
 s = 2
 params = [gₗ, l, Vₗ, λₛ, λₗ, ω]
 plot(range(0, 2π, length=200), x -> 𝐻₀(0, x, params))
@@ -41,18 +41,18 @@ function plot_actions(H::SpacetimeHamiltonian)
     figs = [plot() for _ in 1:4];
     x = range(0, π, length=200);
     figs[1] = plot(x, H.𝑈, xlabel=L"x", ylabel=L"U(x)=\tilde{g}_\ell\cos^{2\ell}(2x)+V_L\cos^{2}(x)", legend=false);
-    title!(L"\ell = %$l, g = %$(round(g, sigdigits=2)), V_L = %$(round(Vₗ, sigdigits=3))");
+    title!(L"\ell = %$l, g = %$g, V_L = %$Vₗ");
     I = Dierckx.get_knots(H.𝐸)
     figs[2] = plot(I, H.𝐸(I), xlabel=L"I", ylabel=L"E", legend=false);
     figs[3] = plot(I, H.𝐸′, xlabel=L"I", ylabel=L"dE/dI", xlims=(I[1], I[end]), legend=false);
-    figs[4] = plot(I, H.𝐸″, xlabel=L"I", ylabel=L"d^2E/dI^2", xlims=(I[1], I[end]), legend=false);
+    figs[4] = plot(I, H.𝐸″, xlabel=L"I", ylabel=L"d^2E/dI^2", xlims=(I[1], I[end]), legend=false, ylims=(-20, 20));
     lay = @layout [a{0.5w} grid(3,1)]
     plot(figs..., layout=lay)
     # savefig("H0.pdf")
 end
 
 plot_actions(H)
-savefig("h0-(S2).pdf")
+savefig("H0-parameters.pdf")
 
 ### Make a plot of the motion in the (𝐼, ϑ) phase-space in the secular approximation
 
@@ -80,23 +80,26 @@ Aₛ = abs(coeffs[1]); χₛ = angle(coeffs[1])
 eQ = cis(ϕₜ)*coeffs[2]
 Aₗ = abs(eQ); χₗ = angle(eQ)
 
-levels = [range(-40, -10, length=10); range(-9, 0, length=10)]
+plot_isoenergies(; ω, M, λₛ, Aₛ, χₛ, λₗ, Aₗ, χₗ, Iₛ, s)
+levels = [range(-40, -10, length=10); range(-9, 0, length=30)]
 plot_isoenergies(; ω, M, λₛ, Aₛ, χₛ, λₗ, Aₗ, χₗ, Iₛ, s, levels)
-savefig("lambda_0.025/isoenergies.pdf")
+savefig("secular-isoenergies.pdf")
 
 ### Make an "exact" plot of the motion in the (𝐼, ϑ) phase-space
 
 fig = plot();
 for i in [0.5:0.5:4; 4.25:0.25:7]
-    I, Θ = compute_IΘ(H, i)
+    I, Θ = compute_IΘ(H, i, n_T=200, ϑ₀=0.0)
     scatter!(mod2pi.(Θ.+pi/2), I, xlabel=L"\theta", ylabel=L"I", markerstrokewidth=0, markeralpha=0.6, label=false)
-    # scatter!(Θ, I, xlabel=L"\Theta=\theta-\omega t/s", ylabel=L"I", markerstrokewidth=0, markeralpha=0.6, label=false)
 end
+for i in 5.5:0.25:6.5
+    I, Θ = compute_IΘ(H, i, n_T=100, ϑ₀=0.75)
+    scatter!(mod2pi.(Θ.+pi/2), I, xlabel=L"\theta", ylabel=L"I", markerstrokewidth=0, markeralpha=0.6, label=false)
+end
+ylims!((0, last(Dierckx.get_knots(H.𝐸))))
+title!(L"\ell = %$l, g = %$g, V_L = %$Vₗ, \lambda_S = %$λₛ, \lambda_L = %$λₗ, \omega = %$ω")
 display(fig)
-
-fig = plot();
-title!(L"\lambda = 0.01")
-savefig("lambda0.01.pdf")
+savefig("exact-isoenergies.pdf")
 
 ### Calculate bands
 

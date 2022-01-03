@@ -154,27 +154,41 @@ function fourier_coeff(f::AbstractVector, n::Int, dt::AbstractFloat, T::Abstract
 end
 
 """
-Compute evolutions (using the perturbed Hamiltonian) of 𝑝(𝑡) and 𝑥(𝑡) for the energy corresponding to `I_target`.
-Then, transform the obtained (𝑝, 𝑥) pairs to (𝐼, ϑ) and return the latter as a tuple of two vectors.
+Compute evolutions (using the perturbed Hamiltonian) of 𝑝(𝑡) and 𝑥(𝑡) for the energy corresponding to `I_target`, and the
+initial phase `ϑ₀`. The latter should be specified in the units of 2π: 0 (the default) corresponds to 𝑥(0) in the potential minimum,
+0.25 corresponds to the right turnin point, and 0.75 corresponds to the left turning point.
+The pairs (𝑝(𝑡), 𝑥(𝑡)) are registered stroboscopically at the intervals of the period of external driving; `n_T` pairs are registered.
 
+Then, transform the obtained (𝑝, 𝑥) pairs to (𝐼, ϑ) and return the results as a tuple of two vectors.
 Transformation is performed as follows: for each pair (𝑝ᵢ, 𝑥ᵢ), the energy of the unperturbed motion is calculated as
 𝐸ᵢ = 𝐻₀(𝑝ᵢ, 𝑥ᵢ), and the energy is then converted to action using the function 𝐼(𝐸).
 To find the phase ϑᵢ, a period 𝑇ᵢ of unperturbed motion with energy 𝐸ᵢ is calculated, and the time moment 𝑡 corresponding to 
 the pair (𝑝ᵢ, 𝑥ᵢ) is found. The phase is then given by ϑᵢ = 2π𝑡/𝑇ᵢ.
+number of periods of the external driving to calculate evolution for
 """
-function compute_IΘ(H::SpacetimeHamiltonian, I_target::Real)    
+function compute_IΘ(H::SpacetimeHamiltonian, I_target::Real; ϑ₀::AbstractFloat=0.0, n_T::Integer=100)
     ω = H.params[end]
     T_external = 2π / ω # period of the external driving
-    n_T = 100 # number of periods of the external driving to calculate evolution for
-    tspan = (0.0, n_T * T_external)    
-    x₀ = H.right_tp[1] # for all the equations in this function, the initial position is chosen to be the potential minimum
-    p₀ = 𝑝(H.𝑈, H.𝐸(I_target), x₀)
+    tspan = (0.0, n_T * T_external)
+    if ϑ₀ == 0
+        x₀ = H.right_tp[1] # set iniital coordinate to the potential minimum (this position with positive momenutm defines the zero phase)
+        p₀ = 𝑝(H.𝑈, H.𝐸(I_target), x₀)
+    elseif ϑ₀ == 0.25
+        p₀ = 0.0
+        x₀ = Roots.find_zero(x -> H.𝐻₀(0, x, params) - H.𝐸(I_target), H.right_tp[2]) # set iniital coordinate to the right turning point
+    else # if ϑ₀ == 0.75
+        p₀ = 0.0
+        x₀ = Roots.find_zero(x -> H.𝐻₀(0, x, params) - H.𝐸(I_target), H.left_tp[1]) # set iniital coordinate to the left turning point
+    end
     H_problem = HamiltonianProblem(H.𝐻, p₀, x₀, tspan, params)
     sol = DiffEq.solve(H_problem, DiffEq.KahanLi8(); dt=2e-4, saveat=T_external)
     p = sol[1, :]
     x = sol[2, :]
     E = map((p, x) -> H.𝐻₀(p, x, H.params), p, x)
     I = map(x -> 𝐼(H, x), E)
+    
+    # for all the equations below, the initial position is chosen to be the potential minimum
+    x₀ = H.right_tp[1]
 
     # find phases from the coordinates
     Θ = similar(I)
