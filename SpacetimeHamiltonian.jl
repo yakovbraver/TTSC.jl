@@ -130,15 +130,15 @@ function compute_parameters(H::SpacetimeHamiltonian, perturbations::Vector{Funct
     M::Float64 = 1 / H.𝐸″(Iₛ) # "mass" of the system oscillating at the frequency Ω
     # evolve the unperturbed system for one period 
     T = 2π / Ω
-    tspan = (0.0, T) # we use the theoretical value of the period
+    tspan = (0.0, T)
     # initial conditions; they may be chosen arbitrary as long as the total energy equals `E₀`
-    x₀ = 0.0; p₀ = sqrt(E₀); # We assume that 𝐸 = 𝑝² + 𝑈(𝑥) with 𝑈(0) = 0
+    x₀ = H.right_tp[1]; p₀ = 𝑝(H.𝑈, E₀, x₀); # we choose position at the minimum and calculate the momentum
     H₀_problem = HamiltonianProblem(H.𝐻₀, p₀, x₀, tspan, H.params)
     dt=2e-4
     # none of RKN solvers worked (https://docs.juliahub.com/DifferentialEquations/UQdwS/6.15.0/solvers/dynamical_solve/)
     sol = DiffEq.solve(H₀_problem, DiffEq.McAte3(); dt) # McAte3 is more accurate than the automatically chosen Tsit5() 
 
-    # calculate 𝑠th Fourier coefficient for every function in `perturbations`
+    # calculate the requested Fourier coefficient for every function in `perturbations`
     coeffs = Vector{ComplexF64}(undef, length(perturbations))
     V = Vector{Float64}(undef, length(sol.t)) # for storing perturbation evaluated in the solution points
     for (i, 𝑉) in enumerate(perturbations)
@@ -166,9 +166,9 @@ function compute_IΘ(H::SpacetimeHamiltonian, I_target::Real)
     ω = H.params[end]
     T_external = 2π / ω # period of the external driving
     n_T = 100 # number of periods of the external driving to calculate evolution for
-    tspan = (0.0, n_T * T_external)
-    
-    x₀ = 0.0; p₀ = sqrt(H.𝐸(I_target));
+    tspan = (0.0, n_T * T_external)    
+    x₀ = H.right_tp[1] # for all the equations in this function, the initial position is chosen to be the potential minimum
+    p₀ = 𝑝(H.𝑈, H.𝐸(I_target), x₀)
     H_problem = HamiltonianProblem(H.𝐻, p₀, x₀, tspan, params)
     sol = DiffEq.solve(H_problem, DiffEq.KahanLi8(); dt=2e-4, saveat=T_external)
     p = sol[1, :]
@@ -181,19 +181,22 @@ function compute_IΘ(H::SpacetimeHamiltonian, I_target::Real)
     for i in eachindex(Θ)
         T_free = 2π / H.𝐸′(I[i]) # period of the unperturbed motion at action `I[i]`
         tspan = (0.0, T_free)
-        # initial conditions; they may be chosen arbitrary as long as the total energy equals `E[i]`
-        x₀ = 0.0; p₀ = sqrt(E[i]);
+        p₀ = 𝑝(H.𝑈, E[i], x₀)
         H₀_problem = HamiltonianProblem(H.𝐻₀, p₀, x₀, tspan, H.params)
-        sol = DiffEq.solve(H₀_problem, DiffEq.McAte3(); dt=2e-4)
-        
-        # If the coordinate `x[i]` is very close to zero, the momentum `p[i]` may lie just outside of the bracketing interval,
+        sol = DiffEq.solve(H₀_problem, DiffEq.McAte5(); dt=2e-4)
+
+        # Find the time point when the equilibrium point (i.e. the potential minimum) is reached.
+        # The coordinate will be positive in (0; t_eq) and negative in (t_eq; T_free).
+        t_eq = Roots.find_zero(t -> sol(t)[2] - x₀, T_free/2)
+
+        # If the coordinate `x[i]` is very close to potential minimum `x₀`, the momentum `p[i]` may lie just outside of the bracketing interval,
         # causing the root finding to fail. However, in that case `p[i]` is either very close to its maximum, meaning `t = 0`,
-        # or is very close to the minimum, meaning `t = T_free/2`. The two cases can be discerned by the sign of the momenntum.
-        if isapprox(x[i], 0, atol=5e-3)
-            t = (p[i] > 0 ? 0.0 : T_free/2)
+        # or is very close to the minimum, meaning `t = t_eq`. The two cases can be discerned by the sign of the momentum.
+        if isapprox(x[i], x₀, atol=5e-3)
+            t = p[i] > 0 ? 0.0 : t_eq
         else
-            # use the sign of the coordinate to determine which half of the period the point (x[i]; p[i]) is in
-            bracket = x[i] > 0 ? (0.0, T_free/2) : (T_free/2, T_free)
+            # use the sign of the coordinate to determine which part of the period the point (x[i]; p[i]) is in
+            bracket = x[i] > x₀ ? (0.0, t_eq) : (t_eq, T_free)
             # find the time corresponding to momentum `p[i]`
             t = Roots.find_zero(t -> sol(t)[1] - p[i], bracket, Roots.A42(), xrtol=1e-3)
         end

@@ -22,7 +22,7 @@ end
 V₀ = 4320.0; ω = 240.0; λ = 0.01;
 s = 3
 params = [V₀, λ, ω]
-plot(range(0, 2π, length=200), x -> 𝐻₀(0, x, params))
+# plot(range(0, 2π, length=200), x -> 𝐻₀(0, x, params))
 H = SpacetimeHamiltonian(𝐻₀, 𝐻, params, s, (3.0, 3.2), (1.4, 1.6))
 
 function plot_actions(H::SpacetimeHamiltonian)
@@ -47,14 +47,15 @@ Iₛ, M, coeffs = compute_parameters(H, Function[𝑉], [s])
 
 function plot_isoenergies(; M, λ, ω, pₛ, Iₛ, s)
     ϑ = range(0, 2π, length=50)
-    I = vcat(0:2:30, 30.5:0.5:42)
+    I_max = last(Dierckx.get_knots(H.𝐸))
+    I = [0:2:30; range(30.5, I_max, length=20)]
     E = Matrix{Float64}(undef, length(ϑ), length(I))
     for i in eachindex(I), t in eachindex(ϑ)
         E[t, i] = (I[i]-Iₛ)^2/2M - λ*ω*abs(pₛ)*cos(s*ϑ[t])
     end
-    levels = vcat(range(minimum(E), -20, length=20), range(-19, maximum(E), length=10))
+    levels = [range(minimum(E), -20, length=20); range(-19, maximum(E), length=10)]
     contour(ϑ, I, E', xlabel=L"\Theta"*", rad", ylabel=L"I", cbartitle="Energy \$H\$ (13)", color=:viridis; levels)
-    hline!([Iₛ], label=L"I_s = %$(round(Iₛ, sigdigits=4))", c=:white) |> display
+    hline!([Iₛ], label=L"I_s = %$(round(Iₛ, sigdigits=4))", c=:white)
     title!(L"\lambda = %$(round(λ, sigdigits=2))")
 end
 
