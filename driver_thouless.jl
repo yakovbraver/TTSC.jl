@@ -1,6 +1,6 @@
 using Plots, LaTeXStrings
 using SpecialFunctions: gamma
-using Combinatorics: factorial
+using Combinatorics: factorial, binomial
 pyplot()
 plotlyjs()
 theme(:dark, size=(700, 600))
@@ -103,7 +103,8 @@ savefig("exact-isoenergies.pdf")
 
 ### Calculate bands
 
-using BandedMatrices: BandedMatrix, band
+import BandedMatrices as BM
+using SparseArrays: sparse
 using KrylovKit: eigsolve
 
 """
@@ -116,19 +117,19 @@ function compute_bands(; n_bands::Integer, phases::AbstractVector, s::Integer, M
     n_j = 4n_bands # number of indices 𝑗 to use for constructing the Hamiltonian (its size will be (2n_j+1)×(2n_j+1))
     
     # Hamiltonian matrix
-    H = BandedMatrix{ComplexF64}(undef, (2n_j + 1, 2n_j + 1), (2, 2))
-    H[band(-2)] .= λₛAₛ
-    H[band(2)]  .= λₛAₛ
+    H = BM.BandedMatrix{ComplexF64}(undef, (2n_j + 1, 2n_j + 1), (2, 2))
+    H[BM.band(-2)] .= λₛAₛ
+    H[BM.band(2)]  .= λₛAₛ
     
     bands = Matrix{Float64}(undef, 2n_bands, length(phases))
     for k in [0, s÷2] # iterate over the centre of BZ and then the boundary
-        H[band(0)] .= [(2j + k)^2 / M for j = -n_j:n_j]
-        # `a` and `b` control where to place the eigenvalues depedning on `k`; see description of `bands`
-        a = k*n_bands + 1 
+        H[BM.band(0)] .= [(2j + k)^2 / M for j = -n_j:n_j]
+        # `a` and `b` control where to place the eigenvalues depedning on `k`; see function docstring
+        a = (k > 0)*n_bands + 1 
         b = a+n_bands - 1
         for (i, ϕ) in enumerate(phases)
-            H[band(-1)] .= λₗAₗ*cis(-ϕ)
-            H[band(1)]  .= λₗAₗ*cis(ϕ)
+            H[BM.band(-1)] .= λₗAₗ*cis(-ϕ)
+            H[BM.band(1)]  .= λₗAₗ*cis(ϕ)
             vals, _, _ = eigsolve(H, n_bands, :SR)
             bands[a:b, i] .= vals[1:n_bands]
         end
@@ -140,9 +141,150 @@ phases = range(0, 2π, length=40) # values of the adiabatic phase in (S32)
 n_bands = 4
 bands = compute_bands(; n_bands, phases, s, M=abs(M), λₗAₗ=λₗ*Aₗ, λₛAₛ=λₛ*Aₛ)
 
-plot();
+fig1 = plot();
 for i in 1:n_bands
     plot!(phases, bands[i, :], fillrange=bands[n_bands+i, :], fillalpha=0.35, label="band $i");
 end
 xlabel!(L"\varphi_t"*", rad"); ylabel!("Energy")
 savefig("bands.pdf")
+
+### Extract tight-binding parameters
+
+gap = bands[2, 1] - bands[1, 1]
+w = gap/2 - bands[2, 1]
+
+function tb_parameters(E_0_0, E_0_pi, E_k_pi, k)
+    @show J₀ = E_0_0 / 2
+    @show Δ = √(E_0_pi^2 - 4J₀^2)
+    ε = (E_k_pi^2 - Δ^2 - 2J₀^2 * (1+cos(k))) / (2J₀^2 * (1-cos(k))) |> sqrt
+    return J₀, Δ, ε
+end
+
+J₀, Δ, ε = tb_parameters(0.235+w, 1.317+w, 1.053+w, 1)
+J₀ = 0.23412895701313893
+Δ = 1.4778478020259276
+ε = 0.5
+E0 = @. sqrt(Δ^2*sin(phases)^2 + 4J₀^2)
+plot!(phases, E0 .- w)
+k = 1
+Ek = @. Δ^2*sin(phases)^2 + 2J₀^2 * (1+cos(k) + ε^2*sin(phases)^2 * (1-cos(k))) |> sqrt
+plot!(phases, Ek .- w)
+
+### (S23)
+
+"""
+Calculate `n_bands` energy bands of Hamiltonian (S20) sweeping over the adiabatic `phases` φₓ and φₜ.
+In the returned matrix of bands, columns numerate the adiabatic phase, while rows numerate eigenvalues.
+Rows `1:n_bands` store the eigenvalues corresponding to the centre of BZ, 𝑘 = 0.
+Rows `n_bands:end` store the eigenvalues corresponding to the boundary of BZ, in our case Vₗcos²(x+φₓ) leads to 𝑘 = 2/2 = 1.
+The dimension of the constructed 𝐻ₖ matrix will be `2n_bands`, hence that many eigenvalues of ℎₖ will be required. This in turn
+required constructing ℎₖ of dimension `4n_bands`.
+"""
+function compute_bands_exact(; n_bands::Integer, phases::AbstractVector, s::Integer, l::Real, gₗ::Real, Vₗ::Real, λₗ::Real, λₛ::Real, ω::Real)
+    n_j = 2n_bands  # number of indices 𝑗 to use for constructing the Hamiltonian (its size will be (2n_j+1)×(2n_j+1))
+    
+    hₖ = BM.BandedMatrix(BM.Zeros{ComplexF64}(2n_j+1, 2n_j+1), (2l, 2l))
+    hₖ[BM.band(0)] .= binomial(2l, l)
+    for n in 1:l
+        hₖ[BM.band(2n)] .= hₖ[BM.band(-2n)] .= gₗ ./ (4 .^ l) .* binomial(2l, l-n)
+    end
+    
+    ϵₖ = Vector{Float64}(undef, n_j) # eigenvalues of hₖ (eigenenergies of the unperturbed Hamiltonian)
+    cₖ = [Vector{ComplexF64}(undef, 2n_j+1) for _ in 1:n_j]  # eigenvectors of hₖ
+    
+    εₖ = Matrix{Float64}(undef, 2n_bands, length(phases)) # eigenvalues of 𝐻ₖ (Floquet quasi-energies) that will be saved
+    Hₖ_dim = 2n_bands # dimension of the constructed 𝐻ₖ matrix (twice larger than the number of requested quasi-energies)
+    n_Hₖ_nonzeros = 9Hₖ_dim - 24s # number of non-zero elements in 𝐻ₖ
+    Hₖ_rows = Vector{Int}(undef, n_Hₖ_nonzeros)
+    Hₖ_cols = Vector{Int}(undef, n_Hₖ_nonzeros)
+    Hₖ_vals = Vector{ComplexF64}(undef, n_Hₖ_nonzeros)
+    for k in [0, 1] # iterate over the centre of BZ and then the boundary
+        hₖ[BM.band(0)] += [(2j + k)^2 + Vₗ/2 for j = -n_j:n_j]
+        # `a` and `b` control where to place the eigenvalues depedning on `k`; see description of `bands`
+        a = (k > 0)*n_bands + 1 # `(k > 0)` is zero for BZ centre (when `k == 0`) and unity otherwise
+        b = a+n_bands - 1
+        for (z, ϕ) in enumerate(phases)
+            hₖ[BM.band(-1)] .= Vₗ/4 * cis(2ϕ)
+            hₖ[BM.band(1)]  .= Vₗ/4 * cis(-2ϕ)
+            vals, vecs, info = eigsolve(hₖ, n_j, :SR; tol=1.0, krylovdim=n_j+10)
+            if info.converged < n_j
+                @warn "Only $(info.converged) eigenvalues out of $(n_j) converged when diagonalising ℎₖ. Results may be inaccurate." unconverged_norms=info.normres[info.converged+1:end]
+            end
+            ϵₖ .= vals[1:n_j]
+            cₖ .= vecs[1:n_j]
+            # println(info)
+
+            # Construct 𝐻ₖ
+            p = 1 # a counter for placing elements to the vectors Hₖ_*
+            for m in 1:Hₖ_dim
+                # place the diagonal element (S25)
+                Hₖ_rows[p] = Hₖ_cols[p] = m
+                Hₖ_vals[p] = ϵₖ[m] - ceil(m/2)*ω/s
+                p += 1
+
+                # place the elements of the long lattice (S26)
+                for i in 1:2
+                    m′ = 2s + 2(ceil(Int, m/2)-1) + i
+                    m′ > Hₖ_dim && break
+                    Hₖ_rows[p] = m′
+                    Hₖ_cols[p] = m
+                    # the index should run as `j = -n_j+2:n_j-2`, but we don't have negative indexes in the vector, so 
+                    j_sum = sum( (cₖ[m′][j+2]'*cₖ[m][j] + cₖ[m′][j-2]'*cₖ[m][j])/4 + cₖ[m′][j]'*cₖ[m][j]/2 for j = 3:2n_j-1 ) + 
+                            cₖ[m′][3]'*cₖ[m][1]/4 + cₖ[m′][1]'*cₖ[m][1]/2 +                     # iteration j = 1
+                            cₖ[m′][2n_j-1]'*cₖ[m][2n_j+1]/4 + cₖ[m′][2n_j+1]'*cₖ[m][2n_j+1]/2   # iteration j = 2n_j+1
+                    Hₖ_vals[p] = λₗ/2 * cis(-ϕ) * j_sum
+                    p += 1
+                    # place the conjugate element
+                    Hₖ_rows[p] = m
+                    Hₖ_cols[p] = m′
+                    Hₖ_vals[p] = Hₖ_vals[p-1]'
+                    p += 1
+                end
+                
+                # place the elements of the short lattice (S29)
+                for i in 1:2
+                    m′ = 4s + 2(ceil(Int, m/2)-1) + i
+                    m′ > Hₖ_dim && break
+                    Hₖ_rows[p] = m′
+                    Hₖ_cols[p] = m
+                    j_sum = sum( -(cₖ[m′][j+2]'*cₖ[m][j] + cₖ[m′][j-2]'*cₖ[m][j])/4 + cₖ[m′][j]'*cₖ[m][j]/2 for j = 3:2n_j-1 ) +
+                            -cₖ[m′][3]'*cₖ[m][1]/4 + cₖ[m′][1]'*cₖ[m][1]/2 +                     # iteration j = 1
+                            -cₖ[m′][2n_j-1]'*cₖ[m][2n_j+1]/4 + cₖ[m′][2n_j+1]'*cₖ[m][2n_j+1]/2   # iteration j = 2n_j+1
+                    Hₖ_vals[p] = λₛ/2 * j_sum
+                    p += 1
+                    # place the conjugate element
+                    Hₖ_rows[p] = m
+                    Hₖ_cols[p] = m′
+                    Hₖ_vals[p] = Hₖ_vals[p-1]'
+                    p += 1
+                end
+            end
+            Hₖ = sparse(Hₖ_rows, Hₖ_cols, Hₖ_vals)
+            vals, vecs, info = eigsolve(Hₖ, n_bands, :SR; tol=1.0, krylovdim=n_bands+10)
+            if info.converged < n_bands
+                @warn "Only $(info.converged) eigenvalues out of $(n_bands) converged when diagonalising 𝐻ₖ. Results may be inaccurate." unconverged_norms=info.normres[info.converged+1:end]
+            end
+            εₖ[a:b, z] .= vals[1:n_bands]
+        end
+    end
+    # return ϵₖ
+    return εₖ
+    # return Hₖ_rows
+end
+
+𝜈(m) = ceil(m/2)
+
+phases = range(0, 2π, length=50) # values of the adiabatic phase in (S32)
+n_bands = 30
+bands = compute_bands_exact(;n_bands, phases, s, l, gₗ, Vₗ, λₗ, λₛ, ω)
+
+fig1 = plot();
+for i in 1:n_bands
+    plot!(phases, bands[i, :], fillrange=bands[n_bands+i, :], fillalpha=0.1, label="band $i", legend=:outerright);
+end
+xlabel!(L"\varphi_t = \varphi_x"*", rad"); ylabel!("Floquet quasi-energy \varepsilon_{k,m}")
+
+ee = compute_bands_exact(;n_bands=30, phases=[0], s, l, gₗ, Vₗ, λₗ, λₛ, ω)
+scatter(zeros(length(ee)-2), ee[1:end-2])
+findfirst(x->x>7500, ee)
+ee2 = ee[80:end]
