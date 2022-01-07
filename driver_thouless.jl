@@ -184,9 +184,9 @@ function compute_bands_exact(; n_bands::Integer, phases::AbstractVector, s::Inte
     n_j = 2n_bands  # number of indices 𝑗 to use for constructing the Hamiltonian (its size will be (2n_j+1)×(2n_j+1))
     
     hₖ = BM.BandedMatrix(BM.Zeros{ComplexF64}(2n_j+1, 2n_j+1), (2l, 2l))
-    hₖ[BM.band(0)] .= binomial(2l, l)
+    # fill the off-diagonals with binomial numbers; the diagonal is treated in the `k` loop
     for n in 1:l
-        hₖ[BM.band(2n)] .= hₖ[BM.band(-2n)] .= gₗ ./ (4 .^ l) .* binomial(2l, l-n)
+        hₖ[BM.band(2n)] .= hₖ[BM.band(-2n)] .= gₗ / 4^l * binomial(2l, l-n)
     end
     
     ϵₖ = Vector{Float64}(undef, n_j) # eigenvalues of hₖ (eigenenergies of the unperturbed Hamiltonian)
@@ -199,7 +199,7 @@ function compute_bands_exact(; n_bands::Integer, phases::AbstractVector, s::Inte
     Hₖ_cols = Vector{Int}(undef, n_Hₖ_nonzeros)
     Hₖ_vals = Vector{ComplexF64}(undef, n_Hₖ_nonzeros)
     for k in [0, 1] # iterate over the centre of BZ and then the boundary
-        hₖ[BM.band(0)] += [(2j + k)^2 + Vₗ/2 for j = -n_j:n_j]
+        hₖ[BM.band(0)] .= [(2j + k)^2 + Vₗ/2 + gₗ / 4^l * binomial(2l, l) for j = -n_j:n_j]
         # `a` and `b` control where to place the eigenvalues depedning on `k`; see description of `bands`
         a = (k > 0)*n_bands + 1 # `(k > 0)` is zero for BZ centre (when `k == 0`) and unity otherwise
         b = a+n_bands - 1
@@ -212,7 +212,6 @@ function compute_bands_exact(; n_bands::Integer, phases::AbstractVector, s::Inte
             end
             ϵₖ .= vals[1:n_j]
             cₖ .= vecs[1:n_j]
-            # println(info)
 
             # Construct 𝐻ₖ
             p = 1 # a counter for placing elements to the vectors Hₖ_*
@@ -267,8 +266,8 @@ function compute_bands_exact(; n_bands::Integer, phases::AbstractVector, s::Inte
             εₖ[a:b, z] .= vals[1:n_bands]
         end
     end
-    # return ϵₖ
-    return εₖ
+    return ϵₖ
+    # return εₖ
     # return Hₖ_rows
 end
 
@@ -284,7 +283,7 @@ for i in 1:n_bands
 end
 xlabel!(L"\varphi_t = \varphi_x"*", rad"); ylabel!("Floquet quasi-energy \varepsilon_{k,m}")
 
-ee = compute_bands_exact(;n_bands=30, phases=[0], s, l, gₗ, Vₗ, λₗ, λₛ, ω)
+ee = compute_bands_exact(;n_bands=10, phases=[0], s, l, gₗ, Vₗ, λₗ, λₛ, ω)
 scatter(zeros(length(ee)-2), ee[1:end-2])
 findfirst(x->x>7500, ee)
 ee2 = ee[80:end]
