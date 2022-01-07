@@ -174,9 +174,10 @@ plot!(phases, Ek .- w)
 
 """
 Calculate `n_bands` energy bands of Hamiltonian (S20) sweeping over the adiabatic `phases` φₓ and φₜ.
-In the returned matrix of bands, columns numerate the adiabatic phase, while rows numerate eigenvalues.
-Rows `1:n_bands` store the eigenvalues corresponding to the centre of BZ, 𝑘 = 0.
-Rows `n_bands:end` store the eigenvalues corresponding to the boundary of BZ, in our case Vₗcos²(x+φₓ) leads to 𝑘 = 2/2 = 1.
+Return a tuple of a matrix `ϵₖ` of `2n_bands` bands of ℎₖ and a matrix `Eₖ` of `n_bands` bands of 𝐻ₖ.
+In the returned matrices, columns numerate the adiabatic phases, while rows numerate eigenvalues.
+In `Eₖ`, rows `1:n_bands` store the eigenvalues corresponding to the centre of BZ, 𝑘 = 0.
+In `Eₖ`, rows `n_bands:end` store the eigenvalues corresponding to the boundary of BZ, in our case Vₗcos²(x+φₓ) leads to 𝑘 = 2/2 = 1.
 The dimension of the constructed 𝐻ₖ matrix will be `2n_bands`, hence that many eigenvalues of ℎₖ will be required. This in turn
 required constructing ℎₖ of dimension `4n_bands`.
 """
@@ -189,10 +190,10 @@ function compute_bands_exact(; n_bands::Integer, phases::AbstractVector, s::Inte
         hₖ[BM.band(2n)] .= hₖ[BM.band(-2n)] .= gₗ / 4^l * binomial(2l, l-n)
     end
     
-    ϵₖ = Vector{Float64}(undef, n_j) # eigenvalues of hₖ (eigenenergies of the unperturbed Hamiltonian)
-    cₖ = [Vector{ComplexF64}(undef, 2n_j+1) for _ in 1:n_j]  # eigenvectors of hₖ
+    ϵₖ = Matrix{Float64}(undef, 2n_j, length(phases)) # eigenvalues of ℎₖ (eigenenergies of the unperturbed Hamiltonian)
+    cₖ = [Vector{ComplexF64}(undef, 2n_j+1) for _ in 1:n_j]  # eigenvectors of ℎₖ
     
-    Eₖ = Matrix{Float64}(undef, 2n_bands, length(phases)) # eigenvalues of 𝐻ₖ (Floquet quasi-energies) that will be saved
+    Eₖ = Matrix{Float64}(undef, 2n_bands, length(phases)) # eigenvalues of 𝐻ₖ (Floquet quasi-energies) that will be saved; size is twice `n_bands` for the two values of `k``
     Hₖ_dim = 2n_bands # dimension of the constructed 𝐻ₖ matrix (twice larger than the number of requested quasi-energies)
     n_Hₖ_nonzeros = 9Hₖ_dim - 24s # number of non-zero elements in 𝐻ₖ
     Hₖ_rows = Vector{Int}(undef, n_Hₖ_nonzeros)
@@ -200,9 +201,11 @@ function compute_bands_exact(; n_bands::Integer, phases::AbstractVector, s::Inte
     Hₖ_vals = Vector{ComplexF64}(undef, n_Hₖ_nonzeros)
     for k in [0, 1] # iterate over the centre of BZ and then the boundary
         hₖ[BM.band(0)] .= [(2j + k)^2 + Vₗ/2 + gₗ / 4^l * binomial(2l, l) for j = -n_j:n_j]
-        # `a` and `b` control where to place the eigenvalues depedning on `k`; see description of `bands`
-        a = (k > 0)*n_bands + 1 # `(k > 0)` is zero for BZ centre (when `k == 0`) and unity otherwise
-        b = a+n_bands - 1
+        # `a` and `b` control where to place the eigenvalues of 𝐻ₖ and ℎₖ depedning on `k`; see function docstring
+        a_Hₖ = (k > 0)*n_bands + 1 # `(k > 0)` is zero for BZ centre (when `k == 0`) and unity otherwise
+        b_Hₖ = a_Hₖ+n_bands - 1
+        a_hₖ = (k > 0)*n_j + 1 # `(k > 0)` is zero for BZ centre (when `k == 0`) and unity otherwise
+        b_hₖ = a_hₖ+n_j - 1
         for (z, ϕ) in enumerate(phases)
             hₖ[BM.band(-1)] .= Vₗ/4 * cis(2ϕ)
             hₖ[BM.band(1)]  .= Vₗ/4 * cis(-2ϕ)
@@ -210,7 +213,7 @@ function compute_bands_exact(; n_bands::Integer, phases::AbstractVector, s::Inte
             if info.converged < n_j
                 @warn "Only $(info.converged) eigenvalues out of $(n_j) converged when diagonalising ℎₖ. Results may be inaccurate." unconverged_norms=info.normres[info.converged+1:end]
             end
-            ϵₖ .= vals[1:n_j]
+            ϵₖ[a_hₖ:b_hₖ, z] = vals[1:n_j]
             cₖ .= vecs[1:n_j]
             # println(info)
 
@@ -219,7 +222,7 @@ function compute_bands_exact(; n_bands::Integer, phases::AbstractVector, s::Inte
             for m in 1:Hₖ_dim
                 # place the diagonal element (S25)
                 Hₖ_rows[p] = Hₖ_cols[p] = m
-                Hₖ_vals[p] = ϵₖ[m] - ceil(m/2)*ω/s
+                Hₖ_vals[p] = ϵₖ[m, z] - ceil(m/2)*ω/s
                 p += 1
 
                 # place the elements of the long lattice (S26)
@@ -264,25 +267,31 @@ function compute_bands_exact(; n_bands::Integer, phases::AbstractVector, s::Inte
             if info.converged < n_bands
                 @warn "Only $(info.converged) eigenvalues out of $(n_bands) converged when diagonalising 𝐻ₖ. Results may be inaccurate." unconverged_norms=info.normres[info.converged+1:end]
             end
-            Eₖ[a:b, z] .= vals[1:n_bands]
+            Eₖ[a_Hₖ:b_Hₖ, z] .= vals[1:n_bands]
         end
     end
     # return ϵₖ
-    return Eₖ
+    return ϵₖ, Eₖ
     # return Hₖ_rows
 end
 
 𝜈(m) = ceil(m/2)
 
-phases = range(0, 2π, length=50) # values of the adiabatic phase in (S32)
-n_bands = 20
-bands = compute_bands_exact(;n_bands, phases, s, l, gₗ, Vₗ, λₗ, λₛ, ω)
+phases = range(0, π, length=50) # values of the adiabatic phase in (S32)
+n_bands = 30
+ee, EE = compute_bands_exact(;n_bands, phases, s, l, gₗ, Vₗ, λₗ, λₛ, ω)
 
 fig1 = plot();
 for i in 1:n_bands
-    plot!(phases, bands[i, :], fillrange=bands[n_bands+i, :], fillalpha=0.1, label="band $i", legend=:outerright);
+    plot!(phases, EE[i, :], fillrange=EE[n_bands+i, :], fillalpha=0.1, label="band $i", legend=:outerright);
 end
 xlabel!(L"\varphi_t = \varphi_x"*", rad"); ylabel!("Floquet quasi-energy"*L"\varepsilon_{k,m}")
+
+fig2 = plot();
+for i in 1:2n_bands
+    plot!(phases, ee[i, :], fillrange=ee[2n_bands+i, :], fillalpha=0.1, label="band $i", legend=:outerright);
+end
+xlabel!(L"\varphi_x"*", rad"); ylabel!("Energy "*L"\epsilon_{k,m}")
 
 ee = compute_bands_exact(;n_bands=10, phases=[0], s, l, gₗ, Vₗ, λₗ, λₛ, ω)
 scatter(zeros(length(bands)), bands)
