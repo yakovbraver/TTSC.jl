@@ -34,7 +34,7 @@ Vₗ = 2000
 λₛ = 400; λₗ = 50; ω = 540;
 s = 2
 params = [gₗ, l, Vₗ, λₛ, λₗ, ω]
-# plot(range(0, 2π, length=200), x -> 𝐻₀(0, x, params))
+plot!(range(0, 2π, length=200), x -> 𝐻₀(0, x, params))
 H = SpacetimeHamiltonian(𝐻₀, 𝐻, params, s, (0.8, 1), (1.2, 1.8), 0.05)
 
 function plot_actions(H::SpacetimeHamiltonian)
@@ -192,7 +192,7 @@ function compute_bands_exact(; n_bands::Integer, phases::AbstractVector, s::Inte
     ϵₖ = Vector{Float64}(undef, n_j) # eigenvalues of hₖ (eigenenergies of the unperturbed Hamiltonian)
     cₖ = [Vector{ComplexF64}(undef, 2n_j+1) for _ in 1:n_j]  # eigenvectors of hₖ
     
-    εₖ = Matrix{Float64}(undef, 2n_bands, length(phases)) # eigenvalues of 𝐻ₖ (Floquet quasi-energies) that will be saved
+    Eₖ = Matrix{Float64}(undef, 2n_bands, length(phases)) # eigenvalues of 𝐻ₖ (Floquet quasi-energies) that will be saved
     Hₖ_dim = 2n_bands # dimension of the constructed 𝐻ₖ matrix (twice larger than the number of requested quasi-energies)
     n_Hₖ_nonzeros = 9Hₖ_dim - 24s # number of non-zero elements in 𝐻ₖ
     Hₖ_rows = Vector{Int}(undef, n_Hₖ_nonzeros)
@@ -212,6 +212,7 @@ function compute_bands_exact(; n_bands::Integer, phases::AbstractVector, s::Inte
             end
             ϵₖ .= vals[1:n_j]
             cₖ .= vecs[1:n_j]
+            # println(info)
 
             # Construct 𝐻ₖ
             p = 1 # a counter for placing elements to the vectors Hₖ_*
@@ -228,10 +229,10 @@ function compute_bands_exact(; n_bands::Integer, phases::AbstractVector, s::Inte
                     Hₖ_rows[p] = m′
                     Hₖ_cols[p] = m
                     # the index should run as `j = -n_j+2:n_j-2`, but we don't have negative indexes in the vector, so 
-                    j_sum = sum( (cₖ[m′][j+2]'*cₖ[m][j] + cₖ[m′][j-2]'*cₖ[m][j])/4 + cₖ[m′][j]'*cₖ[m][j]/2 for j = 3:2n_j-1 ) + 
-                            cₖ[m′][3]'*cₖ[m][1]/4 + cₖ[m′][1]'*cₖ[m][1]/2 +                     # iteration j = 1
-                            cₖ[m′][2n_j-1]'*cₖ[m][2n_j+1]/4 + cₖ[m′][2n_j+1]'*cₖ[m][2n_j+1]/2   # iteration j = 2n_j+1
-                    Hₖ_vals[p] = λₗ/2 * cis(-ϕ) * j_sum
+                    j_sum = sum( (cₖ[m′][j+2]/4 + cₖ[m′][j-2]/4 + cₖ[m′][j]/2)' * cₖ[m][j] for j = 3:2n_j-1 ) + 
+                            (cₖ[m′][3]/4 + cₖ[m′][1]/2)' * cₖ[m][1] +                # iteration j = 1
+                            (cₖ[m′][2n_j-1]/4 + cₖ[m′][2n_j+1]/2)' * cₖ[m][2n_j+1]   # iteration j = 2n_j+1
+                    Hₖ_vals[p] = λₗ * cis(-ϕ)/2 * j_sum
                     p += 1
                     # place the conjugate element
                     Hₖ_rows[p] = m
@@ -246,9 +247,9 @@ function compute_bands_exact(; n_bands::Integer, phases::AbstractVector, s::Inte
                     m′ > Hₖ_dim && break
                     Hₖ_rows[p] = m′
                     Hₖ_cols[p] = m
-                    j_sum = sum( -(cₖ[m′][j+2]'*cₖ[m][j] + cₖ[m′][j-2]'*cₖ[m][j])/4 + cₖ[m′][j]'*cₖ[m][j]/2 for j = 3:2n_j-1 ) +
-                            -cₖ[m′][3]'*cₖ[m][1]/4 + cₖ[m′][1]'*cₖ[m][1]/2 +                     # iteration j = 1
-                            -cₖ[m′][2n_j-1]'*cₖ[m][2n_j+1]/4 + cₖ[m′][2n_j+1]'*cₖ[m][2n_j+1]/2   # iteration j = 2n_j+1
+                    j_sum = sum( (-cₖ[m′][j+2]/4 - cₖ[m′][j-2]/4 + cₖ[m′][j]/2)' * cₖ[m][j] for j = 3:2n_j-1 ) + 
+                            (-cₖ[m′][3]/4 + cₖ[m′][1]/2)' * cₖ[m][1] +                # iteration j = 1
+                            (-cₖ[m′][2n_j-1]/4 + cₖ[m′][2n_j+1]/2)' * cₖ[m][2n_j+1]   # iteration j = 2n_j+1
                     Hₖ_vals[p] = λₛ/2 * j_sum
                     p += 1
                     # place the conjugate element
@@ -263,27 +264,25 @@ function compute_bands_exact(; n_bands::Integer, phases::AbstractVector, s::Inte
             if info.converged < n_bands
                 @warn "Only $(info.converged) eigenvalues out of $(n_bands) converged when diagonalising 𝐻ₖ. Results may be inaccurate." unconverged_norms=info.normres[info.converged+1:end]
             end
-            εₖ[a:b, z] .= vals[1:n_bands]
+            Eₖ[a:b, z] .= vals[1:n_bands]
         end
     end
-    return ϵₖ
-    # return εₖ
+    # return ϵₖ
+    return Eₖ
     # return Hₖ_rows
 end
 
 𝜈(m) = ceil(m/2)
 
 phases = range(0, 2π, length=50) # values of the adiabatic phase in (S32)
-n_bands = 30
+n_bands = 20
 bands = compute_bands_exact(;n_bands, phases, s, l, gₗ, Vₗ, λₗ, λₛ, ω)
 
 fig1 = plot();
 for i in 1:n_bands
     plot!(phases, bands[i, :], fillrange=bands[n_bands+i, :], fillalpha=0.1, label="band $i", legend=:outerright);
 end
-xlabel!(L"\varphi_t = \varphi_x"*", rad"); ylabel!("Floquet quasi-energy \varepsilon_{k,m}")
+xlabel!(L"\varphi_t = \varphi_x"*", rad"); ylabel!("Floquet quasi-energy"*L"\varepsilon_{k,m}")
 
 ee = compute_bands_exact(;n_bands=10, phases=[0], s, l, gₗ, Vₗ, λₗ, λₛ, ω)
-scatter(zeros(length(ee)-2), ee[1:end-2])
-findfirst(x->x>7500, ee)
-ee2 = ee[80:end]
+scatter(zeros(length(bands)), bands)
