@@ -164,7 +164,6 @@ Transformation is performed as follows: for each pair (𝑝ᵢ, 𝑥ᵢ), the en
 𝐸ᵢ = 𝐻₀(𝑝ᵢ, 𝑥ᵢ), and the energy is then converted to action using the function 𝐼(𝐸).
 To find the phase ϑᵢ, a period 𝑇ᵢ of unperturbed motion with energy 𝐸ᵢ is calculated, and the time moment 𝑡 corresponding to 
 the pair (𝑝ᵢ, 𝑥ᵢ) is found. The phase is then given by ϑᵢ = 2π𝑡/𝑇ᵢ.
-number of periods of the external driving to calculate evolution for
 """
 function compute_IΘ(H::SpacetimeHamiltonian, I_target::Real; ϑ₀::AbstractFloat=0.0, n_T::Integer=100)
     ω = H.params[end]
@@ -211,8 +210,14 @@ function compute_IΘ(H::SpacetimeHamiltonian, I_target::Real; ϑ₀::AbstractFlo
         else
             # use the sign of the coordinate to determine which part of the period the point (x[i]; p[i]) is in
             bracket = x[i] > x₀ ? (0.0, t_eq) : (t_eq, T_free)
-            # find the time corresponding to momentum `p[i]`
-            t = Roots.find_zero(t -> sol(t)[1] - p[i], bracket, Roots.A42(), xrtol=1e-3)
+            # Find the time corresponding to momentum `p[i]`:
+            f = t -> sol(t)[1] - p[i] # # construct the to-be-minimised function
+            # Check that `bracket` is indeed a bracketing interval. This might not be the case due to various inaccuracies.
+            if prod(f.(bracket)) < 0
+                t = Roots.find_zero(f, bracket, Roots.A42(), xrtol=1e-3)
+            else # otherwise, use the midpoint of the `bracket` as a starting point.
+                t = Roots.find_zero(f, (bracket[1]+bracket[2])/2) # Note that in this case the algorithm may occasionally converge to the zero in the wrong half of the period
+            end
         end
 
         Θ[i] = 2π * t / T_free # `-2π*(i-1)/H.s` is the -ω𝑡/𝑠 term that transforms to the moving frame. We have 𝑡ₙ = 𝑛𝑇, and ω𝑡ₙ = 2π𝑛
