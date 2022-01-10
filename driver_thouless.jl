@@ -34,7 +34,7 @@ Vₗ = 2000
 λₛ = 400; λₗ = 50; ω = 540;
 s = 2
 params = [gₗ, l, Vₗ, λₛ, λₗ, ω]
-plot!(range(0, 2π, length=200), x -> 𝐻₀(0, x, params))
+# plot!(range(0, 2π, length=200), x -> 𝐻₀(0, x, params))
 H = SpacetimeHamiltonian(𝐻₀, 𝐻, params, s, (0.8, 1), (1.2, 1.8), 0.05)
 
 function plot_actions(H::SpacetimeHamiltonian)
@@ -45,7 +45,7 @@ function plot_actions(H::SpacetimeHamiltonian)
     I = Dierckx.get_knots(H.𝐸)
     figs[2] = plot(I, H.𝐸(I), xlabel=L"I", ylabel=L"E", legend=false);
     figs[3] = plot(I, H.𝐸′, xlabel=L"I", ylabel=L"dE/dI", legend=false);
-    figs[4] = plot(I, H.𝐸″, xlabel=L"I", ylabel=L"d^2E/dI^2", legend=false, ylims=(-20, 20));
+    figs[4] = plot(I, H.𝐸″, xlabel=L"I", ylabel=L"d^2E/dI^2", legend=false, ylims=(-30, 15));
     lay = @layout [a{0.5w} grid(3,1)]
     plot(figs..., layout=lay)
     # savefig("H0.pdf")
@@ -81,7 +81,7 @@ eQ = cis(ϕₜ)*coeffs[2]
 Aₗ = abs(eQ); χₗ = angle(eQ)
 
 plot_isoenergies(; ω, M, λₛ, Aₛ, χₛ, λₗ, Aₗ, χₗ, Iₛ, s)
-levels = [range(-1000, 500, length=10); range(501, 750, length=10)]
+levels = [range(-1000, 500, length=10); range(501, 600, length=10)]
 plot_isoenergies(; ω, M, λₛ, Aₛ, χₛ, λₗ, Aₗ, χₗ, Iₛ, s, levels)
 savefig("secular-isoenergies.pdf")
 
@@ -114,7 +114,7 @@ Rows `1:n_bands` store the eigenvalues corresponding to the centre of BZ, 𝑘 =
 Rows `n_bands:end` store the eigenvalues corresponding to the boundary of BZ, in our case λₗAₗcos(sϑ+φₜ) leads to 𝑘 = s/2.
 """
 function compute_bands(; n_bands::Integer, phases::AbstractVector, s::Integer, M::Real, λₗAₗ::Real, λₛAₛ::Real)
-    n_j = 4n_bands # number of indices 𝑗 to use for constructing the Hamiltonian (its size will be (2n_j+1)×(2n_j+1))
+    n_j = 2n_bands # number of indices 𝑗 to use for constructing the Hamiltonian (its size will be (2n_j+1)×(2n_j+1))
     
     # Hamiltonian matrix
     H = BM.BandedMatrix{ComplexF64}(undef, (2n_j + 1, 2n_j + 1), (2, 2))
@@ -130,23 +130,23 @@ function compute_bands(; n_bands::Integer, phases::AbstractVector, s::Integer, M
         for (i, ϕ) in enumerate(phases)
             H[BM.band(-1)] .= λₗAₗ*cis(-ϕ)
             H[BM.band(1)]  .= λₗAₗ*cis(ϕ)
-            vals, _, _ = eigsolve(H, n_bands, :SR)
+            vals, _, _ = eigsolve(H, n_bands, :LR; krylovdim=n_bands+10)
             bands[a:b, i] .= vals[1:n_bands]
         end
     end
-    return bands / 4π # we do not include the factor 4π in the diagonalisation problem and restore it here
+    return bands / 2 # restore the omitted factor
 end
 
 phases = range(0, 2π, length=40) # values of the adiabatic phase in (S32)
 n_bands = 4
-bands = compute_bands(; n_bands, phases, s, M=abs(M), λₗAₗ=λₗ*Aₗ, λₛAₛ=λₛ*Aₛ)
+bands = compute_bands(; n_bands, phases, s, M, λₗAₗ=λₗ*Aₗ, λₛAₛ=λₛ*Aₛ) .+ H.𝐸(Iₛ) .- ω/s*Iₛ
 
 fig1 = plot();
 for i in 1:n_bands
     plot!(phases, bands[i, :], fillrange=bands[n_bands+i, :], fillalpha=0.35, label="band $i");
 end
 xlabel!(L"\varphi_t"*", rad"); ylabel!("Energy")
-savefig("bands.pdf")
+savefig("secular-bands.pdf")
 
 ### Extract tight-binding parameters
 
@@ -170,8 +170,6 @@ k = 1
 Ek = @. Δ^2*sin(phases)^2 + 2J₀^2 * (1+cos(k) + ε^2*sin(phases)^2 * (1-cos(k))) |> sqrt
 plot!(phases, Ek .- w)
 
-### (S23)
-
 """
 Calculate `n_bands` energy bands of Hamiltonian (S20) sweeping over the adiabatic `phases` φₓ and φₜ.
 Return a tuple of a matrix `ϵₖ` of `2n_bands` bands of ℎₖ and a matrix `Eₖ` of `n_bands` bands of 𝐻ₖ.
@@ -179,7 +177,7 @@ In the returned matrices, columns numerate the adiabatic phases, while rows nume
 In `Eₖ`, rows `1:n_bands` store the eigenvalues corresponding to the centre of BZ, 𝑘 = 0.
 In `Eₖ`, rows `n_bands:end` store the eigenvalues corresponding to the boundary of BZ, in our case Vₗcos²(x+φₓ) leads to 𝑘 = 2/2 = 1.
 The dimension of the constructed 𝐻ₖ matrix will be `2n_bands`, hence that many eigenvalues of ℎₖ will be required. This in turn
-required constructing ℎₖ of dimension `4n_bands`.
+requires constructing ℎₖ of dimension `4n_bands`.
 """
 function compute_bands_exact(; n_bands::Integer, phases::AbstractVector, s::Integer, l::Real, gₗ::Real, Vₗ::Real, λₗ::Real, λₛ::Real, ω::Real)
     n_j = 2n_bands  # number of indices 𝑗 to use for constructing the Hamiltonian (its size will be (2n_j+1)×(2n_j+1))
@@ -191,7 +189,7 @@ function compute_bands_exact(; n_bands::Integer, phases::AbstractVector, s::Inte
     end
     
     ϵₖ = Matrix{Float64}(undef, 2n_j, length(phases)) # eigenvalues of ℎₖ (eigenenergies of the unperturbed Hamiltonian)
-    cₖ = [Vector{ComplexF64}(undef, 2n_j+1) for _ in 1:n_j]  # eigenvectors of ℎₖ
+    cₖ = [Vector{ComplexF64}(undef, 2n_j+1) for _ in 1:2n_bands]  # eigenvectors of ℎₖ, we will save `2n_bands` of them, and each will have `2n_j+1` components
     
     Eₖ = Matrix{Float64}(undef, 2n_bands, length(phases)) # eigenvalues of 𝐻ₖ (Floquet quasi-energies) that will be saved; size is twice `n_bands` for the two values of `k``
     Hₖ_dim = 2n_bands # dimension of the constructed 𝐻ₖ matrix (twice larger than the number of requested quasi-energies)
@@ -263,7 +261,7 @@ function compute_bands_exact(; n_bands::Integer, phases::AbstractVector, s::Inte
                 end
             end
             Hₖ = sparse(Hₖ_rows, Hₖ_cols, Hₖ_vals)
-            vals, vecs, info = eigsolve(Hₖ, n_bands, :SR; tol=1.0, krylovdim=n_bands+10)
+            vals, vecs, info = eigsolve(Hₖ, n_bands, :LR; tol=1.0, krylovdim=n_bands+10)
             if info.converged < n_bands
                 @warn "Only $(info.converged) eigenvalues out of $(n_bands) converged when diagonalising 𝐻ₖ. Results may be inaccurate." unconverged_norms=info.normres[info.converged+1:end]
             end
@@ -272,26 +270,28 @@ function compute_bands_exact(; n_bands::Integer, phases::AbstractVector, s::Inte
     end
     # return ϵₖ
     return ϵₖ, Eₖ
-    # return Hₖ_rows
+    # return sparse(Hₖ_rows, Hₖ_cols, Hₖ_vals)
 end
 
-𝜈(m) = ceil(m/2)
-
 phases = range(0, π, length=50) # values of the adiabatic phase in (S32)
-n_bands = 30
+n_bands = 35
 ee, EE = compute_bands_exact(;n_bands, phases, s, l, gₗ, Vₗ, λₗ, λₛ, ω)
 
 fig1 = plot();
-for i in 1:n_bands
-    plot!(phases, EE[i, :], fillrange=EE[n_bands+i, :], fillalpha=0.1, label="band $i", legend=:outerright);
+for i in 1:10
+    plot!(phases, EE[i, :], fillrange=EE[n_bands+i, :], fillalpha=0.3, label=false)
 end
-xlabel!(L"\varphi_t = \varphi_x"*", rad"); ylabel!("Floquet quasi-energy"*L"\varepsilon_{k,m}")
+xlabel!(L"\varphi_t"*", rad"); ylabel!("Floquet quasi-energy "*L"\varepsilon_{k,m}")
+savefig("Floquet-quasienergy-phi_t.pdf")
+# xlabel!(L"\varphi_t = \varphi_x"*", rad"); ylabel!("Floquet quasi-energy "*L"\varepsilon_{k,m}")
+savefig("Floquet-quasienergy-phi_t-phi_x.pdf")
 
 fig2 = plot();
 for i in 1:2n_bands
-    plot!(phases, ee[i, :], fillrange=ee[2n_bands+i, :], fillalpha=0.1, label="band $i", legend=:outerright);
+    plot!(phases, ee[i, :], fillrange=ee[2n_bands+i, :], fillalpha=0.3, label=false);
 end
-xlabel!(L"\varphi_x"*", rad"); ylabel!("Energy "*L"\epsilon_{k,m}")
+xlabel!(L"\varphi_x"*", rad"); ylabel!("Eigenenergy "*L"\epsilon_{k,m}"*" of "*L"h_k"*" (S21)")
+savefig("h_k-spectrum.pdf")
 
 ee = compute_bands_exact(;n_bands=10, phases=[0], s, l, gₗ, Vₗ, λₗ, λₛ, ω)
 scatter(zeros(length(bands)), bands)
