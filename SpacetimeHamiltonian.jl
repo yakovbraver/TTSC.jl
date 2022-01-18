@@ -13,9 +13,9 @@ mutable struct SpacetimeHamiltonian
     𝑈::Function     # spatial potential
     left_tp::Tuple  # bracketing interval for the left turning point of the free motion
     right_tp::Tuple # bracketing interval for the right turning point of the free motion
-    𝐸::Dierckx.Spline1D # energy at the given angle, function 𝐸(𝐼)
-    𝐸′::Function    # oscillation frequency at the given angle, function 𝐸′(𝐼)
-    𝐸″::Function    # effective mass at the given angle, function 𝐸″(𝐼)
+    𝐸::Dierckx.Spline1D # energy at the given action, function 𝐸(𝐼)
+    𝐸′::Function    # oscillation frequency at the given action, function 𝐸′(𝐼)
+    𝐸″::Function    # effective mass at the given action, function 𝐸″(𝐼)
     params::Vector{Float64} # a vector of parameters, will be shared among 𝐻₀ and 𝐻; the last element should contain external frequency
     s::Int  # resonance number
 end
@@ -28,7 +28,7 @@ function SpacetimeHamiltonian(𝐻₀::Function, 𝐻::Function, params::Abstrac
                               min_pos::Tuple{<:Real, <:Real}, max_pos::Tuple{<:Real, <:Real}, turnpoint::Union{Real, Nothing}=nothing)
     𝑈 = x -> 𝐻₀(0.0, x, params)
     left_tp, right_tp = turning_point_intervals(𝑈, min_pos, max_pos, turnpoint)
-    𝐸, 𝐸′, 𝐸″ = make_action_functions(𝑈, right_tp...)
+    𝐸, 𝐸′, 𝐸″ = make_action_functions(𝑈, left_tp, right_tp)
     SpacetimeHamiltonian(𝐻₀, 𝐻, 𝑈, left_tp, right_tp, 𝐸, 𝐸′, 𝐸″, params, s)
 end
 
@@ -42,19 +42,19 @@ function turning_point_intervals(𝑈::Function, min_pos::Tuple{<:Real, <:Real},
     result = Optim.optimize(x -> 𝑈(first(x)), min_pos[1], min_pos[2], Optim.Brent())
     x_min = Optim.minimizer(result)
     
-    # find position the potential maximum
+    # find position of the potential maximum
     result = Optim.optimize(x -> -𝑈(first(x)), max_pos[1], max_pos[2], Optim.Brent())
     x_max = Optim.minimizer(result)
     E_max = -Optim.minimum(result)
 
-    if x_max > x_min
+    if x_max > x_min # if the located maximum is to the right of the minimum
         right_tp = (x_min, x_max)
         # if the `turnpoint` is not provided, calculate the left turning point assuming a symmetric well; 
         # otherwise, find the coordinate of the point giving `E_max` on the left wall
         x_max_left = turnpoint === nothing ? x_min - (x_max - x_min) :
                                              Roots.find_zero(x -> 𝑈(x) - E_max, (turnpoint, x_min), Roots.A42(), xrtol=1e-3)
         left_tp = (x_max_left, x_min)
-    else
+    else # if the located maximum is to the left of the minimum
         left_tp = (x_max, x_min)
         x_max_right = turnpoint === nothing ? x_min + (x_min - x_max) :
                                               Roots.find_zero(x -> 𝑈(x) - E_max, (x_min, turnpoint), Roots.A42(), xrtol=1e-3)
@@ -64,16 +64,15 @@ function turning_point_intervals(𝑈::Function, min_pos::Tuple{<:Real, <:Real},
 end
 
 "Construct and return the functions 𝐸(𝐼), 𝐸′(𝐼), and 𝐸″(𝐼)."
-function make_action_functions(𝑈::Function, x_min::Real, x_max::Real)
+function make_action_functions(𝑈::Function, left_tp::Tuple{<:Real, <:Real}, right_tp::Tuple{<:Real, <:Real})
     n_E = 100 # number of energies (and actions) to save
     I = Vector{Float64}(undef, n_E) # for storing values of the action variable
-    E = range(1.001𝑈(x_min), 0.999𝑈(x_max), length=n_E) # energies inside the potential "well"
+    E = range(1.001𝑈(right_tp[1]), 0.999𝑈(right_tp[2]), length=n_E) # energies inside the potential "well"
 
-    x_max = x_min # initialise `x_max` -- the second turning point
     for i in eachindex(E)
-        # we find the turning points manually beacuse we need them back for the next iteration
-        x_min, x_max = turning_points(𝑈, E[i], x_min - 0.05, x_max + 0.05)
-        I[i] = 𝐼(𝑈, E[i], (x_min, x_max))
+        x_min, x_max = turning_points(𝑈, E[i], left_tp, right_tp)
+        # calculate ∫𝑝d𝑥 for a half-period; the second half is the same, hence no division by 2
+        I[i] = quadgk(x -> 𝑝(𝑈, E[i], x), x_min, x_max, rtol=1e-4)[1] / π # `[1]` contains the integral, `[2]` contains error
     end
     
     𝐸  = Dierckx.Spline1D(I, E; k=2)      
@@ -83,12 +82,12 @@ function make_action_functions(𝑈::Function, x_min::Real, x_max::Real)
 end
 
 """
-Return the turning points of motion with the given energy `E`. The initial guesses `a` and `b` may be given as single numbers
-or as tuples representing the bracketing interval.
+Return the turning points of motion with the given energy `E`. The initial guesses `a` and `b` should be given as
+tuples representing the bracketing intervals.
 """
-function turning_points(𝑈::Function, E::Real, a::Union{<:Real, Tuple{<:Real, <:Real}}, b::Union{<:Real, Tuple{<:Real, <:Real}})
-    x_min = Roots.find_zero(x -> 𝑈(x) - E, a, atol=1e-5)
-    x_max = Roots.find_zero(x -> 𝑈(x) - E, b, atol=1e-5)
+function turning_points(𝑈::Function, E::Real, a::Tuple{<:Real, <:Real}, b::Tuple{<:Real, <:Real})
+    x_min = Roots.find_zero(x -> 𝑈(x) - E, a, atol=1e-2, Roots.A42())
+    x_max = Roots.find_zero(x -> 𝑈(x) - E, b, atol=1e-2, Roots.A42())
     return x_min, x_max
 end
 
@@ -100,21 +99,12 @@ end
 
 """
 Return action for the given energy `E` as the integral of momentum over a period of motion.
-The turning points should be specified as a tuple `turnpoints`.
-"""
-function 𝐼(𝑈::Function, E::Real, turnpoints::Tuple{<:Real, <:Real})
-    x_min, x_max = turnpoints
-    # calculate ∫𝑝d𝑥 for a half-period; the second half is the same, hence no division by 2
-    return quadgk(x -> 𝑝(𝑈, E, x), x_min, x_max, rtol=1e-4)[1] / π # `[1]` contains the integral, `[2]` contains error
-end
-
-"""
-Return action for the given energy `E` as the integral of momentum over a period of motion.
 The turning points will be determined using the bracketing intervals `H.left_tp` and `H.right_tp`.
 """
 function 𝐼(H::SpacetimeHamiltonian, E::Real)
     x_min, x_max = turning_points(H.𝑈, E, H.left_tp, H.right_tp)
-    return quadgk(x -> 𝑝(H.𝑈, E, x), x_min, x_max, rtol=1e-4)[1] / π
+    # calculate ∫𝑝d𝑥 for a half-period; the second half is the same, hence no division by 2
+    return quadgk(x -> 𝑝(H.𝑈, E, x), x_min, x_max, rtol=1e-4)[1] / π # `[1]` contains the integral, `[2]` contains error
 end
 
 """
@@ -211,7 +201,7 @@ function compute_IΘ(H::SpacetimeHamiltonian, I_target::Real; ϑ₀::AbstractFlo
             # use the sign of the coordinate to determine which part of the period the point (x[i]; p[i]) is in
             bracket = x[i] > x₀ ? (0.0, t_eq) : (t_eq, T_free)
             # Find the time corresponding to momentum `p[i]`:
-            f = t -> sol(t)[1] - p[i] # # construct the to-be-minimised function
+            f = t -> sol(t)[1] - p[i] # construct the to-be-minimised function
             # Check that `bracket` is indeed a bracketing interval. This might not be the case due to various inaccuracies.
             if prod(f.(bracket)) < 0
                 t = Roots.find_zero(f, bracket, Roots.A42(), xrtol=1e-3)
