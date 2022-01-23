@@ -74,14 +74,15 @@ function compute_floquet_bands(; n_bands::Integer, phases::AbstractVector, s::In
                 hₖ[BM.band(1)]  .= Vₗ/4 * cis(-2ϕ)
                 vals, vecs, info = eigsolve(hₖ, n_j, :SR; krylovdim=n_j+10)
                 if info.converged < n_j
-                    @warn "Only $(info.converged) eigenvalues out of $(n_j) converged when diagonalising ℎₖ. Results may be inaccurate." unconverged_norms=info.normres[info.converged+1:end]
+                    @warn "Only $(info.converged) eigenvalues out of $(n_j) converged when diagonalising ℎₖ."*
+                          "Results may be inaccurate." unconverged_norms=info.normres[info.converged+1:end]
                 end
                 ϵₖ[a_hₖ:b_hₖ, z] = vals[1:n_j]
                 cₖ .= vecs[1:n_j]
             end
 
             # Construct 𝐻ₖ
-            p = 1 # a counter for placing elements to the vectors Hₖ_*
+            p = 1 # a counter for placing elements to the vectors `Hₖ_*`
             for m in 1:Hₖ_dim
                 # place the diagonal element (S25)
                 Hₖ_rows[p] = Hₖ_cols[p] = m
@@ -95,11 +96,14 @@ function compute_floquet_bands(; n_bands::Integer, phases::AbstractVector, s::In
                     m′ > Hₖ_dim && break
                     Hₖ_rows[p] = m′
                     Hₖ_cols[p] = m
-                    # the index should run as `j = -n_j+2:n_j-2`, but we don't have negative indexes in the vector, so 
-                    j_sum = sum( (cₖ[m′][j+2]/4 + cₖ[m′][j-2]/4 + cₖ[m′][j]/2)' * cₖ[m][j] for j = 3:2n_j-1 ) + 
-                                 (cₖ[m′][3]/4 + cₖ[m′][1]/2)' * cₖ[m][1] +                # iteration j = 1
-                                 (cₖ[m′][2n_j-1]/4 + cₖ[m′][2n_j+1]/2)' * cₖ[m][2n_j+1]   # iteration j = 2n_j+1
-                    Hₖ_vals[p] = (pumptype == :space ? λₗ/2 * j_sum : λₗ/2 * j_sum * cis(-ϕ))
+                    if pumptype != :time || z == 1 # If pumping is time-only, this may be calculated only once
+                        j_sum = sum( (cₖ[m′][j+2]/4 + cₖ[m′][j-2]/4 + cₖ[m′][j]/2)' * cₖ[m][j] for j = 3:2n_j-1 ) + 
+                                     (cₖ[m′][3]/4 + cₖ[m′][1]/2)' * cₖ[m][1] +                # iteration j = 1
+                                     (cₖ[m′][2n_j-1]/4 + cₖ[m′][2n_j+1]/2)' * cₖ[m][2n_j+1]   # iteration j = 2n_j+1
+                        Hₖ_vals[p] = (pumptype == :space ? λₗ/2 * j_sum : λₗ/2 * j_sum * cis(-ϕ)) # a check for space or space-time pumping
+                    elseif pumptype == :time 
+                        Hₖ_vals[p] *= cis(-(phases[2]-phases[1]))
+                    end
                     p += 1
                     # place the conjugate element
                     Hₖ_rows[p] = m
@@ -114,10 +118,12 @@ function compute_floquet_bands(; n_bands::Integer, phases::AbstractVector, s::In
                     m′ > Hₖ_dim && break
                     Hₖ_rows[p] = m′
                     Hₖ_cols[p] = m
-                    j_sum = sum( (-cₖ[m′][j+2]/4 - cₖ[m′][j-2]/4 + cₖ[m′][j]/2)' * cₖ[m][j] for j = 3:2n_j-1 ) + 
-                                 (-cₖ[m′][3]/4 + cₖ[m′][1]/2)' * cₖ[m][1] +                # iteration j = 1
-                                 (-cₖ[m′][2n_j-1]/4 + cₖ[m′][2n_j+1]/2)' * cₖ[m][2n_j+1]   # iteration j = 2n_j+1
-                    Hₖ_vals[p] = λₛ/2 * j_sum
+                    if pumptype != :time || z == 1 # If pumping is time-only, this may be calculated only once
+                        j_sum = sum( (-cₖ[m′][j+2]/4 - cₖ[m′][j-2]/4 + cₖ[m′][j]/2)' * cₖ[m][j] for j = 3:2n_j-1 ) + 
+                                     (-cₖ[m′][3]/4 + cₖ[m′][1]/2)' * cₖ[m][1] +                # iteration j = 1
+                                     (-cₖ[m′][2n_j-1]/4 + cₖ[m′][2n_j+1]/2)' * cₖ[m][2n_j+1]   # iteration j = 2n_j+1
+                        Hₖ_vals[p] = λₛ/2 * j_sum
+                    end
                     p += 1
                     # place the conjugate element
                     Hₖ_rows[p] = m
@@ -127,9 +133,10 @@ function compute_floquet_bands(; n_bands::Integer, phases::AbstractVector, s::In
                 end
             end
             Hₖ = sparse(Hₖ_rows, Hₖ_cols, Hₖ_vals)
-            vals, vecs, info = eigsolve(Hₖ, n_bands, :LR; krylovdim=n_bands+10)
+            vals, _, info = eigsolve(Hₖ, n_bands, :LR; krylovdim=n_bands+10)
             if info.converged < n_bands
-                @warn "Only $(info.converged) eigenvalues out of $(n_bands) converged when diagonalising 𝐻ₖ. Results may be inaccurate." unconverged_norms=info.normres[info.converged+1:end]
+                @warn "Only $(info.converged) eigenvalues out of $(n_bands) converged when diagonalising 𝐻ₖ."*
+                      "Results may be inaccurate." unconverged_norms=info.normres[info.converged+1:end]
             end
             Eₖ[a_Hₖ:b_Hₖ, z] .= vals[1:n_bands]
         end
