@@ -36,10 +36,10 @@ function plot_actions(H::SpacetimeHamiltonian)
     figs[4] = plot(I, H.𝐸″, xlabel=L"I", ylabel=L"d^2E/dI^2", xlims=(I[1], I[end]), legend=false);
     lay = @layout [a{0.5w} grid(3,1)]
     plot(figs..., layout=lay)
-    # savefig("H0.pdf")
 end
 
 plot_actions(H)
+savefig("h_0-parameters.pdf")
 
 ### Make a plot of the motion in the (𝐼, ϑ) phase-space in the secular approximation
 
@@ -61,7 +61,7 @@ end
 
 pₛ = abs(coeffs[1])
 plot_isoenergies(; pₛ, M, λ, ω, Iₛ, s)
-savefig("exact-isoenergies.pdf")
+savefig("secular-isoenergies.pdf")
 
 ### Make an "exact" plot of the motion in the (𝐼, ϑ) phase-space
 
@@ -71,7 +71,4 @@ for i in [2:2:34; Iₛ; 36:39]
     scatter!(mod2pi.(Θ.+pi/2), I, xlabel=L"\theta", ylabel=L"I", markerstrokewidth=0, markeralpha=0.6, label=false)
 end
 display(fig)
-
-fig = plot();
-title!(L"\lambda = 0.01")
-savefig("lambda0.01.pdf")
+savefig("exact-isoenergies.pdf")
