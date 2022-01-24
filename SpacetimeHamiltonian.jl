@@ -22,7 +22,7 @@ end
 
 """
 Construct a `SpacetimeHamiltonian` object. `min_pos` and `max_pos` are the bracketing intervals for the minimum and the maximum
-of the spatial potential.`turnpoint` is required if the potential is not symmetric, see [`turning_point_intervals`](@ref).
+of the spatial potential. `turnpoint` is required if the potential is not symmetric, see [`turning_point_intervals`](@ref).
 """
 function SpacetimeHamiltonian(𝐻₀::Function, 𝐻::Function, params::AbstractVector, s::Integer,
                               min_pos::Tuple{<:Real, <:Real}, max_pos::Tuple{<:Real, <:Real}, turnpoint::Union{Real, Nothing}=nothing)
@@ -34,7 +34,7 @@ end
 
 """
 Return the possible intervals of the turning points for motion in the potential 𝑈. A minimum and a maximum of the potential will be found
-using the bracketing intervals `min_pos` and `max_pos`. If the heights of the "walls" of potential are not equal, a `turnpoint` has to be provided.
+using the bracketing intervals `min_pos` and `max_pos`. If the heights of the "walls" of the potential are not equal, a `turnpoint` has to be provided.
 For example, if the left wall is higher than the right one, the left turning point will be searched for in the interval (`turnpoint`, `x_min`).
 """
 function turning_point_intervals(𝑈::Function, min_pos::Tuple{<:Real, <:Real}, max_pos::Tuple{<:Real, <:Real}, turnpoint::Union{Real, Nothing})
@@ -109,8 +109,8 @@ end
 
 """
 Return the action and mass at the working point. Also return the 𝑚th Fourier coefficient for every function in `perturbations`,
-where the integer numbers 𝑚 are specified in `m`. `perturbations` are the spatial functions that couple the temporal perturbations,
-and their signature is `f(p, x) = ...`.
+where the integer numbers 𝑚 are specified in `m`. `perturbations` are the spatial functions that couple the temporal perturbations;
+Their signature is `f(p, x) = ...`.
 """
 function compute_parameters(H::SpacetimeHamiltonian, perturbations::Vector{Function}, m::Vector{<:Integer})
     ω = H.params[end]
