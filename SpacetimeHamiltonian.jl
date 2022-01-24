@@ -154,6 +154,8 @@ Transformation is performed as follows: for each pair (𝑝ᵢ, 𝑥ᵢ), the en
 𝐸ᵢ = 𝐻₀(𝑝ᵢ, 𝑥ᵢ), and the energy is then converted to action using the function 𝐼(𝐸).
 To find the phase ϑᵢ, a period 𝑇ᵢ of unperturbed motion with energy 𝐸ᵢ is calculated, and the time moment 𝑡 corresponding to 
 the pair (𝑝ᵢ, 𝑥ᵢ) is found. The phase is then given by ϑᵢ = 2π𝑡/𝑇ᵢ.
+Note that some energy 𝐸ᵢ may be such large (due to the perturbation) that the system in no longer confined to a single potential well. In that case,
+no corresponding action 𝐼(𝐸ᵢ) exists. This will happen if `I_target` is too large. An `ArgumentError` will be thrown in that case.
 """
 function compute_IΘ(H::SpacetimeHamiltonian, I_target::Real; ϑ₀::AbstractFloat=0.0, n_T::Integer=100)
     ω = H.params[end]
@@ -173,9 +175,17 @@ function compute_IΘ(H::SpacetimeHamiltonian, I_target::Real; ϑ₀::AbstractFlo
     sol = DiffEq.solve(H_problem, DiffEq.KahanLi8(); dt=2e-4, saveat=T_external)
     p = sol[1, :]
     x = sol[2, :]
-    E = map((p, x) -> H.𝐻₀(p, x, H.params), p, x)
-    I = map(x -> 𝐼(H, x), E)
-    
+    E = map((p, x) -> H.𝐻₀(p, x, H.params), p, x) # energies that the free system would possess if it was at `x` with momenta `p`
+    I = try
+        map(x -> 𝐼(H, x), E)
+    catch ex
+        if ex isa ArgumentError # we use `rethrow` instead of `throw` because the exact stacktrace will not make sense for the user anyway
+            rethrow(ArgumentError("value I_target = $(I_target) is too large.\nPerturbation takes the system out of the potential well.\n"))
+        else
+            rethrow(ex)
+        end
+    end
+
     # for all the equations below, the initial position is chosen to be the potential minimum
     x₀ = H.right_tp[1]
 
@@ -209,7 +219,6 @@ function compute_IΘ(H::SpacetimeHamiltonian, I_target::Real; ϑ₀::AbstractFlo
                 t = Roots.find_zero(f, (bracket[1]+bracket[2])/2) # Note that in this case the algorithm may occasionally converge to the zero in the wrong half of the period
             end
         end
-
         Θ[i] = 2π * t / T_free # `-2π*(i-1)/H.s` is the -ω𝑡/𝑠 term that transforms to the moving frame. We have 𝑡ₙ = 𝑛𝑇, and ω𝑡ₙ = 2π𝑛
     end
     return I, Θ
