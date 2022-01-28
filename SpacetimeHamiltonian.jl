@@ -154,8 +154,9 @@ Transformation is performed as follows: for each pair (𝑝ᵢ, 𝑥ᵢ), the en
 𝐸ᵢ = 𝐻₀(𝑝ᵢ, 𝑥ᵢ), and the energy is then converted to action using the function 𝐼(𝐸).
 To find the phase ϑᵢ, a period 𝑇ᵢ of unperturbed motion with energy 𝐸ᵢ is calculated, and the time moment 𝑡 corresponding to 
 the pair (𝑝ᵢ, 𝑥ᵢ) is found. The phase is then given by ϑᵢ = 2π𝑡/𝑇ᵢ.
-Note that some energy 𝐸ᵢ may be such large (due to the perturbation) that the system in no longer confined to a single potential well. In that case,
-no corresponding action 𝐼(𝐸ᵢ) exists. This will happen if `I_target` is too large. An `ArgumentError` will be thrown in that case.
+Note that some energy 𝐸ⱼ may be such large (due to the perturbation) that the system is no longer confined to a single potential well. In that case,
+no corresponding action 𝐼(𝐸ⱼ) exists. This will happen if `I_target` is too large. In that case, an info message will be printed,
+and energies starting with 𝐸ⱼ will be ignored.
 """
 function compute_IΘ(H::SpacetimeHamiltonian, I_target::Real; ϑ₀::AbstractFloat=0.0, n_T::Integer=100)
     ω = H.params[end]
@@ -175,16 +176,21 @@ function compute_IΘ(H::SpacetimeHamiltonian, I_target::Real; ϑ₀::AbstractFlo
     sol = DiffEq.solve(H_problem, DiffEq.KahanLi8(); dt=2e-4, saveat=T_external)
     p = sol[1, :]
     x = sol[2, :]
-    E = map((p, x) -> H.𝐻₀(p, x, H.params), p, x) # energies that the free system would possess if it was at `x` with momenta `p`
-    I = try
-        map(x -> 𝐼(H, x), E)
-    catch ex
-        if ex isa ArgumentError # we use `rethrow` instead of `throw` because the exact stacktrace will not make sense for the user anyway
-            rethrow(ArgumentError("value I_target = $(I_target) is too large.\nPerturbation takes the system out of the potential well.\n"))
-        else
-            rethrow(ex)
+    
+    # Calculate the energies that the free system would possess if it was at `x` with momenta `p`
+    E = Float64[]
+    sizehint!(E, length(sol.t))
+    for (pᵢ, xᵢ) in zip(p, x)
+        Eᵢ = H.𝐻₀(pᵢ, xᵢ, H.params)
+        if Eᵢ < H.𝑈(H.left_tp[1])
+            push!(E, Eᵢ)
+        else # Interrupt if energy `Eᵢ` exceeds that of the barrier. All subsequent energies are of no interest then.
+            @info "Perturbation deconfines the particle if it starts at action 𝐼 = $I_target."
+            break
         end
     end
+
+    I = map(x -> 𝐼(H, x), E)
 
     # for all the equations below, the initial position is chosen to be the potential minimum
     x₀ = H.right_tp[1]
@@ -198,8 +204,8 @@ function compute_IΘ(H::SpacetimeHamiltonian, I_target::Real; ϑ₀::AbstractFlo
         H₀_problem = HamiltonianProblem(H.𝐻₀, p₀, x₀, tspan, H.params)
         sol = DiffEq.solve(H₀_problem, DiffEq.McAte5(); dt=2e-4)
 
-        # Find the time point when the equilibrium point (i.e. the potential minimum) is reached.
-        # The coordinate will be positive in (0; t_eq) and negative in (t_eq; T_free).
+        # Find the time point when the equilibrium point x₀ (i.e. the potential minimum) is reached.
+        # The coordinate will be greater than x₀ at times in (0; t_eq) and less than x₀ at times in (t_eq; T_free).
         t_eq = Roots.find_zero(t -> sol(t)[2] - x₀, T_free/2)
 
         # If the coordinate `x[i]` is very close to potential minimum `x₀`, the momentum `p[i]` may lie just outside of the bracketing interval,
