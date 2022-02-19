@@ -27,18 +27,14 @@ function 𝑄ₗ(p::Real, x::Real)
     cos(2x)^2
 end
 
-g = 4200; l = 3;
+g = 6000; l = 1;
 gₗ = 2g*factorial(l) / √π / gamma(l + 0.5)
-Vₗ = 15
+Vₗ = 20
 
-λₛ = 360; λₗ = 40; ω = 535.5
+λₛ = 200; λₗ = 75; ω = 391
 s = 2
 params = [gₗ, l, Vₗ, λₛ, λₗ, ω]
 H = SpacetimeHamiltonian(𝐻₀, 𝐻, params, s, (0.8, 1.1), (1.2, 1.8), 0.001)
-
-x = range(0, 2π, length=200)
-plot!(x, x -> 𝐻₀(0, x, params)) # Spatial potential
-surface(x, x, (x, t) -> 𝐻₀(0, x, params) + λₛ*𝑄ₛ(0,x)*cos(2ω*t) + λₗ*𝑄ₗ(0,x)*cos(ω*t), xlabel="x", ylabel="t") # Space-time potential
 
 function plot_actions(H::SpacetimeHamiltonian)
     figs = [plot() for _ in 1:4];
@@ -51,7 +47,6 @@ function plot_actions(H::SpacetimeHamiltonian)
     figs[4] = plot(I, H.𝐸″, xlabel=L"I", ylabel=L"d^2E/dI^2", legend=false, ylims=(-30, 30));
     lay = @layout [a{0.5w} grid(3,1)]
     plot(figs..., layout=lay)
-    # savefig("H0.pdf")
 end
 
 plot_actions(H)
@@ -78,29 +73,27 @@ end
 Iₛ, M, coeffs = compute_parameters(H, Function[𝑄ₛ, 𝑄ₗ], [-2s, -s])
 
 Aₛ = abs(coeffs[1]); χₛ = angle(coeffs[1])
-ϕₜ = 0.5
+ϕₜ = 0.0
 eQ = cis(ϕₜ)*coeffs[2]
 Aₗ = abs(eQ); χₗ = angle(eQ)
 
-plot_isoenergies(; ω, M, λₛ, Aₛ, χₛ, λₗ, Aₗ, χₗ, Iₛ, s, I_min=20)
+I_min = 22
+plot_isoenergies(; ω, M, λₛ=λₛ, Aₛ, χₛ, λₗ=λₗ, Aₗ, χₗ, Iₛ, s, I_min)
 savefig("secular-isoenergies.pdf")
 
 ### Make an "exact" plot of the motion in the (𝐼, ϑ) phase-space
 
 fig = plot();
-for i in 30:40
-    println(i)
+for i in 22:0.5:28
     I, Θ = compute_IΘ(H, i, n_T=150, ϑ₀=0.0)
     scatter!(Θ, I, xlabel=L"\theta, rad", ylabel=L"I", markerstrokewidth=0, markeralpha=0.6, label=false, minorgrid=true, minorticks=5)
 end
-for i in 30:40
-    println(i)
+for i in 22:0.5:28
     I, Θ = compute_IΘ(H, i, n_T=150, ϑ₀=0.75)
-    scatter!(Θ, I, xlabel=L"\theta, rad", ylabel=L"I", markerstrokewidth=0, markeralpha=0.6, label=false)
+    scatter!(Θ, I, xlabel=L"\theta, rad", ylabel=L"I", markerstrokewidth=0, markeralpha=0.6, label=false, minorgrid=true, minorticks=5)
 end
-ylims!((30, last(Dierckx.get_knots(H.𝐸))))
+ylims!((I_min, last(Dierckx.get_knots(H.𝐸))))
 title!(L"\ell = %$l, g = %$g, V_L = %$Vₗ, \lambda_S = %$λₛ, \lambda_L = %$λₗ, \omega = %$ω")
-display(fig)
 savefig(fig, "exact-isoenergies.pdf")
 
 ### Calculate secular bands
@@ -108,7 +101,7 @@ savefig(fig, "exact-isoenergies.pdf")
 include("bandsolvers.jl")
 
 phases = range(0, π, length=51) # values of the adiabatic phase in (S32)
-n_bands = 4
+n_bands = 2
 bands = compute_secular_bands(; n_bands, phases, s, M, λₗAₗ=λₗ*Aₗ, λₛAₛ=λₛ*Aₛ) .+ H.𝐸(Iₛ) .- ω/s*Iₛ
 
 fig2 = plot();
@@ -117,82 +110,134 @@ for i in 1:n_bands
 end
 xlabel!(L"\varphi_t"*", rad"); ylabel!("Energy of quantised secular "*L"H"*" (S17)")
 title!(L"\omega = %$ω, \lambda_L = %$λₗ, \lambda_S = %$λₛ")
-savefig("secular-bands.pdf")
+savefig("semiclassical-bands.pdf")
 
 ### Extract tight-binding parameters
+
+function tb_parameters(E_0_0, E_0_pi)
+    J₀ = E_0_pi / 2
+    Δ = √(E_0_0^2 - 4J₀^2)
+    return J₀, Δ
+end
 
 gap = bands[1, 1] - bands[2, 1]
 w = bands[1, 1] - gap/2
 
-function tb_parameters(E_0_0, E_0_pi, E_k_pi, k)
-    J₀ = E_0_pi / 2
-    Δ = √(E_0_0^2 - 4J₀^2)
-    # ε = (E_k_pi^2 - Δ^2 - 2J₀^2 * (1+cos(k))) / (2J₀^2 * (1-cos(k))) |> sqrt
-    return J₀, Δ#, ε
-end
-
-J₀, Δ = tb_parameters(gap/2, bands[1, end÷2]-w, 1.053+w, 1)
+J₀, Δ = tb_parameters(gap/2, bands[1, end÷2]-w)
 E0 = @. sqrt(Δ^2*cos(phases)^2 + 4J₀^2)
 title!("Fit patameters: "*L"\Delta = %$(round(Δ, sigdigits=3)), J_0 = %$(round(J₀, sigdigits=3)), w = %$(round(w, sigdigits=3))")
 plot!(phases, E0 .+ w, c=:white, label=L"\pm\sqrt{\Delta^{2}\cos^{2}\varphi_t+4J_{0}^{2}}+w", legend=:bottomright, lw=0.5)
 plot!(phases, -E0 .+ w, c=:white, label=false, lw=0.5)
 
-# k = 1
-# Ek = @. Δ^2*sin(phases)^2 + 2J₀^2 * (1+cos(k) + ε^2*sin(phases)^2 * (1-cos(k))) |> sqrt
-# plot!(phases, Ek .- w)
-
 ### Calculate Floquet bands
 
 phases = range(0, π, length=51) # values of the adiabatic phase in (S32)
-n_bands = 45
-ee, EE = compute_floquet_bands(;n_bands, phases, s, l, gₗ, Vₗ, λₗ, λₛ, ω, pumptype=:space)
+n_min = 15
+n_max = 30
+n_bands = n_max-n_min+1
+eₖ, Eₖ = compute_floquet_bands(;n_min, n_max, phases, s, l, gₗ, Vₗ=Vₗ, λₗ=λₗ, λₛ=λₛ, ω=ω, pumptype=:spacetime)
 
 fig1 = plot();
 for i in 1:n_bands
-    plot!(phases, EE[i, :], fillrange=EE[n_bands+i, :], fillalpha=0.3, label=false)
+    plot!(phases, Eₖ[i, :], fillrange=Eₖ[n_bands+i, :], fillalpha=0.3, label=false)
 end
-xlabel!(L"\varphi_t"*", rad"); ylabel!("Floquet quasi-energy "*L"\varepsilon_{k,m}")
-ylims!((EE[end, end÷4], -1500))
-ylims!((280, EE[1, end÷4]+10))
-ylims!((-1075, -1045))
-title!("Pumping in time ("*L"\varphi_x"*" is constant)")
-title!("Pumping in space")
-title!("Pumping in space ("*L"\varphi_t"*" is constant)")
-savefig("pumping-temporal.pdf")
+xlabel!(L"2\varphi_t=\varphi_x"*", rad"); ylabel!("Floquet quasi-energy "*L"\varepsilon_{k,m}")
+title!("2D pumping. "*L"\ell = %$l, g = %$g, V_L = %$Vₗ, \lambda_S = %$λₛ, \lambda_L = %$λₗ, \omega = %$ω")
+savefig("pumping-both.pdf")
+ylims!((4895, 4945))
 
-b = 20
+b = 1
 # spatial fit
-gap = EE[b, 1] - EE[b+2, 1] |> abs
-w = EE[b, 1] - gap/2 |> abs
-J₀, Δ = tb_parameters(EE[b, end÷4]+w, gap/2, 1.053+w, 1)
+gap = Eₖ[b, 1] - Eₖ[b+2, 1] |> abs
+w = Eₖ[b, 1] - gap/2 |> abs
+J₀, Δ = tb_parameters(Eₖ[b, end÷4]-w, gap/2)
 E0 = @. sqrt(Δ^2*sin(2phases)^2 + 4J₀^2)
-plot!(phases, E0 .- w, c=:white, label=L"\pm\sqrt{\Delta^{2}\sin^{2}2\varphi_x+4J_{0}^{2}}+w", legend=:bottomright, lw=0.5)
+plot!(phases, E0 .+ w, c=:white, label=L"\pm\sqrt{\Delta^{2}\sin^{2}2\varphi_x+4J_{0}^{2}}+w", legend=:bottomright, lw=0.5)
 # temporal fit
-gap = EE[b, 1] - EE[b+5, 1] |> abs
-w = EE[b, 1] - gap/2 |> abs
-J₀, Δ = tb_parameters(gap/2, EE[b, end÷2]+w, 1.053+w, 1)
-E0 = @. sqrt(Δ^2*cos(phases)^2 + 4J₀^2)
-plot!(phases, E0 .- w, c=:white, label=L"\pm\sqrt{\Delta^{2}\cos^{2}\varphi_t+4J_{0}^{2}}+w", legend=:bottomright, lw=0.5)
+gap = Eₖ[b, 1] - Eₖ[b+5, 1] |> abs
+w = Eₖ[b, 1] - gap/2 |> abs
+J₀, Δ = tb_parameters(gap/2, Eₖ[b, end÷4]-w)
+E0 = @. sqrt(Δ^2*cos(2phases)^2 + 4J₀^2)
+plot!(phases, E0 .+ w, c=:white, label=L"\pm\sqrt{\Delta^{2}\cos^{2}\varphi_t+4J_{0}^{2}}+w", legend=:bottomright, lw=0.5)
 
-plot!(phases, -E0 .- w, c=:white, label=false, lw=0.5)
-title!("Fit patameters: "*L"\Delta = %$(round(Δ, sigdigits=3)), J_0 = %$(round(J₀, sigdigits=3)), w = %$(round(-w, sigdigits=3))")
+plot!(phases, -E0 .+ w, c=:white, label=false, lw=0.5)
+title!("Space pumping. Parameters: "*L"\Delta = %$(round(Δ, sigdigits=3)), J_0 = %$(round(J₀, sigdigits=3)), w = %$(round(-w, sigdigits=3))")
+savefig("pumping-space.pdf")
 
 fig2 = plot();
+x = range(0, π, length=200)
+plot!(x, x -> 𝐻₀(0, x, params), lw=2, c=:white, label=false) # Spatial potential
 for i in 1:2n_bands
-    plot!(phases, ee[i, :], fillrange=ee[2n_bands+i, :], fillalpha=0.3, label=false);
+    plot!(phases, eₖ[i, :], fillrange=eₖ[2n_bands+i, :], fillalpha=0.3, label="band $i")
 end
 title!("Energy spectrum of "*L"h_k"*" (S21)")
+ylims!((7750, 8500))
 xlabel!(L"\varphi_x"*", rad"); ylabel!("Eigenenergy "*L"\epsilon_{k,m}"*" of "*L"h_k"*" (S21)")
 savefig("h_k-spectrum.pdf")
 
-b = 40
-shift = abs(EE[b, 1] - bands[1, 1])
-plot!(phases, bands[1, :].-shift, fillrange=bands[4+1, :].-shift, fillalpha=0.3, label="secular bands 1 and 2", c=:white)
-plot!(phases, bands[2, :].-shift, fillrange=bands[4+2, :].-shift, fillalpha=0.3, label=false, c=:white)
-title!("Pumping in time, comparison with secular result")
-savefig("exact-vs-secular.pdf")
-findfirst(<(-1050), EE[1:end, 1])
-EE[25, 1]
+b = 3
+shift = abs(Eₖ[b, 1] - bands[1, 1])
+plot!(phases, bands[1, :].-shift, fillrange=bands[2+1, :].-shift, fillalpha=0.3, label="semiclassical bands 1 and 2", c=:white)
+plot!(phases, bands[2, :].-shift, fillrange=bands[2+2, :].-shift, fillalpha=0.3, label=false, c=:white)
+title!("Pumping in time, comparison with semiclassical result")
+savefig("floquet-vs-semiclassical-2.pdf")
+findfirst(<(-1390), Eₖ[1:end, 1])
+plot(phases, Eₖ[19, :])
 
-findfirst(>(-1504), EE[1:end, 1])
-ee[24*2, 1] - ee[26*2, 1]
+### Plot band Minkowski sums
+
+function make_silhouettes(energies, bandnumbers, n_sils)
+    simple_bands = Matrix{Float64}(undef, 2n_sils, size(energies, 2))
+    n = size(energies, 1) ÷ 2
+    for i in 1:n_sils
+        simple_bands[i, :] .= max.(energies[bandnumbers[i], :], energies[n+bandnumbers[i], :])
+        simple_bands[n_sils+i, :] .= min.(energies[bandnumbers[n_sils+i], :], energies[n+bandnumbers[n_sils+i], :])
+    end
+    return simple_bands
+end
+
+relevant_bands = 1 .+ [0, 2, 1, 5]
+relevant_bands = 1 .+ [2, 6, 5, 7]
+n_sils = length(relevant_bands) ÷ 2
+spacebands = make_silhouettes(Eₖ, relevant_bands, n_sils)
+
+fig1 = plot();
+for i in 1:n_sils
+    plot!(phases, spacebands[i, :], fillrange=spacebands[n_sils+i, :], fillalpha=0.3, label=false)
+end
+xlabel!(L"2\varphi_t=\varphi_x"*", rad"); ylabel!("Floquet quasi-energy "*L"\varepsilon_{k,m}")
+title!("2D spacetime bands")
+savefig("2D-bands.pdf")
+
+function sum_bands(bands)
+    n = size(bands, 1)÷2        # number of input bands
+    N = round(Int, (n+1)*n÷2)   # number of output bands
+    summed = Matrix{Float64}(undef, 2N, size(bands, 2))
+    i = 1
+    for b1 in 1:n
+        for b2 in b1:n
+            summed[i, :] = bands[b1, :].+bands[b2, :]
+            summed[i+N, :] = bands[b1+n, :].+bands[b2+n, :]
+            i += 1 
+        end
+    end
+    summed
+end
+
+function plot_summed_bands(bands)
+    n = size(bands, 1) ÷ 2
+    fig = plot()
+    for i in 1:n
+        plot!(phases, bands[i, :], fillrange=bands[i+n, :], fillalpha=0.3, label=false)
+        hline!([maximum(bands[i, :]), minimum(bands[i+n, :])], c=:white, label=false)
+    end
+    return fig
+end
+
+su = sum_bands(spacebands)
+sr = sum_bands(su)
+fig = plot_summed_bands(sr)
+xlabel!(L"2\varphi_t=\varphi_x"*", rad"); ylabel!("Floquet quasi-energy "*L"\varepsilon_{k,m}")
+title!("6D spacetime bands")
+ylims!((19720, 19753))
+savefig("6D-bands.pdf")
