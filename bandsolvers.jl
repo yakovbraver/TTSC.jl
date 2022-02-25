@@ -32,6 +32,153 @@ function compute_secular_bands(; n_bands::Integer, phases::AbstractVector, s::In
     return bands / 2 # restore the omitted factor
 end
 
+function compute_bands_with_boundary(; n_bands::Integer, phases::AbstractVector, M::Real, λₗAₗ::Real, λₛAₛ::Real)
+    n_j = 20 # number of indices 𝑗 to use for constructing the Hamiltonian (its size will be (2n_j+1)×(2n_j+1))
+    
+    X(j′, j) = 32*j*j′ / (π*((j-j′)^2-16)*((j+j′)^2-16))
+
+    # # Hamiltonian matrix
+    # H_rows, H_cols, H_vals = Float64[], Float64[], Float64[]
+    # sizehint!(H_rows, (2n_j-1)^2)    
+    # sizehint!(H_cols, (2n_j-1)^2)    
+    # sizehint!(H_vals, (2n_j-1)^2)
+    # # Fill X's; skip zeroth row and column
+    # for j′ = [-n_j:1, 1:n_j]
+    #     for j = [-n_j+!(j′&1):-1, 1+!(j′&1):n_j] # start with `-n_j+1` if `j′` is even, and just `-n_j` otherwise
+    #         push!(H_cols, j′); push!(H_rows, j)
+    #         push!(H_vals, X(j′, j)) * sin(ϕ)
+    #     end
+    # end
+    # # Fill the main diagonal, skip cells (±4, ±4) and (±2, ±2)
+    # for j = [-n_j:-5, 3, -1:1, 3, 5:n_j]
+    #     push!(H_cols, j); push!(H_rows, j)
+    #     push!(H_vals, j^2/8M)
+    # end
+    # # Fill (±4, ±4)
+    # push!(H_cols, 4); push!(H_rows, 4)
+    # push!(H_vals, 4^2/8M - λₛAₛ/2)
+    # push!(H_cols, -4); push!(H_rows, -4)
+    # push!(H_vals, 4^2/8M - λₛAₛ/2)
+    # # Fill (±2, ±2)
+    # push!(H_cols, 2); push!(H_rows, 2)
+    # push!(H_vals, 2^2/8M - λₗAₗ*cos(ϕ)/2)
+    # push!(H_cols, -2); push!(H_rows, -2)
+    # push!(H_vals, 2^2/8M - λₗAₗ*cos(ϕ)/2)
+    # # Fill the main diagonal, skip cells (±4, ±4) and (±2, ±2)
+    # for j = [-n_j:-5, 3, -1:1, 3, 5:n_j]
+    #     push!(H_cols, j); push!(H_rows, j)
+    #     push!(H_vals, j^2/8M)
+    # end
+    # # Fill λₛAₛ diagonals
+    # for j′ = [-n_j:-8, -7, -5:-3, -2:-1, 1:n_j-8]
+    #     j = j′ + 8
+    #     push!(H_cols, j′); push!(H_rows, j)
+    #     push!(H_vals, λₛAₛ/2)
+    #     # place conjugate element
+    #     push!(H_cols, j); push!(H_rows, j′)
+    #     push!(H_vals, λₛAₛ/2)
+    # end
+    # # Fill (2, -6) and (-6, 2)
+    # push!(H_rows, 2); push!(H_cols, -6); 
+    # push!(H_vals, λₛAₛ/2 - λₗAₗ*cos(ϕ)/2)
+    # push!(H_cols, -6); push!(H_rows, 2)
+    # push!(H_vals, λₛAₛ/2 - λₗAₗ*cos(ϕ)/2)
+    # # Fill (-2, 6) and (6, -2)
+    # push!(H_rows, -2); push!(H_cols, 6); 
+    # push!(H_vals, λₛAₛ/2 - λₗAₗ*cos(ϕ)/2)
+    # push!(H_cols, 6); push!(H_rows, -2)
+    # push!(H_vals, λₛAₛ/2 - λₗAₗ*cos(ϕ)/2)
+
+    H_rows, H_cols, H_vals = Float64[], Float64[], Float64[]
+    sizehint!(H_rows, (2n_j-1)^2)    
+    sizehint!(H_cols, (2n_j-1)^2)    
+    sizehint!(H_vals, (2n_j-1)^2)
+    for j in [-n_j:-1; 1:n_j]
+        cols = j < 0 ? [j:-1; 1:n_j] : j:n_j
+        for j′ in cols
+            val = 0.0
+            if abs(j′ + j) % 2 == 1 # if `j′ + j` is odd
+                val += X(j′, j) * sin(0)
+            else
+                # check diagonals "\"
+                if j′ == j
+                    val += j^2 / 8M
+                elseif j′ == j - 4 || j′ == j + 4
+                    val += λₗAₗ * cos(0) / 2
+                elseif j′ == j - 8 || j′ == j + 8
+                    val += λₛAₛ / 2
+                end
+                # check diagonals "/"
+                if j′ == -j - 4 || j′ == -j + 4
+                    val += -λₗAₗ * cos(0) / 2
+                elseif j′ == -j - 8 || j′ == -j + 8
+                    val += -λₛAₛ / 2
+                end
+            end
+            if val != 0 || abs(j′ + j) % 2 == 1
+                # Push the non-zero element to the conjugate positions; also "shift" the indices because they must start from 1
+                push!(H_rows, j′+n_j+1); push!(H_cols, j+n_j+1)
+                push!(H_vals, val)
+                # println("($j′, $j): $val")
+                if j′ != j
+                    push!(H_rows, j+n_j+1); push!(H_cols, j′+n_j+1)
+                    push!(H_vals, val)
+                end
+            end
+        end
+    end
+    # return sparse(H_rows, H_cols, H_vals)
+
+    H = sparse(H_rows, H_cols, H_vals)
+    bands = Matrix{Float64}(undef, n_bands, length(phases))
+    # format of eigenstates is `states[phase][eigenstate_number][j]`
+    states = [[Vector{Float64}(undef, 2n_j+1) for _ in 1:n_bands] for _ in 1:length(phases)]  # eigenvectors of 𝐻, we will save `n_bands` of them, and each will have `2n_j+1` components
+    for (i, ϕ) in enumerate(phases)
+        vals_counter = 1
+        for j in [-n_j:-1; 1:n_j]
+            cols = j < 0 ? [j:-1; 1:n_j] : j:n_j
+            for j′ in cols
+                val = 0.0
+                if abs(j′ + j) % 2 == 1 # if `j′ + j` is odd
+                    val += X(j′, j) * sin(ϕ)
+                else
+                    # check diagonals "\"
+                    if j′ == j
+                        val += j^2 / 8M
+                    elseif j′ == j - 4 || j′ == j + 4
+                        val += λₗAₗ * cos(ϕ) / 2
+                    elseif j′ == j - 8 || j′ == j + 8
+                        val += λₛAₛ / 2
+                    end
+                    # check diagonals "/"
+                    if j′ == -j - 4 || j′ == -j + 4
+                        val += -λₗAₗ * cos(ϕ) / 2
+                    elseif j′ == -j - 8 || j′ == -j + 8
+                        val += -λₛAₛ / 2
+                    end
+                end
+                if val != 0 || abs(j′ + j) % 2 == 1
+                    H_vals[vals_counter] = val
+                    vals_counter += 1
+                    if j′ != j
+                        H_vals[vals_counter] = val
+                        vals_counter += 1
+                    end
+                end
+            end
+        end
+        H = sparse(H_rows, H_cols, H_vals)
+        vals, vecs, info = eigsolve(H, n_bands, :LR; krylovdim=30)
+        if info.converged < n_bands
+            @warn "Only $(info.converged) eigenvalues out of $(n_bands) converged when diagonalising 𝐻. "*
+                  "Results may be inaccurate." unconverged_norms=info.normres[info.converged+1:end]
+        end
+        states[i] .= vecs[1:n_bands]
+        bands[:, i] .= vals[1:n_bands]
+    end
+    return bands, states
+end
+
 """
 Calculate energy bands of the Floquet Hamiltonian (S20) sweeping over the adiabatic `phases` φₓ. It is assumed that 2φₜ = φₓ.
 Energy levels of the unperturbed Hamiltonian ℎₖ from `2n_min` to `2n_max` will be used for constructing the Floquet Hamiltonian.

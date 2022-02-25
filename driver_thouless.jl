@@ -164,6 +164,8 @@ plot!(phases, -E0 .+ w, c=:white, label=false, lw=0.5)
 title!("Space pumping. Parameters: "*L"\Delta = %$(round(Δ, sigdigits=3)), J_0 = %$(round(J₀, sigdigits=3)), w = %$(round(-w, sigdigits=3))")
 savefig("pumping-space.pdf")
 
+# plot calculated energy spectrum of ℎₖ
+
 fig2 = plot();
 x = range(0, π, length=200)
 plot!(x, x -> 𝐻₀(0, x, params), lw=2, c=:white, label=false) # Spatial potential
@@ -174,6 +176,10 @@ title!("Energy spectrum of "*L"h_k"*" (S21)")
 ylims!((7750, 8500))
 xlabel!(L"\varphi_x"*", rad"); ylabel!("Eigenenergy "*L"\epsilon_{k,m}"*" of "*L"h_k"*" (S21)")
 savefig("h_k-spectrum.pdf")
+
+# compare classical vs quantum energies of ℎₖ
+scatter(n_min+0.5:n_max+0.5, I -> H.𝐸(I-1), xlabel=L"I=n+1/2", ylabel=L"E", label="classical", legend=:topleft) # not sure why have to use `I-1` instead `I`
+scatter!(n_min+0.5:n_max+0.5, eₖ[1:2:2n_bands, 1], label="quantum")
 
 b = 3
 shift = abs(Eₖ[b, 1] - bands[1, 1])
@@ -241,3 +247,31 @@ xlabel!(L"2\varphi_t=\varphi_x"*", rad"); ylabel!("Floquet quasi-energy "*L"\var
 title!("6D spacetime bands")
 ylims!((19720, 19753))
 savefig("6D-bands.pdf")
+
+### Boundary conditions
+
+phases = range(0, π, length=10)
+n_bands = 8
+bands, states = compute_bands_with_boundary(; n_bands, phases, M, λₗAₗ=λₗ*Aₗ, λₛAₛ=λₛ*Aₛ)
+fig = plot()
+for i in 1:n_bands
+    plot!(phases, bands[i, :], label="band $i")
+end
+display(fig)
+
+# plot states
+
+function make_coordinate_state(x::AbstractVector{<:Real}, coeffs::AbstractVector{<:Number})
+    ψ = zeros(eltype(coeffs), length(x))
+    for (j, c) in enumerate(coeffs)
+        @. ψ += c * sin(j/2 * x)
+    end
+    return ψ ./ π
+end
+
+x = range(0, 2π, length=101)
+i_ϕ = 7
+U = @. (λₗ*Aₗ*cos(2x + phases[i_ϕ]) + λₛ*Aₛ*cos(4x)) / 10
+ψ = make_coordinate_state(x, states[i_ϕ][5])
+plot(x, U)
+plot!(x, ψ)
