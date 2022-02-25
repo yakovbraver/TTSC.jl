@@ -250,14 +250,18 @@ savefig("6D-bands.pdf")
 
 ### Boundary conditions
 
-phases = range(0, π, length=10)
+phases = range(0, 2π, length=51)
 n_bands = 8
-bands, states = compute_bands_with_boundary(; n_bands, phases, M, λₗAₗ=λₗ*Aₗ, λₛAₛ=λₛ*Aₛ)
+bands, states = compute_qc_bands_with_boundary(; phases, M, λₗAₗ=λₗ*Aₗ, λₛAₛ=λₛ*Aₛ)
+pyplot()
+
 fig = plot()
 for i in 1:n_bands
     plot!(phases, bands[i, :], label="band $i")
 end
 display(fig)
+xlabel!(L"\varphi_t"*", rad"); ylabel!("Eigenenergy of "*L"H"*" (S32)")
+savefig("bands.pdf")
 
 # plot states
 
@@ -270,8 +274,11 @@ function make_coordinate_state(x::AbstractVector{<:Real}, coeffs::AbstractVector
 end
 
 x = range(0, 2π, length=101)
-i_ϕ = 7
+i_ϕ = 13
 U = @. (λₗ*Aₗ*cos(2x + phases[i_ϕ]) + λₛ*Aₛ*cos(4x)) / 10
-ψ = make_coordinate_state(x, states[i_ϕ][5])
-plot(x, U)
-plot!(x, ψ)
+ψ = make_coordinate_state(x, states[i_ϕ][:, 8])
+plot(x, U, label="potential")
+plot!(x, ψ, label="wavefunction of band 7")
+xlabel!(L"\theta"*", rad"); ylabel!(L"\psi_n(\theta)")
+title!("Wavefunctions at "*L"\varphi_t=0")
+savefig("wavefunctions0.pdf")
