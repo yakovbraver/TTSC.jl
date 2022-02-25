@@ -102,7 +102,7 @@ include("bandsolvers.jl")
 
 phases = range(0, π, length=51) # values of the adiabatic phase in (S32)
 n_bands = 2
-bands = compute_secular_bands(; n_bands, phases, s, M, λₗAₗ=λₗ*Aₗ, λₛAₛ=λₛ*Aₛ) .+ H.𝐸(Iₛ) .- ω/s*Iₛ
+bands = compute_qc_bands(; n_bands, phases, s, M, λₗAₗ=λₗ*Aₗ, λₛAₛ=λₛ*Aₛ) .+ H.𝐸(Iₛ) .- ω/s*Iₛ
 
 fig2 = plot();
 for i in 1:n_bands

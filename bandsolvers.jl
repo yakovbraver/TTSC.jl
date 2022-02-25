@@ -4,12 +4,12 @@ using KrylovKit: eigsolve
 using LinearAlgebra: eigen
 
 """
-Calculate `n_bands` energy bands of Hamiltonian (S32) sweeping over the adiabatic `phases` (φₜ in (S32)).
+Calculate `n_bands` of "quasiclassical" energy bands of Hamiltonian (S32) sweeping over the adiabatic `phases` (φₜ in (S32)).
 In the returned matrix of bands, columns enumerate the adiabatic phases, while rows enumerate eigenvalues.
 Rows `1:n_bands` store the eigenvalues corresponding to the centre of BZ, 𝑘 = 0.
 Rows `n_bands:end` store the eigenvalues corresponding to the boundary of BZ, in our case λₗAₗcos(sϑ+φₜ) leads to 𝑘 = s/2.
 """
-function compute_secular_bands(; n_bands::Integer, phases::AbstractVector, s::Integer, M::Real, λₗAₗ::Real, λₛAₛ::Real)
+function compute_qc_bands(; n_bands::Integer, phases::AbstractVector{<:Real}, s::Integer, M::Real, λₗAₗ::Real, λₛAₛ::Real)
     n_j = 2n_bands # number of indices 𝑗 to use for constructing the Hamiltonian (its size will be (2n_j+1)×(2n_j+1))
     
     # Hamiltonian matrix
@@ -91,7 +91,7 @@ The structure of `ϵₖ` is the same, but with `2Δn` instead of `Δn`.
 Type of pumping is controlled via `pumptype`: `:time` for temporal, `:space` for spatial, or anything else for simultaneous space-time pumping.
 Note that if `pumptype==:time`, ℎₖ is diagonalised only once (as the spatial phase is constant), hence only the first column of `ϵₖ` is populated.
 """
-function compute_floquet_bands(; n_min::Integer, n_max::Integer, phases::AbstractVector, s::Integer, l::Real, gₗ::Real, Vₗ::Real, λₗ::Real, λₛ::Real, ω::Real, pumptype::Symbol)
+function compute_floquet_bands(; n_min::Integer, n_max::Integer, phases::AbstractVector{<:Real}, s::Integer, l::Real, gₗ::Real, Vₗ::Real, λₗ::Real, λₛ::Real, ω::Real, pumptype::Symbol)
     n_j = 2n_max # number of indices 𝑗 to use for constructing ℎₖ (its size will be (2n_j+1)×(2n_j+1)). `2n_max` is a safe value, but it could be less.
     Δn = n_max - n_min + 1
 
