@@ -34,44 +34,42 @@ function compute_qc_bands(; n_bands::Integer, phases::AbstractVector{<:Real}, s:
 end
 
 """
-Calculate all "quasiclassical" energy bands of Hamiltonian (S32) with boundaries sweeping over the adiabatic `phases` (φₜ in (S32)).
-Return a tuple (`bands`, `state`): `bands[:, p]` stores eigenenergies at `p`th phase, while `states[p][:, n]` stores `n`th eigenvector at `p`th phase.
+Calculate all "quasiclassical" energy bands of Hamiltonian (S32) with boundaries, sweeping over the adiabatic `phases` (φₜ in (S32)).
+Return a tuple (`bands`, `states`): `bands[:, p]` stores eigenenergies at `p`th phase, while `states[p][:, m]` stores `m`th eigenvector at `p`th phase.
 Bands and states are sorted in energy-descending order so that for `M` negative, the bands of interest will be the first ones.
+Parameter `n` is the number of cells in the lattice; the eigenfunctions will be calculated as a superposition of functions sin(𝑗𝑥/𝑛) / √(𝑛π/2)
 """
-function compute_qc_bands_with_boundary(; phases::AbstractVector{<:Real}, M::Real, λₗAₗ::Real, λₛAₛ::Real)    
-    X(j′, j) = 32*j*j′ / (π*((j-j′)^2-16)*((j+j′)^2-16))
+function compute_qc_bands_with_boundary(; phases::AbstractVector{<:Real}, M::Real, λₗAₗ::Real, λₛAₛ::Real, n::Integer=2)    
+    X(j′, j) = 16n*j*j′ / (π*((j-j′)^2-(2n)^2)*((j+j′)^2-(2n)^2))
     
-    n_j = 20 # number of indices 𝑗 to use for constructing the Hamiltonian (its size will be (2n_j+1)×(2n_j+1))
-    H_dim = 2n_j+1
-    H = zeros(H_dim, H_dim)
+    n_j = 100 # number of indices 𝑗 to use for constructing the Hamiltonian
+    H = zeros(n_j, n_j)
     # for storing eigenstates and eigenvectors, see function docstring for format
-    bands = Matrix{Float64}(undef, H_dim, length(phases))
-    states = [Matrix{Float64}(undef, H_dim, H_dim) for _ in 1:length(phases)]
+    bands = Matrix{Float64}(undef, n_j, length(phases))
+    states = [Matrix{Float64}(undef, n_j, n_j) for _ in 1:length(phases)]
     for (i, ϕ) in enumerate(phases)
-        for j in [-n_j:-1; 1:n_j]
-            cols = j < 0 ? [j:-1; 1:n_j] : j:n_j
-            for j′ in cols
+        for j in 1:n_j
+            for j′ in 1:n_j
                 val = 0.0
                 if abs(j′ + j) % 2 == 1 # if `j′ + j` is odd
-                    val += X(j′, j) * sin(ϕ)
+                    val += λₗAₗ * X(j′, j) * sin(ϕ)
                 else
                     # check diagonals "\"
                     if j′ == j
-                        val += j^2 / 8M
-                    elseif j′ == j - 4 || j′ == j + 4
+                        val += j^2 / (2M * n^2)
+                    elseif j′ == j - 2n || j′ == j + 2n
                         val += λₗAₗ * cos(ϕ) / 2
-                    elseif j′ == j - 8 || j′ == j + 8
+                    elseif j′ == j - 4n || j′ == j + 4n
                         val += λₛAₛ / 2
                     end
                     # check diagonals "/"
-                    if j′ == -j - 4 || j′ == -j + 4
+                    if j′ == -j - 2n || j′ == -j + 2n
                         val += -λₗAₗ * cos(ϕ) / 2
-                    elseif j′ == -j - 8 || j′ == -j + 8
+                    elseif j′ == -j - 4n || j′ == -j + 4n
                         val += -λₛAₛ / 2
                     end
                 end
-                # Push the element to the conjugate positions; also "shift" the indices because they must start from 1
-                H[j′+n_j+1, j+n_j+1] = H[j+n_j+1, j′+n_j+1] = val
+                H[j′, j] = H[j, j′] = val # push the element to the conjugate positions
             end
         end
         bands[:, i], states[i] = eigen(H, sortby=-) # sort in descending order

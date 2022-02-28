@@ -251,8 +251,9 @@ savefig("6D-bands.pdf")
 ### Boundary conditions
 
 phases = range(0, 2π, length=51)
-n_bands = 8
-bands, states = compute_qc_bands_with_boundary(; phases, M, λₗAₗ=λₗ*Aₗ, λₛAₛ=λₛ*Aₛ)
+n_cells = 2
+n_bands = 2n_cells
+bands, states = compute_qc_bands_with_boundary(; phases, M=M, λₗAₗ=λₗ*Aₗ, λₛAₛ=λₛ*Aₛ, n=n_cells)
 pyplot()
 
 fig = plot()
@@ -261,24 +262,26 @@ for i in 1:n_bands
 end
 display(fig)
 xlabel!(L"\varphi_t"*", rad"); ylabel!("Eigenenergy of "*L"H"*" (S32)")
-savefig("bands.pdf")
+savefig("bands-2.pdf")
 
 # plot states
 
-function make_coordinate_state(x::AbstractVector{<:Real}, coeffs::AbstractVector{<:Number})
+function make_coordinate_state(x::AbstractVector{<:Real}, coeffs::AbstractVector{<:Number}; n=2)
     ψ = zeros(eltype(coeffs), length(x))
     for (j, c) in enumerate(coeffs)
-        @. ψ += c * sin(j/2 * x)
+        @. ψ += c * sin(j/n * x)
     end
-    return ψ ./ π
+    return ψ ./ (n*π/2)
 end
 
-x = range(0, 2π, length=101)
-i_ϕ = 13
-U = @. (λₗ*Aₗ*cos(2x + phases[i_ϕ]) + λₛ*Aₛ*cos(4x)) / 10
-ψ = make_coordinate_state(x, states[i_ϕ][:, 8])
-plot(x, U, label="potential")
-plot!(x, ψ, label="wavefunction of band 7")
+x = range(0, n_cells*π, length=101)
+i_ϕ = 37
+U = @. (λₗ*Aₗ*cos(2x + phases[i_ϕ]) + λₛ*Aₛ*cos(4x))
+plot(x, U, label="potential", c=:white, legend=:outerright)
+for i = 1:n_bands
+    ψ = make_coordinate_state(x, states[i_ϕ][:, i], n=n_cells) .+ bands[i, i_ϕ]
+    hline!([bands[i, i_ϕ]], c=:white, ls=:dot, label=false); plot!(x, ψ, label=L"\psi_{%$i}(\theta)", c=i)
+end
 xlabel!(L"\theta"*", rad"); ylabel!(L"\psi_n(\theta)")
-title!("Wavefunctions at "*L"\varphi_t=0")
-savefig("wavefunctions0.pdf")
+title!("Wavefunctions at "*L"\varphi_t=3pi/2")
+savefig("wf-2-3pi2.pdf")
