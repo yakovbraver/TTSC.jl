@@ -72,7 +72,7 @@ function compute_qc_bands_with_boundary(; phases::AbstractVector{<:Real}, M::Rea
                 H[j′, j] = H[j, j′] = val # push the element to the conjugate positions
             end
         end
-        bands[:, i], states[i] = eigen(H, sortby=-) # sort in descending order
+        bands[:, i], states[i] = eigen(H)#, sortby=-) # sort in descending order
     end
     return bands, states
 end
@@ -190,6 +190,121 @@ function compute_floquet_bands(; n_min::Integer, n_max::Integer, phases::Abstrac
             end
             Eₖ[a_Hₖ:b_Hₖ, z] .= vals[1:Δn]
         end
+    end
+    return ϵₖ, Eₖ
+end
+
+
+function compute_floquet_bands_with_boundary(;n::Integer, n_min::Integer, n_max::Integer, phases::AbstractVector{<:Real}, s::Integer, l::Real, gₗ::Real, Vₗ::Real, λₗ::Real, λₛ::Real, ω::Real, pumptype::Symbol)
+    X(j′, j) = 16n*j*j′ / (π*((j-j′)^2-(2n)^2)*((j+j′)^2-(2n)^2))
+    
+    n_j = 120 # number of indices 𝑗 to use for constructing the Hamiltonian
+    H = zeros(n_j, n_j)
+
+    Δn = n_max - n_min + 1
+    
+    # Eigenvalues of ℎₖ (eigenenergies of the unperturbed Hamiltonian).
+    # We should store `2Δn` of them because each of the `Δn` levels are almost degenerate. To account for the two values of 𝑘, we use `4Δn`.
+    ϵₖ = Matrix{Float64}(undef, Δn, length(phases))
+    cₖ = Matrix{Float64}(undef, n_j, Δn)
+    
+    Eₖ = Matrix{Float64}(undef, Δn, length(phases)) # eigenvalues of 𝐻ₖ (Floquet quasi-energies) that will be saved; size is twice `Δn` for the two values of 𝑘
+    Hₖ_dim = Δn # dimension of the constructed 𝐻ₖ matrix (twice larger than the number of requested quasi-energies)
+    n_Hₖ_nonzeros = 9Hₖ_dim - 24s # number of non-zero elements in 𝐻ₖ
+    Hₖ_rows = Vector{Int}(undef, n_Hₖ_nonzeros)
+    Hₖ_cols = Vector{Int}(undef, n_Hₖ_nonzeros)
+    Hₖ_vals = Vector{ComplexF64}(undef, n_Hₖ_nonzeros)
+    
+    for (z, ϕ) in enumerate(phases)
+        if pumptype != :time || z == 1 # If pupming is not time-only, ℎₖ has to be diagonalised on each iteration. If it's time-only, then we diagonalise only once, at `z == 1`.
+            for j in 1:n_j
+                for j′ in 1:n_j
+                    val = 0.0
+                    if abs(j′ + j) % 2 == 1 # if `j′ + j` is odd
+                        val += Vₗ/2 * X(j′, j) * sin(2ϕ)
+                    else
+                        # check diagonals "\"
+                        if j′ == j
+                            val += (gₗ + Vₗ)/2 + (j / n)^2
+                        elseif j′ == j - 2n || j′ == j + 2n
+                            val += Vₗ/2 * cos(2ϕ) / 2
+                        elseif j′ == j - 4n || j′ == j + 4n
+                            val += gₗ/2 / 2
+                        end
+                        # check diagonals "/"
+                        if j′ == -j - 2n || j′ == -j + 2n
+                            val += -Vₗ/2 * cos(2ϕ) / 2
+                        elseif j′ == -j - 4n || j′ == -j + 4n
+                            val += -gₗ/2 / 2
+                        end
+                    end
+                    H[j′, j] = H[j, j′] = val # push the element to the conjugate positions
+                end
+            end
+            f = eigen(H)
+            # save only energies and states for levels from `2n_min` to `2n_max`
+            ϵₖ[:, z] = f.values[n_min:n_max]
+            cₖ .= f.vectors[:, n_min:n_max]
+        end
+
+        # Construct 𝐻ₖ
+        p = 1 # a counter for placing elements to the vectors `Hₖ_*`
+        for m in 1:Hₖ_dim
+            # place the diagonal element (S25)
+            Hₖ_rows[p] = Hₖ_cols[p] = m
+            q = (pumptype == :time ? 1 : z) # If pumping is time-only, `ϵₖ[m, z]` is only calculated for `z == 1` (during diagonalisation of ℎₖ)
+            Hₖ_vals[p] = ϵₖ[m, q] - ceil(m/2)*ω/s
+            p += 1
+
+            # place the elements of the long lattice (S26)
+            for i in 1:2
+                m′ = 2s + 2(ceil(Int, m/2)-1) + i
+                m′ > Hₖ_dim && break
+                Hₖ_rows[p] = m′
+                Hₖ_cols[p] = m
+                if pumptype != :time || z == 1 # If pumping is time-only, this may be calculated only once
+                    j_sum = sum( (cₖ[j+2, m′]/4 + cₖ[j-2, m′]/4 + cₖ[j, m′]/2)' * cₖ[j, m] for j = 3:n_j-2 ) + 
+                                    (cₖ[3, m′]/4 + cₖ[1, m′]/2)' * cₖ[1, m] +                # iteration j = 1
+                                    (cₖ[n_j-1, m′]/4 + cₖ[n_j, m′]/2)' * cₖ[n_j, m]   # iteration j = 2n_j+1
+                    Hₖ_vals[p] = (pumptype == :space ? λₗ/2 * j_sum : λₗ/2 * j_sum * cis(-2ϕ)) # a check for space or space-time pumping
+                elseif pumptype == :time 
+                    Hₖ_vals[p] *= cis(-2(phases[2]-phases[1]))
+                end
+                p += 1
+                # place the conjugate element
+                Hₖ_rows[p] = m
+                Hₖ_cols[p] = m′
+                Hₖ_vals[p] = Hₖ_vals[p-1]'
+                p += 1
+            end
+            
+            # place the elements of the short lattice (S29)
+            for i in 1:2
+                m′ = 4s + 2(ceil(Int, m/2)-1) + i
+                m′ > Hₖ_dim && break
+                Hₖ_rows[p] = m′
+                Hₖ_cols[p] = m
+                if pumptype != :time || z == 1 # If pumping is time-only, this may be calculated only once
+                    j_sum = sum( (-cₖ[j+2, m′]/4 - cₖ[j-2, m′]/4 + cₖ[j, m′]/2)' * cₖ[j, m] for j = 3:n_j-2 ) + 
+                                    (-cₖ[3, m′]/4 + cₖ[1, m′]/2)' * cₖ[1, m] +                # iteration j = 1
+                                    (-cₖ[n_j-1, m′]/4 + cₖ[n_j, m′]/2)' * cₖ[n_j, m]   # iteration j = 2n_j+1
+                    Hₖ_vals[p] = λₛ/2 * j_sum
+                end
+                p += 1
+                # place the conjugate element
+                Hₖ_rows[p] = m
+                Hₖ_cols[p] = m′
+                Hₖ_vals[p] = Hₖ_vals[p-1]'
+                p += 1
+            end
+        end
+        Hₖ = sparse(Hₖ_rows, Hₖ_cols, Hₖ_vals)
+        vals, _, info = eigsolve(Hₖ, Δn, :LR; krylovdim=Hₖ_dim)
+        if info.converged < Δn
+            @warn "Only $(info.converged) eigenvalues out of $(Δn) converged when diagonalising 𝐻ₖ. "*
+                    "Results may be inaccurate." unconverged_norms=info.normres[info.converged+1:end]
+        end
+        Eₖ[:, z] .= vals[1:Δn]
     end
     return ϵₖ, Eₖ
 end

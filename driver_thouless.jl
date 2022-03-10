@@ -109,7 +109,8 @@ for i in 1:n_bands
     plot!(phases, bands[i, :], fillrange=bands[n_bands+i, :], fillalpha=0.35, label="band $i");
 end
 xlabel!(L"\varphi_t"*", rad"); ylabel!("Energy of quantised secular "*L"H"*" (S17)")
-title!(L"\omega = %$ω, \lambda_L = %$λₗ, \lambda_S = %$λₛ")
+title!(L"M = %$(round(M, sigdigits=2)), \lambda_L = %$λₗ, A_L = %$(round(Aₗ, sigdigits=2)),"*
+       L"\lambda_S = %$λₛ, A_S = %$(round(Aₛ, sigdigits=2))")
 savefig("semiclassical-bands.pdf")
 
 ### Extract tight-binding parameters
@@ -132,10 +133,11 @@ plot!(phases, -E0 .+ w, c=:white, label=false, lw=0.5)
 ### Calculate Floquet bands
 
 phases = range(0, π, length=51) # values of the adiabatic phase in (S32)
-n_min = 15
-n_max = 30
+n_min = 50
+n_max = 100
 n_bands = n_max-n_min+1
-eₖ, Eₖ = compute_floquet_bands(;n_min, n_max, phases, s, l, gₗ, Vₗ=Vₗ, λₗ=λₗ, λₛ=λₛ, ω=ω, pumptype=:spacetime)
+eₖ, Eₖ = compute_floquet_bands(;n_min, n_max, phases, s, l, gₗ, Vₗ=Vₗ, λₗ=λₗ, λₛ=λₛ, ω=ω, pumptype=:space)
+eₖ, Eₖ = compute_floquet_bands_with_boundary(;n=4, n_min, n_max, phases, s, l, gₗ, Vₗ=Vₗ, λₗ=λₗ, λₛ=λₛ, ω=ω, pumptype=:space)
 
 fig1 = plot();
 for i in 1:n_bands
@@ -171,6 +173,9 @@ x = range(0, π, length=200)
 plot!(x, x -> 𝐻₀(0, x, params), lw=2, c=:white, label=false) # Spatial potential
 for i in 1:2n_bands
     plot!(phases, eₖ[i, :], fillrange=eₖ[2n_bands+i, :], fillalpha=0.3, label="band $i")
+end
+for i in 1:n_bands
+    plot!(phases, eₖ[i, :], label="")
 end
 title!("Energy spectrum of "*L"h_k"*" (S21)")
 ylims!((7750, 8500))
@@ -250,19 +255,20 @@ savefig("6D-bands.pdf")
 
 ### Boundary conditions
 
-phases = range(0, 2π, length=51)
-n_cells = 2
-n_bands = 2n_cells
-bands, states = compute_qc_bands_with_boundary(; phases, M=M, λₗAₗ=λₗ*Aₗ, λₛAₛ=λₛ*Aₛ, n=n_cells)
-pyplot()
+phases = range(0, 2π, length=50)
+n_cells = 4
+n_bands = 2n_cells + 5
+L = -λₗ*Aₗ; S = -λₛ*Aₛ
+bands, states = compute_qc_bands_with_boundary(; phases, M=-M, λₗAₗ=L, λₛAₛ=S, n=n_cells)
 
 fig = plot()
 for i in 1:n_bands
-    plot!(phases, bands[i, :], label="band $i")
+    plot!(phases, bands[i, :], label="band $i", c=(i > 3 ? i+1 : i))
 end
 display(fig)
+xlabel!("φₜ, rad"); title!("𝑀 increased to 0.5")
 xlabel!(L"\varphi_t"*", rad"); ylabel!("Eigenenergy of "*L"H"*" (S32)")
-savefig("bands-2.pdf")
+savefig("bands-4-extended.pdf")
 
 # plot states
 
@@ -275,13 +281,19 @@ function make_coordinate_state(x::AbstractVector{<:Real}, coeffs::AbstractVector
 end
 
 x = range(0, n_cells*π, length=101)
-i_ϕ = 37
-U = @. (λₗ*Aₗ*cos(2x + phases[i_ϕ]) + λₛ*Aₛ*cos(4x))
-plot(x, U, label="potential", c=:white, legend=:outerright)
+i_ϕ = 13
+# @gif for i_ϕ = 1:51
+    U = @. (L*cos(2x + phases[i_ϕ]) + S*cos(4x))
+    # plot(x, U, c=:white, label=false)#, ylims=(-32,32))
+    plot(x, U, label="potential", c=:white, legend=:outerright)#, ylims=(-32,32))
+# end
 for i = 1:n_bands
     ψ = make_coordinate_state(x, states[i_ϕ][:, i], n=n_cells) .+ bands[i, i_ϕ]
-    hline!([bands[i, i_ϕ]], c=:white, ls=:dot, label=false); plot!(x, ψ, label=L"\psi_{%$i}(\theta)", c=i)
+    # hline!([bands[i, i_ϕ]], c=:white, ls=:dot, label=false); plot!(x, ψ, label=false, c=(i > 3 ? i+1 : i))
+    hline!([bands[i, i_ϕ]], c=:white, ls=:dot, label=false); plot!(x, ψ, label=L"\psi_{%$i}(\theta)", c=(i > 3 ? i+1 : i))
 end
+xlabel!("θ, rad"); ylabel!("𝜓ₙ")
 xlabel!(L"\theta"*", rad"); ylabel!(L"\psi_n(\theta)")
-title!("Wavefunctions at "*L"\varphi_t=3pi/2")
-savefig("wf-2-3pi2.pdf")
+title!("Wavefunctions at φₜ = π/4")
+title!("Wavefunctions at "*L"\varphi_t=\pi/2")
+savefig("wf-4-extended-pi2.pdf")
