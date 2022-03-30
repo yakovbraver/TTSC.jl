@@ -131,15 +131,15 @@ plot!(phases, -E0 .+ w, c=:white, label=false, lw=0.5)
 
 ### Calculate Floquet bands
 
-phases = range(0, π, length=51) # values of the adiabatic phase in (S32)
-n_min = 15
-n_max = 30
+phases = range(0, π, length=61) # values of the adiabatic phase in (S32)
+n_min = 1
+n_max = 29
 n_bands = n_max-n_min+1
-eₖ, Eₖ = compute_floquet_bands(;n_min, n_max, phases, s, l, gₗ, Vₗ=Vₗ, λₗ=λₗ, λₛ=λₛ, ω=ω, pumptype=:spacetime)
+eₖ, Eₖ = compute_floquet_bands(;n_min, n_max, phases, s, l, gₗ, Vₗ, λₗ, λₛ, ω, k=1, pumptype=:time)
 
 fig1 = plot();
 for i in 1:n_bands
-    plot!(phases, Eₖ[i, :], fillrange=Eₖ[n_bands+i, :], fillalpha=0.3, label=false)
+    plot!(phases, Eₖ[i, :], label=false)
 end
 xlabel!(L"2\varphi_t=\varphi_x"*", rad"); ylabel!("Floquet quasi-energy "*L"\varepsilon_{k,m}")
 title!("2D pumping. "*L"\ell = %$l, g = %$g, V_L = %$Vₗ, \lambda_S = %$λₛ, \lambda_L = %$λₗ, \omega = %$ω")
