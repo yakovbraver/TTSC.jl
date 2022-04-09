@@ -67,7 +67,8 @@ end
 function make_action_functions(𝑈::Function, left_tp::Tuple{<:Real, <:Real}, right_tp::Tuple{<:Real, <:Real})
     n_E = 100 # number of energies (and actions) to save
     I = Vector{Float64}(undef, n_E) # for storing values of the action variable
-    E = range(1.001𝑈(right_tp[1]), 0.999𝑈(right_tp[2]), length=n_E) # energies inside the potential "well"
+    ΔU = 1e-4 * abs(𝑈(right_tp[2]) - 𝑈(right_tp[1])) # a slight shift for energies (see next line) to avoid problems during zero search
+    E = range(𝑈(right_tp[1]) + ΔU, 𝑈(right_tp[2]) - ΔU, length=n_E) # energies inside the potential "well"
 
     for i in eachindex(E)
         x_min, x_max = turning_points(𝑈, E[i], left_tp, right_tp)
@@ -144,9 +145,9 @@ function fourier_coeff(f::AbstractVector, n::Int, dt::AbstractFloat, T::Abstract
 end
 
 """
-Compute evolutions (using the perturbed Hamiltonian) of 𝑝(𝑡) and 𝑥(𝑡) for the energy corresponding to `I_target`, and the
-initial phase `ϑ₀`. The latter should be specified in the units of 2π: 0 (the default) corresponds to 𝑥(0) in the potential minimum,
-0.25 corresponds to the right turnin point, and 0.75 corresponds to the left turning point.
+Compute evolutions (using the perturbed Hamiltonian) of 𝑝(𝑡) and 𝑥(𝑡) for the energy corresponding to `I_target`, and initial coordinate determined by `χ₀`, with |χ₀| ≤ 1.
+For χ₀ > 0, the initial coordinate is 𝑥₀ + χ₀(𝑥ᵣ - 𝑥₀), and for χ₀ < 0, it is 𝑥₀ + χ₀(𝑥₀ - 𝑥ₗ),
+where 𝑥₀ is the equilibrium point, while 𝑥ₗ and 𝑥ᵣ are left and right turning points for energy corresponding to `I_target`.
 The pairs (𝑝(𝑡), 𝑥(𝑡)) are registered stroboscopically at the intervals of the period of external driving; `n_T` pairs are registered.
 
 Then, transform the obtained (𝑝, 𝑥) pairs to (𝐼, ϑ) and return the results as a tuple of two vectors.
@@ -158,21 +159,24 @@ Note that some energy 𝐸ⱼ may be such large (due to the perturbation) that t
 no corresponding action 𝐼(𝐸ⱼ) exists. This will happen if `I_target` is too large. In that case, an info message will be printed,
 and energies starting with 𝐸ⱼ will be ignored.
 """
-function compute_IΘ(H::SpacetimeHamiltonian, I_target::Real; ϑ₀::AbstractFloat=0.0, n_T::Integer=100)
+function compute_IΘ(H::SpacetimeHamiltonian, I_target::Real; χ₀::Real=0, n_T::Integer=100)
+    abs(χ₀) > 1 && begin @warn "|χ₀| ≤ 1 not satisfied. Setting χ₀ to 0."; χ₀ = 0 end
+    
     ω = H.params[end]
     T_external = 2π / ω # period of the external driving
     tspan = (0.0, n_T * T_external)
-    if ϑ₀ == 0
+    if χ₀ == 0
         x₀ = H.right_tp[1] # set iniital coordinate to the potential minimum (this position with positive momenutm defines the zero phase)
-        p₀ = 𝑝(H.𝑈, H.𝐸(I_target), x₀)
-    elseif ϑ₀ == 0.25
-        p₀ = 0.0
-        x₀ = Roots.find_zero(x -> H.𝐻₀(0, x, params) - H.𝐸(I_target), H.right_tp[2]) # set iniital coordinate to the right turning point
-    else # if ϑ₀ == 0.75
-        p₀ = 0.0
-        x₀ = Roots.find_zero(x -> H.𝐻₀(0, x, params) - H.𝐸(I_target), H.left_tp[1]) # set iniital coordinate to the left turning point
+    elseif χ₀ > 0
+        right_tp = Roots.find_zero(x -> H.𝐻₀(0, x, H.params) - H.𝐸(I_target), H.right_tp) # right turning point for action `I_target`
+        x₀ = H.right_tp[1] + χ₀ * (right_tp - H.right_tp[1])
+    elseif χ₀ < 0
+        left_tp = Roots.find_zero(x -> H.𝐻₀(0, x, H.params) - H.𝐸(I_target), H.left_tp) # left turning point for action `I_target`
+        x₀ = H.right_tp[1] + χ₀ * (H.right_tp[1] - left_tp) # note that `χ₀` is negative here
     end
-    H_problem = HamiltonianProblem(H.𝐻, p₀, x₀, tspan, params)
+    p₀ = 𝑝(H.𝑈, H.𝐸(I_target), x₀)
+
+    H_problem = HamiltonianProblem(H.𝐻, p₀, x₀, tspan, H.params)
     sol = DiffEq.solve(H_problem, DiffEq.KahanLi8(); dt=2e-4, saveat=T_external)
     p = sol[1, :]
     x = sol[2, :]
@@ -199,7 +203,7 @@ function compute_IΘ(H::SpacetimeHamiltonian, I_target::Real; ϑ₀::AbstractFlo
     Θ = similar(I)
     for i in eachindex(Θ)
         T_free = 2π / H.𝐸′(I[i]) # period of the unperturbed motion at action `I[i]`
-        tspan = (0.0, T_free)
+        tspan = (0.0, 1.02T_free) # take slightly more than `T_free`. Due to solver inaccuracies we might not get a full perdiod, and subsequent search will fail
         p₀ = 𝑝(H.𝑈, E[i], x₀)
         H₀_problem = HamiltonianProblem(H.𝐻₀, p₀, x₀, tspan, H.params)
         sol = DiffEq.solve(H₀_problem, DiffEq.McAte5(); dt=2e-4)
@@ -225,7 +229,7 @@ function compute_IΘ(H::SpacetimeHamiltonian, I_target::Real; ϑ₀::AbstractFlo
                 t = Roots.find_zero(f, (bracket[1]+bracket[2])/2) # Note that in this case the algorithm may occasionally converge to the zero in the wrong half of the period
             end
         end
-        Θ[i] = 2π * t / T_free # `-2π*(i-1)/H.s` is the -ω𝑡/𝑠 term that transforms to the moving frame. We have 𝑡ₙ = 𝑛𝑇, and ω𝑡ₙ = 2π𝑛
+        Θ[i] = 2π * t / T_free
     end
     return I, Θ
 end
