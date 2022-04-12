@@ -229,15 +229,32 @@ end
 WIP: Floquet spectrum with spatial boundaries.
 Currently, calculation of the spatial spectrum is correct, but for the Floquet spectrum it is not.
 """
-function compute_floquet_bands_with_boundary(;n::Integer, n_min::Integer, n_max::Integer, phases::AbstractVector{<:Real}, s::Integer, l::Real, gₗ::Real, Vₗ::Real, λₗ::Real, λₛ::Real, ω::Real, pumptype::Symbol)
+function compute_floquet_bands_with_boundary(;n::Integer, n_min::Integer, n_max::Integer, phases::AbstractVector{<:Real}, s::Integer, gₗ::Real, Vₗ::Real, λₗ::Real, λₛ::Real, ω::Real, pumptype::Symbol,
+    groupsizes::Tuple{Integer,Integer})
     X(j′, j) = 16n*j*j′ / (π*((j-j′)^2-(2n)^2)*((j+j′)^2-(2n)^2))
     
-    n_j = 600 # number of indices 𝑗 to use for constructing the Hamiltonian
-    H = zeros(n_j, n_j)
-    # G = 5 #n #+ 1
-    G = repeat([5, 5, 5, 5, 5, 3, 3, 3], 7)
-        push!(G, 3)
+    n_j = 600 # number of indices 𝑗 to use for constructing the spatial Hamiltonian
+    h = zeros(n_j, n_j)
+
     Δn = n_max - n_min + 1
+    ν = Vector{Int}(undef, Δn)
+    # FIll `ν`: [1 (`gs1` times), 2 (`gs2` times), 3 (`gs1` times), 4 (`gs2` times), ...]
+    number = 1;
+    gs1, gs2 = groupsizes
+    g = sum(groupsizes)
+    for i in 0:Δn÷g-1
+        ν[g*i+1:g*i+gs1] .= number
+        number += 1
+        ν[g*i+gs1+1:g*i+g] .= number
+        number += 1
+    end
+    ν[Δn - Δn%g + 1:end] .= number
+
+    pattern = [fill(gs1, gs1); fill(gs2, gs2)]
+    G = repeat(pattern, Δn÷g)
+    append!(G, pattern[1:Δn%g])
+    println(ν)
+    println(G)
     
     # Eigenvalues of ℎₖ (eigenenergies of the unperturbed Hamiltonian).
     # We should store `2Δn` of them because each of the `Δn` levels are almost degenerate. To account for the two values of 𝑘, we use `4Δn`.
@@ -246,8 +263,8 @@ function compute_floquet_bands_with_boundary(;n::Integer, n_min::Integer, n_max:
     
     Eₖ = Matrix{Float64}(undef, Δn, length(phases)) # eigenvalues of 𝐻ₖ (Floquet quasi-energies) that will be saved; size is twice `Δn` for the two values of 𝑘
     Hₖ_dim = Δn # dimension of the constructed 𝐻ₖ matrix (twice larger than the number of requested quasi-energies)
-   GG = 5
-    n_Hₖ_nonzeros = 801# (4GG+1)*Hₖ_dim - 6GG^2*s # number of non-zero elements in 𝐻ₖ
+   
+    n_Hₖ_nonzeros = 228# (4GG+1)*Hₖ_dim - 6GG^2*s # number of non-zero elements in 𝐻ₖ
    
     Hₖ_rows = zeros(Int, n_Hₖ_nonzeros)
     Hₖ_cols = zeros(Int, n_Hₖ_nonzeros)
@@ -276,10 +293,10 @@ function compute_floquet_bands_with_boundary(;n::Integer, n_min::Integer, n_max:
                             val += -gₗ/2 / 2
                         end
                     end
-                    H[j′, j] = H[j, j′] = val # push the element to the conjugate positions
+                    h[j′, j] = h[j, j′] = val # push the element to the conjugate positions
                 end
             end
-            f = eigen(H)
+            f = eigen(h)
             # save only energies and states for levels from `2n_min` to `2n_max`
             ϵₖ[:, z] = f.values[n_min:n_max]
             cₖ .= f.vectors[:, n_min:n_max]
@@ -292,12 +309,13 @@ function compute_floquet_bands_with_boundary(;n::Integer, n_min::Integer, n_max:
             # place the diagonal element (S25)
             Hₖ_rows[p] = Hₖ_cols[p] = m
             q = (pumptype == :time ? 1 : z) # If pumping is time-only, `ϵₖ[m, z]` is only calculated for `z == 1` (during diagonalisation of ℎₖ)
-            Hₖ_vals[p] = ϵₖ[m, q] - ceil(m/G[m])*ω/s
+            Hₖ_vals[p] = ϵₖ[m, q] - ν[m]*ω/s
             p += 1
 
             # place the elements of the long lattice (S26)
             for i in 1:G[m]
-                m′ = G[m]*s + G[m]*(ceil(Int, m/G[m])-1) + i
+                # skip `s` groups of `g`, then some more groups depending on `m`, then skip `G[1]` cells
+                m′ = g*(s÷2) + g*((ν[m]-1)÷2) + iseven(ν[m])*G[1] + i
                 m′ > Hₖ_dim && break
                 Hₖ_rows[p] = m′
                 Hₖ_cols[p] = m
@@ -320,7 +338,7 @@ function compute_floquet_bands_with_boundary(;n::Integer, n_min::Integer, n_max:
             
             # place the elements of the short lattice (S29)
             for i in 1:G[m]
-                m′ = 2s*G[m] + G[m]*(ceil(Int, m/G[m])-1) + i
+                m′ = g*s + g*((ν[m]-1)÷2) + iseven(ν[m])*G[1] + i
                 m′ > Hₖ_dim && break
                 Hₖ_rows[p] = m′
                 Hₖ_cols[p] = m
@@ -340,8 +358,9 @@ function compute_floquet_bands_with_boundary(;n::Integer, n_min::Integer, n_max:
             end
         end
         # println(count(!=(0), Hₖ_rows))
-        Hₖ = sparse(Hₖ_rows, Hₖ_cols, Hₖ_vals)
-        vals, _, info = eigsolve(Hₖ, Δn, :LR; krylovdim=Hₖ_dim)
+        H = sparse(Hₖ_rows, Hₖ_cols, Hₖ_vals)
+        # return H
+        vals, _, info = eigsolve(H, Δn, :LR; krylovdim=Hₖ_dim)
         if info.converged < Δn
             @warn "Only $(info.converged) eigenvalues out of $(Δn) converged when diagonalising 𝐻ₖ. "*
                   "Results may be inaccurate." unconverged_norms=info.normres[info.converged+1:end]
@@ -349,4 +368,28 @@ function compute_floquet_bands_with_boundary(;n::Integer, n_min::Integer, n_max:
         Eₖ[:, z] .= vals[1:Δn]
     end
     return ϵₖ, Eₖ
+end
+
+function permute_floquet_bands_with_boundary!(E::AbstractMatrix{<:Float64}, e::AbstractMatrix{<:Float64}, ω::Real, s::Integer; groupsizes::Tuple{Integer,Integer})
+    n_energies, n_phases = size(e)
+
+    ν = Vector{Int}(undef, n_energies)
+    # FIll `ν`: [1 (`gs1` times), 2 (`gs2` times), 3 (`gs1` times), 4 (`gs2` times), ...]
+    number = 1;
+    gs1, gs2 = groupsizes
+    g = sum(groupsizes)
+    for i in 0:n_energies÷g-1
+        ν[g*i+1:g*i+gs1] .= number
+        number += 1
+        ν[g*i+gs1+1:g*i+g] .= number
+        number += 1
+    end
+    ν[n_energies - n_energies%g + 1:end] .= number
+    ν .*= ω/s
+    
+    for p in 1:n_phases
+        e_diag = [e[m, p] - ν[m] for m in 1:n_energies] # Floquet energies at zero perturbation
+        invsort = sortperm(sortperm(e_diag, rev=true)) # inverse permutation, such that `sort(e_diag, rev=true)[invsort] == e_diag`
+        E[1:n_energies, p] .= E[invsort, p]
+    end
 end

@@ -129,16 +129,17 @@ plot!(phases, -E0 .+ w, c=:white, label=false, lw=0.5)
 ### Calculate Floquet bands
 n_cells = 2
 phases = range(0, π, length=61) # values of the adiabatic phase in (S32)
-n_min = 1 #* n_cells * 2
-n_max = 29 #* n_cells * 2
+n_min = 23 ÷ 2 * 8 + 1  #* n_cells * 2
+n_max = 29 ÷ 2 * 8 #* n_cells * 2
 n_bands = n_max-n_min+1
 ω = 398
 eₖ, Eₖ = compute_floquet_bands(;n_min, n_max, phases, s, l, gₗ, Vₗ=15, λₗ=λₗ, λₛ=λₛ, ω, pumptype=:spacetime)
 hh = compute_floquet_bands(;n_min, n_max, phases, s, l, gₗ, Vₗ=15, λₗ=λₗ, λₛ=λₛ, ω, pumptype=:spacetime)
-eₖ, Eₖ = compute_floquet_bands_with_boundary(;n=n_cells, n_min, n_max, phases, s, l, gₗ, Vₗ=Vₗ, λₗ=λₗ, λₛ=λₛ, ω=ω, pumptype=:space)
-eₖ, cₖ = compute_floquet_bands_with_boundary(;n=n_cells, n_min, n_max, phases, s, l, gₗ, Vₗ=Vₗ, λₗ=λₗ, λₛ=λₛ, ω=ω, pumptype=:space)
+eₖ, Eₖ = compute_floquet_bands_with_boundary(;n=n_cells, n_min, n_max, phases, s, gₗ, Vₗ=Vₗ, λₗ=λₗ, λₛ=λₛ, ω=ω, pumptype=:spacetime, groupsizes=(3,5))
+# H = compute_floquet_bands_with_boundary(;n=n_cells, n_min, n_max, phases, s, gₗ, Vₗ=Vₗ, λₗ=λₗ, λₛ=λₛ, ω=ω, pumptype=:space, groupsizes=(3,5))
 permute_floquet_bands!(Eₖ, eₖ, n_min, ω, s)
-
+permute_floquet_bands_with_boundary!(Eₖ, eₖ, ω, s, groupsizes=(3,5))
+heatmap(abs.(H)./abs.(H), yaxis=:flip)
 fig1 = plot();
 for i in 1:2n_bands
     plot!(phases, Eₖ[i, :], fillrange=Eₖ[2n_bands+i, :], fillalpha=0.3, label="m = $(i+2n_min-2)", legend=:outerright)
@@ -149,6 +150,7 @@ end
 for i in 1:2n_bands
     plot!(phases, Eₖ[i, :], fillrange=Eₖ[2n_bands+i, :], fillalpha=0.3, label="")
 end
+
 title!("")
 ylims!((-5600, -5525))
 fig1 = plot();
@@ -161,7 +163,7 @@ for i in 1:2n_bands
     plot!(phases, Eₖ[2n_bands+i, :], c=i, ls=:dash, label="")
 end
 display(fig1)
-
+fig = plot()
 for i in 1:n_bands
     plot!(phases, Eₖ[i, :], label=false)
 end
