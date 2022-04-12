@@ -127,19 +127,13 @@ plot!(phases, E0 .+ w, c=:white, label=L"\pm\sqrt{\Delta^{2}\cos^{2}\varphi_t+4J
 plot!(phases, -E0 .+ w, c=:white, label=false, lw=0.5)
 
 ### Calculate Floquet bands
-n_cells = 2
 phases = range(0, π, length=61) # values of the adiabatic phase in (S32)
-n_min = 23 ÷ 2 * 8 + 1  #* n_cells * 2
-n_max = 29 ÷ 2 * 8 #* n_cells * 2
+n_min = 23
+n_max = 29
 n_bands = n_max-n_min+1
 ω = 398
 eₖ, Eₖ = compute_floquet_bands(;n_min, n_max, phases, s, l, gₗ, Vₗ=15, λₗ=λₗ, λₛ=λₛ, ω, pumptype=:spacetime)
-hh = compute_floquet_bands(;n_min, n_max, phases, s, l, gₗ, Vₗ=15, λₗ=λₗ, λₛ=λₛ, ω, pumptype=:spacetime)
-eₖ, Eₖ = compute_floquet_bands_with_boundary(;n=n_cells, n_min, n_max, phases, s, gₗ, Vₗ=Vₗ, λₗ=λₗ, λₛ=λₛ, ω=ω, pumptype=:spacetime, groupsizes=(3,5))
-# H = compute_floquet_bands_with_boundary(;n=n_cells, n_min, n_max, phases, s, gₗ, Vₗ=Vₗ, λₗ=λₗ, λₛ=λₛ, ω=ω, pumptype=:space, groupsizes=(3,5))
 permute_floquet_bands!(Eₖ, eₖ, n_min, ω, s)
-permute_floquet_bands_with_boundary!(Eₖ, eₖ, ω, s, groupsizes=(3,5))
-heatmap(abs.(H)./abs.(H), yaxis=:flip)
 fig1 = plot();
 for i in 1:2n_bands
     plot!(phases, Eₖ[i, :], fillrange=Eₖ[2n_bands+i, :], fillalpha=0.3, label="m = $(i+2n_min-2)", legend=:outerright)
@@ -163,10 +157,7 @@ for i in 1:2n_bands
     plot!(phases, Eₖ[2n_bands+i, :], c=i, ls=:dash, label="")
 end
 display(fig1)
-fig = plot()
-for i in 1:n_bands
-    plot!(phases, Eₖ[i, :], label=false)
-end
+
 title!("Floquet spectrum, space-time pumping, "*L"V_L=10, \omega=410")
 xlabel!(L"2\varphi_t"*", rad")
 ylabel!("Floquet quasi-energy "*L"\varepsilon_{k,m}")
@@ -174,16 +165,7 @@ xlabel!(L"2\varphi_t=\varphi_x"*", rad")
 title!("2D pumping. "*L"\ell = %$l, g = %$g, V_L = %$Vₗ, \lambda_S = %$λₛ, \lambda_L = %$λₗ, \omega = %$ω")
 savefig("pumping-spacetime-omega410-V10.pdf")
 ylims!(-2760, -2710)
-yticks!(-2760:2:-2710)
 savefig("04-03-Fig12.html")
-
-# push to one Floquet zone
-for i in 1:2n_bands
-    Eₖ[i, :] .%= ω
-end
-for i in 1:n_bands
-    Eₖ[i, :] .= (Eₖ[i, :]) .% ω/s
-end
 
 b = 2
 # spatial fit
@@ -295,7 +277,7 @@ title!("4D spacetime bands")
 ylims!(-10830, -10815)
 savefig("4D-bands.pdf")
 
-### Boundary conditions
+### Quasiclassical bands with open boundary conditions
 
 phases = range(0, 2π, length=51)
 n_cells = 8
@@ -311,6 +293,22 @@ title!("Eigenenergy spectrum of "*L"H"*" (S32) with $n_cells cells and open BC")
 xlabel!(L"\varphi_t"*", rad"); ylabel!("Eigenenergy of "*L"H"*" (S32)")
 savefig("obc-time-8.pdf")
 
+### Floquet bands with open boundary conditions
+
+phases = range(0, π, length=61) # values of the adiabatic phase in (S32)
+n_cells = 2
+n_min = (23 ÷ 2) * 4n_cells + 1 # get how many groups of two there are; then each group has `4n_cells` levels
+n_max = (29 ÷ 2) * 4n_cells
+n_bands = n_max-n_min+1
+e, E = compute_floquet_bands_with_boundary(;n=n_cells, n_min, n_max, phases, s, gₗ, Vₗ, λₗ, λₛ, ω, groupsizes=(3,5), pumptype=:spacetime)
+permute_floquet_bands_with_boundary!(E, e, ω, s, groupsizes=(3,5))
+
+fig = plot()
+for i in 1:n_bands
+    plot!(phases, E[i, :], label=false)
+end
+title!("")
+
 # plot states
 
 function make_coordinate_state(x::AbstractVector{<:Real}, coeffs::AbstractVector{<:Number}; n=2)
@@ -323,11 +321,8 @@ end
 
 x = range(0, 3*π, length=501)
 i_ϕ = 1
-@gif for i_ϕ = 1:50
-    U = @. (100Vₗ*cos(2x + phases[i_ϕ]) + gₗ*cos(4x))
-    plot(x, U, c=:white, label=false, ylims=(-9000, 9000))
-    # plot(x, U, label="potential", c=:white, legend=:outerright)#, ylims=(-32,32))
-end
+U = @. (100Vₗ*cos(2x + phases[i_ϕ]) + gₗ*cos(4x))
+plot(x, U, label="potential", c=:white, legend=:outerright)#, ylims=(-32,32))
 for i = 1:n_bands
     ψ = make_coordinate_state(x, states[i_ϕ][:, i], n=n_cells) .+ bands[i, i_ϕ]
     # hline!([bands[i, i_ϕ]], c=:white, ls=:dot, label=false); plot!(x, ψ, label=false, c=(i > 3 ? i+1 : i))
@@ -339,14 +334,13 @@ title!("Wavefunctions at φₜ = π/4")
 title!("Wavefunctions at "*L"\varphi_t=\pi/2")
 savefig("wf-4-extended-pi2.pdf")
 
-n_cells = 8
 x = range(0, n_cells*π, length=1001)
 U = @. ((Vₗ+gₗ)/2 + Vₗ/2*cos(2x + 2phases[1]) + gₗ/2*cos(4x))
 fig = plot(x, U, label="", c=:white)#, ylims=(-32,32))
 xlabel!(L"x")
 for ns = 16:47
-    ψ = make_coordinate_state(x, cₖ[:, ns], n=n_cells) .+ eₖ[ns]
-    hline!([eₖ[ns]], c=:white, ls=:dot, label=false); plot!(x, ψ, label="", c=ns) 
+    ψ = make_coordinate_state(x, c[:, ns], n=n_cells) .+ e[ns]
+    hline!([e[ns]], c=:white, ls=:dot, label=false); plot!(x, ψ, label="", c=ns) 
 end
 ylims!(-194.5, -193.5)
 ylims!(-377, -365)

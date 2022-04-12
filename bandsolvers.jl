@@ -229,11 +229,11 @@ end
 WIP: Floquet spectrum with spatial boundaries.
 Currently, calculation of the spatial spectrum is correct, but for the Floquet spectrum it is not.
 """
-function compute_floquet_bands_with_boundary(;n::Integer, n_min::Integer, n_max::Integer, phases::AbstractVector{<:Real}, s::Integer, gₗ::Real, Vₗ::Real, λₗ::Real, λₛ::Real, ω::Real, pumptype::Symbol,
-    groupsizes::Tuple{Integer,Integer})
+function compute_floquet_bands_with_boundary(;n::Integer, n_min::Integer, n_max::Integer, phases::AbstractVector{<:Real}, s::Integer, gₗ::Real, Vₗ::Real, λₗ::Real, λₛ::Real,
+                                             ω::Real, groupsizes::Tuple{Integer,Integer}, pumptype::Symbol)
     X(j′, j) = 16n*j*j′ / (π*((j-j′)^2-(2n)^2)*((j+j′)^2-(2n)^2))
     
-    n_j = 600 # number of indices 𝑗 to use for constructing the spatial Hamiltonian
+    n_j = 2n_max # number of indices 𝑗 to use for constructing the unperturbed Hamiltonian
     h = zeros(n_j, n_j)
 
     Δn = n_max - n_min + 1
@@ -253,25 +253,25 @@ function compute_floquet_bands_with_boundary(;n::Integer, n_min::Integer, n_max:
     pattern = [fill(gs1, gs1); fill(gs2, gs2)]
     G = repeat(pattern, Δn÷g)
     append!(G, pattern[1:Δn%g])
-    println(ν)
-    println(G)
     
-    # Eigenvalues of ℎₖ (eigenenergies of the unperturbed Hamiltonian).
-    # We should store `2Δn` of them because each of the `Δn` levels are almost degenerate. To account for the two values of 𝑘, we use `4Δn`.
-    ϵₖ = Matrix{Float64}(undef, Δn, length(phases))
-    cₖ = Matrix{Float64}(undef, n_j, Δn)
+    # Eigenvalues of ℎ (the unperturbed Hamiltonian)
+    ϵ = Matrix{Float64}(undef, Δn, length(phases))
+    c = Matrix{Float64}(undef, n_j, Δn)
     
-    Eₖ = Matrix{Float64}(undef, Δn, length(phases)) # eigenvalues of 𝐻ₖ (Floquet quasi-energies) that will be saved; size is twice `Δn` for the two values of 𝑘
-    Hₖ_dim = Δn # dimension of the constructed 𝐻ₖ matrix (twice larger than the number of requested quasi-energies)
+    E = Matrix{Float64}(undef, Δn, length(phases)) # eigenvalues of 𝐻ₖ (Floquet quasi-energies) that will be saved; size is twice `Δn` for the two values of 𝑘
+    H_dim = Δn # dimension of the constructed 𝐻 matrix
+    # number of non-zero elements in 𝐻:
+    n_H_nonzeros = H_dim + 2*( # diagonal plus two times upper off-diagonal terms:
+                   (H_dim ÷ g - 1) * (gs1^2 + gs2^2) + # number of long  lattice blocks of size `g` × `g`, each having `(gs1^2 + gs2^2)` elements
+                   (H_dim ÷ g - 2) * (gs1^2 + gs2^2) + # number of short lattice blocks of size `g` × `g`, each having `(gs1^2 + gs2^2)` elements
+                   2(H_dim % g != 0 ? gs1^2 : 0) ) # if `H_dim % g != 0`, then one more block of size `gs1` is present, both for short and long lattice
    
-    n_Hₖ_nonzeros = 228# (4GG+1)*Hₖ_dim - 6GG^2*s # number of non-zero elements in 𝐻ₖ
-   
-    Hₖ_rows = zeros(Int, n_Hₖ_nonzeros)
-    Hₖ_cols = zeros(Int, n_Hₖ_nonzeros)
-    Hₖ_vals = zeros(ComplexF64, n_Hₖ_nonzeros)
+    H_rows = zeros(Int, n_H_nonzeros)
+    H_cols = zeros(Int, n_H_nonzeros)
+    H_vals = zeros(ComplexF64, n_H_nonzeros)
     
     for (z, ϕ) in enumerate(phases)
-        if pumptype != :time || z == 1 # If pupming is not time-only, ℎₖ has to be diagonalised on each iteration. If it's time-only, then we diagonalise only once, at `z == 1`.
+        if pumptype != :time || z == 1 # If pupming is not time-only, ℎ has to be diagonalised on each iteration. If it's time-only, then we diagonalise only once, at `z == 1`.
             for j in 1:n_j
                 for j′ in 1:n_j
                     val = 0.0
@@ -297,77 +297,74 @@ function compute_floquet_bands_with_boundary(;n::Integer, n_min::Integer, n_max:
                 end
             end
             f = eigen(h)
-            # save only energies and states for levels from `2n_min` to `2n_max`
-            ϵₖ[:, z] = f.values[n_min:n_max]
-            cₖ .= f.vectors[:, n_min:n_max]
+            # save only energies and states for levels from `n_min` to `n_max`
+            ϵ[:, z] = f.values[n_min:n_max]
+            c .= f.vectors[:, n_min:n_max]
         end
-        # return ϵₖ, cₖ
-        # Construct 𝐻ₖ
-        p = 1 # a counter for placing elements to the vectors `Hₖ_*`
+        # Construct 𝐻
+        p = 1 # a counter for placing elements to the vectors `H_*`
         
-        for m in 1:Hₖ_dim
+        for m in 1:H_dim
             # place the diagonal element (S25)
-            Hₖ_rows[p] = Hₖ_cols[p] = m
-            q = (pumptype == :time ? 1 : z) # If pumping is time-only, `ϵₖ[m, z]` is only calculated for `z == 1` (during diagonalisation of ℎₖ)
-            Hₖ_vals[p] = ϵₖ[m, q] - ν[m]*ω/s
+            H_rows[p] = H_cols[p] = m
+            q = (pumptype == :time ? 1 : z) # If pumping is time-only, `ϵ[m, z]` is only calculated for `z == 1` (during diagonalisation of ℎ)
+            H_vals[p] = ϵ[m, q] - ν[m]*ω/s
             p += 1
 
             # place the elements of the long lattice (S26)
             for i in 1:G[m]
                 # skip `s` groups of `g`, then some more groups depending on `m`, then skip `G[1]` cells
                 m′ = g*(s÷2) + g*((ν[m]-1)÷2) + iseven(ν[m])*G[1] + i
-                m′ > Hₖ_dim && break
-                Hₖ_rows[p] = m′
-                Hₖ_cols[p] = m
+                m′ > H_dim && break
+                H_rows[p] = m′
+                H_cols[p] = m
                 if pumptype != :time || z == 1 # If pumping is time-only, this may be calculated only once
-                    j_sum = sum( (cₖ[j+4n, m′]/4 + cₖ[j-4n, m′]/4 + cₖ[j, m′]/2) * cₖ[j, m] for j = 4n+1:n_j-4n ) + 
-                            sum( (cₖ[j+4n, m′]/4 - cₖ[-j+4n, m′]/4 + cₖ[j, m′]/2) * cₖ[j, m] for j = 1:4n-1 ) +
-                            (cₖ[4n+4n, m′]/4 + cₖ[4n, m′]/2) * cₖ[4n, m] + # iteration `j = 4n`
-                            sum( (cₖ[j-4n, m′]/4 + cₖ[j, m′]/2) * cₖ[j, m] for j = n_j-4n+1:n_j )
-                    Hₖ_vals[p] = (pumptype == :space ? λₗ/2 * j_sum : λₗ/2 * j_sum * cis(-2ϕ)) # a check for space or space-time pumping
+                    j_sum = sum( (c[j+4n, m′]/4 + c[j-4n, m′]/4 + c[j, m′]/2) * c[j, m] for j = 4n+1:n_j-4n ) + 
+                            sum( (c[j+4n, m′]/4 - c[-j+4n, m′]/4 + c[j, m′]/2) * c[j, m] for j = 1:4n-1 ) +
+                            (c[4n+4n, m′]/4 + c[4n, m′]/2) * c[4n, m] + # iteration `j = 4n`
+                            sum( (c[j-4n, m′]/4 + c[j, m′]/2) * c[j, m] for j = n_j-4n+1:n_j )
+                    H_vals[p] = (pumptype == :space ? λₗ/2 * j_sum : λₗ/2 * j_sum * cis(-2ϕ)) # a check for space or space-time pumping
                 elseif pumptype == :time 
-                    Hₖ_vals[p] *= cis(-2(phases[2]-phases[1]))
+                    H_vals[p] *= cis(-2(phases[2]-phases[1]))
                 end
                 p += 1
                 # place the conjugate element
-                Hₖ_rows[p] = m
-                Hₖ_cols[p] = m′
-                Hₖ_vals[p] = Hₖ_vals[p-1]'
+                H_rows[p] = m
+                H_cols[p] = m′
+                H_vals[p] = H_vals[p-1]'
                 p += 1
             end
             
             # place the elements of the short lattice (S29)
             for i in 1:G[m]
                 m′ = g*s + g*((ν[m]-1)÷2) + iseven(ν[m])*G[1] + i
-                m′ > Hₖ_dim && break
-                Hₖ_rows[p] = m′
-                Hₖ_cols[p] = m
+                m′ > H_dim && break
+                H_rows[p] = m′
+                H_cols[p] = m
                 if pumptype != :time || z == 1 # If pumping is time-only, this may be calculated only once
-                    j_sum = sum( (-cₖ[j+4n, m′]/4 - cₖ[j-4n, m′]/4 + cₖ[j, m′]/2) * cₖ[j, m] for j = 4n+1:n_j-4n ) + 
-                            sum( (-cₖ[j+4n, m′]/4 + cₖ[-j+4n, m′]/4 + cₖ[j, m′]/2) * cₖ[j, m] for j = 1:4n-1) +
-                            (-cₖ[4n+4n, m′]/4 + cₖ[4n, m′]/2) * cₖ[4n, m] + # iteration `j = 4n`
-                            sum( (-cₖ[j-4n, m′]/4 + cₖ[j, m′]/2) * cₖ[j, m] for j = n_j-4n+1:n_j)
-                    Hₖ_vals[p] = λₛ/2 * j_sum
+                    j_sum = sum( (-c[j+4n, m′]/4 - c[j-4n, m′]/4 + c[j, m′]/2) * c[j, m] for j = 4n+1:n_j-4n ) + 
+                            sum( (-c[j+4n, m′]/4 + c[-j+4n, m′]/4 + c[j, m′]/2) * c[j, m] for j = 1:4n-1) +
+                            (-c[4n+4n, m′]/4 + c[4n, m′]/2) * c[4n, m] + # iteration `j = 4n`
+                            sum( (-c[j-4n, m′]/4 + c[j, m′]/2) * c[j, m] for j = n_j-4n+1:n_j)
+                    H_vals[p] = λₛ/2 * j_sum
                 end
                 p += 1
                 # place the conjugate element
-                Hₖ_rows[p] = m
-                Hₖ_cols[p] = m′
-                Hₖ_vals[p] = Hₖ_vals[p-1]'
+                H_rows[p] = m
+                H_cols[p] = m′
+                H_vals[p] = H_vals[p-1]'
                 p += 1
             end
         end
-        # println(count(!=(0), Hₖ_rows))
-        H = sparse(Hₖ_rows, Hₖ_cols, Hₖ_vals)
-        # return H
-        vals, _, info = eigsolve(H, Δn, :LR; krylovdim=Hₖ_dim)
+        H = sparse(H_rows, H_cols, H_vals)
+        vals, _, info = eigsolve(H, Δn, :LR; krylovdim=H_dim)
         if info.converged < Δn
             @warn "Only $(info.converged) eigenvalues out of $(Δn) converged when diagonalising 𝐻ₖ. "*
                   "Results may be inaccurate." unconverged_norms=info.normres[info.converged+1:end]
         end
-        Eₖ[:, z] .= vals[1:Δn]
+        E[:, z] .= vals[1:Δn]
     end
-    return ϵₖ, Eₖ
+    return ϵ, E
 end
 
 function permute_floquet_bands_with_boundary!(E::AbstractMatrix{<:Float64}, e::AbstractMatrix{<:Float64}, ω::Real, s::Integer; groupsizes::Tuple{Integer,Integer})
