@@ -37,7 +37,7 @@ end
 Calculate all "quasiclassical" energy bands of Hamiltonian (S32) with boundaries, sweeping over the adiabatic `phases` (φₜ in (S32)).
 Return a tuple (`bands`, `states`): `bands[:, p]` stores eigenenergies at `p`th phase, while `states[p][:, m]` stores `m`th eigenvector at `p`th phase.
 Bands and states are sorted in energy-descending order so that for `M` negative, the bands of interest will be the first ones.
-Parameter `n` is the number of cells in the lattice; the eigenfunctions will be calculated as a superposition of functions sin(𝑗𝑥/𝑛) / √(𝑛π/2)
+Parameter `n` is the number of cells in the lattice; the eigenfunctions will be calculated in the basis of functions sin(𝑗𝑥/𝑛) / √(𝑛π/2).
 """
 function compute_qc_bands_with_boundary(; phases::AbstractVector{<:Real}, M::Real, λₗAₗ::Real, λₛAₛ::Real, n::Integer=2)    
     X(j′, j) = 16n*j*j′ / (π*((j-j′)^2-(2n)^2)*((j+j′)^2-(2n)^2))
@@ -226,13 +226,22 @@ function permute_floquet_bands!(E::AbstractMatrix{<:Float64}, e::AbstractMatrix{
 end
 
 """
-WIP: Floquet spectrum with spatial boundaries.
-Currently, calculation of the spatial spectrum is correct, but for the Floquet spectrum it is not.
+Calculate energy bands of the Floquet Hamiltonian (S20) with boundaries sweeping over the adiabatic `phases` φₓ. 
+The operation of this function follows that of [`compute_floquet_bands`](@ref).
+Parameter `n` is the number of cells in the lattice; the eigenfunctions will be calculated in the basis of functions sin(𝑗𝑥/𝑛) / √(𝑛π/2).
 """
-function compute_floquet_bands_with_boundary(;n::Integer, n_min::Integer, n_max::Integer, phases::AbstractVector{<:Real}, s::Integer, gₗ::Real, Vₗ::Real, λₗ::Real, λₛ::Real,
-                                             ω::Real, groupsizes::Tuple{Integer,Integer}, pumptype::Symbol)
+function compute_floquet_bands_with_boundary(; n::Integer, n_min::Integer, n_max::Integer, phases::AbstractVector{<:Real}, s::Integer, gₗ::Real, Vₗ::Real, λₗ::Real, λₛ::Real, ω::Real, pumptype::Symbol)
     X(j′, j) = 16n*j*j′ / (π*((j-j′)^2-(2n)^2)*((j+j′)^2-(2n)^2))
     
+    gs1 = 2n - 1 # number of levels in the first band of spatial Hamiltonian (group size 1)
+    gs2 = 2n + 1 # number of levels in the second band of spatial Hamiltonian (group size 1)
+    # convert `n_min` and `n_max` to actual level numbers
+    n_min = (n_min-1) ÷ 2 * 4n + (isodd(n_min) ? 1 : gs1 + 1)
+    n_max = (n_max-1) ÷ 2 * 4n + (isodd(n_max) ? gs1 : gs1 + gs2)
+    if iseven(n_min) # swap `gs1` and `gs2` so that they correspond to actual groups sizes
+        gs1, gs2 = gs2, gs1
+    end
+
     n_j = 2n_max # number of indices 𝑗 to use for constructing the unperturbed Hamiltonian
     h = zeros(n_j, n_j)
 
@@ -240,8 +249,7 @@ function compute_floquet_bands_with_boundary(;n::Integer, n_min::Integer, n_max:
     ν = Vector{Int}(undef, Δn)
     # FIll `ν`: [1 (`gs1` times), 2 (`gs2` times), 3 (`gs1` times), 4 (`gs2` times), ...]
     number = 1;
-    gs1, gs2 = groupsizes
-    g = sum(groupsizes)
+    g = gs1 + gs2
     for i in 0:Δn÷g-1
         ν[g*i+1:g*i+gs1] .= number
         number += 1
@@ -251,8 +259,8 @@ function compute_floquet_bands_with_boundary(;n::Integer, n_min::Integer, n_max:
     ν[Δn - Δn%g + 1:end] .= number
 
     pattern = [fill(gs1, gs1); fill(gs2, gs2)]
-    G = repeat(pattern, Δn÷g)
-    append!(G, pattern[1:Δn%g])
+    G = repeat(pattern, Δn÷g) # A patter which e.g. for `n == 2` looks like [3, 3, 3, 5, 5, 5, 5, 3, 3, 3, 5, 5, 5, 5, ...]
+    Δn % g != 0 && append!(G, fill(gs1, gs1))
     
     # Eigenvalues of ℎ (the unperturbed Hamiltonian)
     ϵ = Matrix{Float64}(undef, Δn, length(phases))
@@ -367,14 +375,24 @@ function compute_floquet_bands_with_boundary(;n::Integer, n_min::Integer, n_max:
     return ϵ, E
 end
 
-function permute_floquet_bands_with_boundary!(E::AbstractMatrix{<:Float64}, e::AbstractMatrix{<:Float64}, ω::Real, s::Integer; groupsizes::Tuple{Integer,Integer})
+"""
+Permute Floquet energy levels, calculated with open boundary conditions, contained in `E` so that they are stored in the same order as the eigenenergies `e` of
+the spatial Hamiltonian.
+The operation of this function follows that of [`permute_floquet_bands`](@ref).
+"""
+function permute_floquet_bands_with_boundary!(E::AbstractMatrix{<:Float64}, e::AbstractMatrix{<:Float64}; n_cells::Integer, n_min::Integer, ω::Real, s::Integer)
     n_energies, n_phases = size(e)
+
+    gs1 = 2n_cells - 1 # number of levels in the first band of spatial Hamiltonian (group size 1)
+    gs2 = 2n_cells + 1 # number of levels in the second band of spatial Hamiltonian (group size 2)
+    if iseven(n_min) # swap `gs1` and `gs2` so that they correspond to actual groups sizes
+        gs1, gs2 = gs2, gs1
+    end
 
     ν = Vector{Int}(undef, n_energies)
     # FIll `ν`: [1 (`gs1` times), 2 (`gs2` times), 3 (`gs1` times), 4 (`gs2` times), ...]
     number = 1;
-    gs1, gs2 = groupsizes
-    g = sum(groupsizes)
+    g = gs1 + gs2
     for i in 0:n_energies÷g-1
         ν[g*i+1:g*i+gs1] .= number
         number += 1

@@ -128,7 +128,7 @@ plot!(phases, -E0 .+ w, c=:white, label=false, lw=0.5)
 
 ### Calculate Floquet bands
 phases = range(0, π, length=61) # values of the adiabatic phase in (S32)
-n_min = 23
+n_min = 1
 n_max = 29
 n_bands = n_max-n_min+1
 ω = 398
@@ -193,10 +193,10 @@ savefig("pumping-space.pdf")
 
 fig2 = plot();
 plot!(range(0, π, length=200), x -> 𝐻₀(0, x, params), lw=2, c=:white, label=false) # Spatial potential
-for i in 51:58
+for i in 1:58
     plot!(phases, eₖ[i, :], fillrange=eₖ[2n_bands+i, :], fillalpha=0.3, label="m = $(i+2n_min-2)")
 end
-for i in 1:n_bands
+for i in 1:2n_bands
     plot!(phases, eₖ[i, :], label="")
 end
 title!("Energy spectrum of "*L"h_k"*" (S21), space pumping, "*L"V_L=15")
@@ -296,16 +296,15 @@ savefig("obc-time-8.pdf")
 ### Floquet bands with open boundary conditions
 
 phases = range(0, π, length=61) # values of the adiabatic phase in (S32)
-n_cells = 2
-n_min = (23 ÷ 2) * 4n_cells + 1 # get how many groups of two there are; then each group has `4n_cells` levels
-n_max = (29 ÷ 2) * 4n_cells
-n_bands = n_max-n_min+1
-e, E = compute_floquet_bands_with_boundary(;n=n_cells, n_min, n_max, phases, s, gₗ, Vₗ, λₗ, λₛ, ω, groupsizes=(3,5), pumptype=:spacetime)
-permute_floquet_bands_with_boundary!(E, e, ω, s, groupsizes=(3,5))
+n_cells = 4
+n_min = 24
+n_max = 29
+e, E = compute_floquet_bands_with_boundary(;n=n_cells, n_min, n_max, phases, s, gₗ, Vₗ, λₗ, λₛ, ω, pumptype=:spacetime)
+permute_floquet_bands_with_boundary!(E, e; n_cells, n_min, ω, s)
 
-fig = plot()
-for i in 1:n_bands
-    plot!(phases, E[i, :], label=false)
+fig = plot();
+for r in eachrow(E)
+    plot!(phases, r, label=false)
 end
 title!("")
 
