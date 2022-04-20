@@ -1,7 +1,6 @@
 import Roots
 import Optim
 import Dierckx
-import Elliptic
 using QuadGK: quadgk
 import DifferentialEquations as DiffEq
 using DiffEqPhysics: HamiltonianProblem, DynamicalODEProblem
