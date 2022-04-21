@@ -203,9 +203,9 @@ the spatial Hamiltonian (i.e. in the order of increasing 𝑚). Repeat this for 
 of rows of `E` (first half is 𝑘 = 0, and second is 𝑘 = 1).
 It is assumed that the bands in `E` are initially stored in energy-descending order, as obtained during diagonalisation. To perfrorm
 the sorting, we first calculate `e - ν(m)` which is the diagonal of the Floquet Hamiltonian. If there is no perturbation, then these
-are the Floquet quasienergies. Then, we sort then in descending order (as if we diagonalised the Hamiltonian) and find the permutation
+are the Floquet quasienergies. Then, we sort them in descending order (as if we diagonalised the Hamiltonian) and find the permutation
 that would undo this sorting. This permutation is applied to `E`.
-The procedure yield fully correct results only if `E` has been calculated at zero perturbation. The perturbation may additionally change
+The procedure yields fully correct results only if `E` has been calculated at zero perturbation. The perturbation may additionally change
 the order of levels, and there is no simple way to disentangle the order. The permutation is still useful in that case, but the results 
 should not be taken too literally.
 """
@@ -305,6 +305,11 @@ function compute_floquet_bands_with_boundary(; n::Integer, n_min::Integer, n_max
             # save only energies and states for levels from `n_min` to `n_max`
             ϵ[:, z] = f.values[n_min:n_max]
             c .= f.vectors[:, n_min:n_max]
+            if pumptype == :time
+                for p in 2:length(phases) # copy the calculated first column of `ϵ` to all other columns for consistency
+                    ϵ[:, p] = ϵ[:, 1]
+                end
+            end
         end
 
         # Construct 𝐻
@@ -312,8 +317,7 @@ function compute_floquet_bands_with_boundary(; n::Integer, n_min::Integer, n_max
         for m in 1:H_dim
             # place the diagonal element (S25)
             H_rows[p] = H_cols[p] = m
-            q = (pumptype == :time ? 1 : z) # If pumping is time-only, `ϵ[m, z]` is only calculated for `z == 1` (during diagonalisation of ℎ)
-            H_vals[p] = ϵ[m, q] - ν[m]*ω/s
+            H_vals[p] = ϵ[m, z] - ν[m]*ω/s
             p += 1
 
             # place the elements of the long lattice (S26)
@@ -373,7 +377,7 @@ function compute_floquet_bands_with_boundary(; n::Integer, n_min::Integer, n_max
 end
 
 """
-Permute Floquet energy levels, calculated with open boundary conditions, contained in `E` so that they are stored in the same order as the eigenenergies `e` of
+Permute Floquet energy levels calculated with open boundary conditions contained in `E` so that they are stored in the same order as the eigenenergies `e` of
 the spatial Hamiltonian.
 The operation of this function follows that of [`permute_floquet_bands`](@ref).
 """
