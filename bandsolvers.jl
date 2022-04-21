@@ -34,15 +34,17 @@ function compute_qc_bands(; n_bands::Integer, phases::AbstractVector{<:Real}, s:
 end
 
 """
-Calculate all "quasiclassical" energy bands of Hamiltonian (S32) with boundaries, sweeping over the adiabatic `phases` (φₜ in (S32)).
+Calculate "quasiclassical" energy bands of Hamiltonian (S32) with boundaries, sweeping over the adiabatic `phases` (φₜ in (S32)).
 Return a tuple (`bands`, `states`): `bands[:, p]` stores eigenenergies at `p`th phase, while `states[p][:, m]` stores `m`th eigenvector at `p`th phase.
 Bands and states are sorted in energy-descending order so that for `M` negative, the bands of interest will be the first ones.
-Parameter `n` is the number of cells in the lattice; the eigenfunctions will be calculated in the basis of functions sin(𝑗𝑥/𝑛) / √(𝑛π/2).
+Parameter `n` is the number of cells in the lattice; the eigenfunctions will be calculated in the basis of functions sin(𝑗𝑥/𝑛) / √(𝑛π/2),
+where 𝑗 runs from 0 to `5n_bands`. `n_bands` is the number of bands of interest, but a larger Hamiltonian matrix is constructed (of size `5n_bands` × `5n_bands`)
+so that the bands of interest are calculated correctly. However, all `5n_bands` energy levels and eigenstates are returned.
 """
-function compute_qc_bands_with_boundary(; phases::AbstractVector{<:Real}, M::Real, λₗAₗ::Real, λₛAₛ::Real, n::Integer=2)    
+function compute_qc_bands_with_boundary(; n::Integer, n_bands::Integer, phases::AbstractVector{<:Real}, M::Real, λₗAₗ::Real, λₛAₛ::Real)    
     X(j′, j) = 16n*j*j′ / (π*((j-j′)^2-(2n)^2)*((j+j′)^2-(2n)^2))
     
-    n_j = 300 # number of indices 𝑗 to use for constructing the Hamiltonian
+    n_j = 5n_bands # number of indices 𝑗 to use for constructing the Hamiltonian
     H = zeros(n_j, n_j)
     # for storing eigenstates and eigenvectors, see function docstring for format
     bands = Matrix{Float64}(undef, n_j, length(phases))
@@ -236,7 +238,7 @@ function compute_floquet_bands_with_boundary(; n::Integer, n_min::Integer, n_max
     # convert `n_min` and `n_max` to actual level numbers
     n_min = (n_min-1) ÷ 2 * 4n + (isodd(n_min) ? 1 : gs1 + 1)
     n_max = (n_max-1) ÷ 2 * 4n + (isodd(n_max) ? gs1 : gs1 + gs2)
-    if iseven(n_min) # swap `gs1` and `gs2` so that they correspond to actual groups sizes
+    if iseven(n_min) # swap `gs1` and `gs2` so that they correspond to actual group sizes
         gs1, gs2 = gs2, gs1
     end
 
@@ -246,7 +248,7 @@ function compute_floquet_bands_with_boundary(; n::Integer, n_min::Integer, n_max
     Δn = n_max - n_min + 1
     ν = Vector{Int}(undef, Δn)
     # FIll `ν`: [1 (`gs1` times), 2 (`gs2` times), 3 (`gs1` times), 4 (`gs2` times), ...]
-    number = 1;
+    number = 1
     g = gs1 + gs2
     for i in 0:Δn÷g-1
         ν[g*i+1:g*i+gs1] .= number
@@ -386,7 +388,7 @@ function permute_floquet_bands_with_boundary!(E::AbstractMatrix{<:Float64}, e::A
 
     gs1 = 2n_cells - 1 # number of levels in the first band of spatial Hamiltonian (group size 1)
     gs2 = 2n_cells + 1 # number of levels in the second band of spatial Hamiltonian (group size 2)
-    if iseven(n_min) # swap `gs1` and `gs2` so that they correspond to actual groups sizes
+    if iseven(n_min) # swap `gs1` and `gs2` so that they correspond to actual group sizes
         gs1, gs2 = gs2, gs1
     end
 

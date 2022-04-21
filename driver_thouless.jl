@@ -29,8 +29,8 @@ end
 
 g = 6000; l = 1;
 gₗ = -2g*factorial(l) / √π / gamma(l + 0.5)
-Vₗ = 15
-λₛ = 150; λₗ = 55; ω = 398
+Vₗ = 2
+λₛ = 40; λₗ = 40; ω = 410
 s = 2
 params = [gₗ, l, Vₗ, λₛ, λₗ, ω]
 # H = SpacetimeHamiltonian(𝐻₀, 𝐻, params, s, (0.8, 1.1), (1.2, 1.8), 0.001)
@@ -128,16 +128,19 @@ plot!(phases, -E0 .+ w, c=:white, label=false, lw=0.5)
 
 ### Calculate Floquet bands
 phases = range(0, π, length=61) # values of the adiabatic phase in (S32)
-n_min = 1
-n_max = 29
+n_min = 20
+n_max = 30
 n_bands = n_max-n_min+1
-ω = 398
-eₖ, Eₖ = compute_floquet_bands(;n_min, n_max, phases, s, l, gₗ, Vₗ=2, λₗ=λₗ, λₛ=λₛ, ω, pumptype=:spacetime)
+ω = 410
+eₖ, Eₖ = compute_floquet_bands(;n_min, n_max, phases, s, l, gₗ, Vₗ, λₗ, λₛ, ω, pumptype=:spacetime)
 permute_floquet_bands!(Eₖ, eₖ, n_min, ω, s)
 fig1 = plot();
 for i in 1:2n_bands
     plot!(phases, Eₖ[i, :], fillrange=Eₖ[2n_bands+i, :], fillalpha=0.3, label="m = $(i+2n_min-2)", legend=:outerright)
 end
+title!(L"V_L = 2, \lambda_S = 40, \lambda_L = 40, \omega = 410")
+savefig("2-40-40-410_periodic.pdf")
+
 for (i, m) in enumerate([8, 6, 4, 2, 3, 1, 7, 5, 10, 9])
     plot!(phases, Eₖ[m, :], fillrange=Eₖ[2n_bands+m, :], fillalpha=0.3, label="m = $(i+2n_min-2)", legend=:outerright)
 end
@@ -146,7 +149,7 @@ for i in 1:2n_bands
 end
 
 title!("")
-ylims!((-5600, -5525))
+ylims!((-5715, -5693))
 fig1 = plot();
 for i in 1:2n_bands
     plot!(phases, Eₖ[i, :], c=i, label="m = $(i+2n_min-2), k = 0", legend=:outerright)
@@ -279,38 +282,23 @@ savefig("4D-bands.pdf")
 
 ### Quasiclassical bands with open boundary conditions
 
-phases = range(0, 2π, length=51)
+phases = range(0, 2π, length=61)
 n_cells = 8
 n_bands = 2n_cells
-bands, states = compute_qc_bands_with_boundary(; phases, M, λₗAₗ=λₗ*Aₗ, λₛAₛ=λₛ*Aₛ, n=n_cells)
+bands, states = compute_qc_bands_with_boundary(; n=n_cells, n_bands, phases, M, λₗAₗ=λₗ*Aₗ, λₛAₛ=λₛ*Aₛ)
 
 fig = plot();
 for i in 1:n_bands
     plot!(phases, bands[i, :], label="")
 end
-display(fig)
 title!("Eigenenergy spectrum of "*L"H"*" (S32) with $n_cells cells and open BC")
 xlabel!(L"\varphi_t"*", rad"); ylabel!("Eigenenergy of "*L"H"*" (S32)")
 savefig("obc-time-8.pdf")
 
-### Floquet bands with open boundary conditions
-
-phases = range(0, π, length=61) # values of the adiabatic phase in (S32)
-n_cells = 4
-n_min = 24
-n_max = 29
-e, E = compute_floquet_bands_with_boundary(;n=n_cells, n_min, n_max, phases, s, gₗ, Vₗ, λₗ, λₛ, ω, pumptype=:spacetime)
-permute_floquet_bands_with_boundary!(E, e; n_cells, n_min, ω, s)
-
-fig = plot();
-for r in eachrow(E)
-    plot!(phases, r, label=false)
-end
-title!("")
-
 # plot states
 
-function make_coordinate_state(x::AbstractVector{<:Real}, coeffs::AbstractVector{<:Number}; n=2)
+"Reconstruct the coordinate space wavefunction 𝜓(𝑥) = ∑ⱼ𝑐ⱼsin(𝑗𝑥/𝑛) / √(𝑛π/2)"
+function make_coordinate_state(x::AbstractVector{<:Real}, coeffs::AbstractVector{<:Number}; n)
     ψ = zeros(eltype(coeffs), length(x))
     for (j, c) in enumerate(coeffs)
         @. ψ += c * sin(j/n * x)
@@ -318,7 +306,36 @@ function make_coordinate_state(x::AbstractVector{<:Real}, coeffs::AbstractVector
     return ψ ./ (n*π/2)
 end
 
-x = range(0, 3*π, length=501)
+θ = range(0, n_cells*π, length=501)
+i_ϕ = 15
+U = @. (λₗ*Aₗ*cos(s*θ + phases[i_ϕ]) + λₛ*Aₛ*cos(2s*θ))
+plot(θ, U, label="potential", c=:white, legend=:outerright)
+for i = 1:n_bands
+    ψ = make_coordinate_state(θ, states[i_ϕ][:, i], n=n_cells) .+ bands[i, i_ϕ]
+    hline!([bands[i, i_ϕ]], c=:white, ls=:dot, label=false); plot!(θ, ψ, label=L"\psi_{%$i}(\theta)")
+end
+xlabel!(L"\theta"*", rad"); ylabel!(L"\psi_n(\theta)")
+title!("Wavefunctions at "*L"\varphi_t=\pi/2")
+
+### Floquet bands with open boundary conditions
+
+phases = range(0, π, length=61) # values of the adiabatic phase in (S32)
+n_cells = 5
+n_min = 24
+n_max = 30
+e, E = compute_floquet_bands_with_boundary(;n=n_cells, n_min, n_max, phases, s, gₗ, Vₗ, λₗ, λₛ, ω, pumptype=:spacetime)
+permute_floquet_bands_with_boundary!(E, e; n_cells, n_min, ω, s)
+
+fig = plot();
+for r in eachrow(E)
+    plot!(phases, r, label=false)
+end
+title!(L"V_L = 15, \lambda_S = 150, \lambda_L = 55, \omega = 398")
+savefig("15-150-55-398.pdf")
+
+###
+
+x = range(0, n_cells*π, length=501)
 i_ϕ = 1
 U = @. (100Vₗ*cos(2x + phases[i_ϕ]) + gₗ*cos(4x))
 plot(x, U, label="potential", c=:white, legend=:outerright)#, ylims=(-32,32))
@@ -329,7 +346,6 @@ for i = 1:n_bands
 end
 xlabel!("θ, rad"); ylabel!("𝜓ₙ")
 xlabel!(L"\theta"*", rad"); ylabel!(L"\psi_n(\theta)")
-title!("Wavefunctions at φₜ = π/4")
 title!("Wavefunctions at "*L"\varphi_t=\pi/2")
 savefig("wf-4-extended-pi2.pdf")
 
@@ -341,7 +357,5 @@ for ns = 16:47
     ψ = make_coordinate_state(x, c[:, ns], n=n_cells) .+ e[ns]
     hline!([e[ns]], c=:white, ls=:dot, label=false); plot!(x, ψ, label="", c=ns) 
 end
-ylims!(-194.5, -193.5)
-ylims!(-377, -365)
 title!("Eigenfunctions of "*L"h_0"*" at "*L"\varphi_x = \pi/4")
 savefig("h_k_wavefunctions-enlarged-3.pdf")
