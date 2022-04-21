@@ -62,7 +62,7 @@ function compute_qc_bands_with_boundary(; phases::AbstractVector{<:Real}, M::Rea
                     elseif j′ == j - 4n || j′ == j + 4n
                         val += λₛAₛ / 2
                     end
-                    # check diagonals "/"
+                    # check anti-diagonals "/"
                     if j′ == -j - 2n || j′ == -j + 2n
                         val += -λₗAₗ * cos(ϕ) / 2
                     elseif j′ == -j - 4n || j′ == -j + 4n
@@ -232,7 +232,7 @@ function compute_floquet_bands_with_boundary(; n::Integer, n_min::Integer, n_max
     X(j′, j) = 16n*j*j′ / (π*((j-j′)^2-(2n)^2)*((j+j′)^2-(2n)^2))
     
     gs1 = 2n - 1 # number of levels in the first band of spatial Hamiltonian (group size 1)
-    gs2 = 2n + 1 # number of levels in the second band of spatial Hamiltonian (group size 1)
+    gs2 = 2n + 1 # number of levels in the second band of spatial Hamiltonian (group size 2)
     # convert `n_min` and `n_max` to actual level numbers
     n_min = (n_min-1) ÷ 2 * 4n + (isodd(n_min) ? 1 : gs1 + 1)
     n_max = (n_max-1) ÷ 2 * 4n + (isodd(n_max) ? gs1 : gs1 + gs2)
@@ -257,14 +257,13 @@ function compute_floquet_bands_with_boundary(; n::Integer, n_min::Integer, n_max
     ν[Δn - Δn%g + 1:end] .= number
 
     pattern = [fill(gs1, gs1); fill(gs2, gs2)]
-    G = repeat(pattern, Δn÷g) # A patter which e.g. for `n == 2` looks like [3, 3, 3, 5, 5, 5, 5, 3, 3, 3, 5, 5, 5, 5, ...]
+    G = repeat(pattern, Δn÷g) # a pattern which e.g. for `n == 2` looks like [3, 3, 3, 5, 5, 5, 5, 3, 3, 3, 5, 5, 5, 5, ...]
     Δn % g != 0 && append!(G, fill(gs1, gs1))
     
-    # Eigenvalues of ℎ (the unperturbed Hamiltonian)
-    ϵ = Matrix{Float64}(undef, Δn, length(phases))
-    c = Matrix{Float64}(undef, n_j, Δn)
+    ϵ = Matrix{Float64}(undef, Δn, length(phases)) # eigenvalues of ℎ (the unperturbed Hamiltonian)
+    c = Matrix{Float64}(undef, n_j, Δn) # eigenvectors of ℎ
     
-    E = Matrix{Float64}(undef, Δn, length(phases)) # eigenvalues of 𝐻ₖ (Floquet quasi-energies) that will be saved; size is twice `Δn` for the two values of 𝑘
+    E = Matrix{Float64}(undef, Δn, length(phases)) # eigenvalues of 𝐻 (Floquet quasi-energies)
     H_dim = Δn # dimension of the constructed 𝐻 matrix
     # number of non-zero elements in 𝐻:
     n_H_nonzeros = H_dim + 2*( # diagonal plus two times upper off-diagonal terms:
@@ -292,7 +291,7 @@ function compute_floquet_bands_with_boundary(; n::Integer, n_min::Integer, n_max
                         elseif j′ == j - 4n || j′ == j + 4n
                             val += gₗ/2 / 2
                         end
-                        # check diagonals "/"
+                        # check anti-diagonals "/"
                         if j′ == -j - 2n || j′ == -j + 2n
                             val += -Vₗ/2 * cos(2ϕ) / 2
                         elseif j′ == -j - 4n || j′ == -j + 4n
@@ -307,9 +306,9 @@ function compute_floquet_bands_with_boundary(; n::Integer, n_min::Integer, n_max
             ϵ[:, z] = f.values[n_min:n_max]
             c .= f.vectors[:, n_min:n_max]
         end
+
         # Construct 𝐻
         p = 1 # a counter for placing elements to the vectors `H_*`
-        
         for m in 1:H_dim
             # place the diagonal element (S25)
             H_rows[p] = H_cols[p] = m
@@ -402,7 +401,7 @@ function permute_floquet_bands_with_boundary!(E::AbstractMatrix{<:Float64}, e::A
     
     for p in 1:n_phases
         e_diag = [e[m, p] - ν[m] for m in 1:n_energies] # Floquet energies at zero perturbation
-        invsort = sortperm(sortperm(e_diag, rev=true)) # inverse permutation, such that `sort(e_diag, rev=true)[invsort] == e_diag`
+        invsort = sortperm(sortperm(e_diag, rev=true))  # inverse permutation, such that `sort(e_diag, rev=true)[invsort] == e_diag`
         E[1:n_energies, p] .= E[invsort, p]
     end
 end
