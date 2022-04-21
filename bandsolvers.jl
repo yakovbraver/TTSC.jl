@@ -87,7 +87,6 @@ In `Eₖ`, rows `1:Δn` store the eigenvalues corresponding to the centre of BZ,
 In `Eₖ`, rows `Δn:end` store the eigenvalues corresponding to the boundary of BZ, in our case Vₗcos²(x+φₓ) leads to 𝑘 = 2/2 = 1.
 The structure of `ϵₖ` is the same, but with `2Δn` instead of `Δn`.
 Type of pumping is controlled via `pumptype`: `:time` for temporal, `:space` for spatial, or anything else for simultaneous space-time pumping.
-Note that if `pumptype==:time`, ℎₖ is diagonalised only once (as the spatial phase is constant), hence only the first column of `ϵₖ` is populated.
 """
 function compute_floquet_bands(; n_min::Integer, n_max::Integer, phases::AbstractVector{<:Real}, s::Integer, l::Real, gₗ::Real, Vₗ::Real, λₗ::Real, λₛ::Real, ω::Real, pumptype::Symbol)
     n_j = 2n_max # number of indices 𝑗 to use for constructing ℎₖ (its size will be (2n_j+1)×(2n_j+1)). `2n_max` is a safe value, but it could be less.
@@ -130,7 +129,7 @@ function compute_floquet_bands(; n_min::Integer, n_max::Integer, phases::Abstrac
                 ϵₖ[a_hₖ:b_hₖ, z] = vals[2n_min-1:2n_max]
                 cₖ .= vecs[2n_min-1:2n_max]
                 if pumptype == :time
-                    for p in 2:length(phases)
+                    for p in 2:length(phases) # copy the calculated first column of `ϵₖ` to all other columns for consistency
                         ϵₖ[a_hₖ:b_hₖ, p] = ϵₖ[a_hₖ:b_hₖ, 1]
                     end
                 end
@@ -141,8 +140,7 @@ function compute_floquet_bands(; n_min::Integer, n_max::Integer, phases::Abstrac
             for m in 1:Hₖ_dim
                 # place the diagonal element (S25)
                 Hₖ_rows[p] = Hₖ_cols[p] = m
-                q = (pumptype == :time ? 1 : z) # If pumping is time-only, `ϵₖ[m, z]` is only calculated for `z == 1` (during diagonalisation of ℎₖ)
-                Hₖ_vals[p] = ϵₖ[m+a_hₖ-1, q] - ceil((m+2n_min-2)/2)*ω/s
+                Hₖ_vals[p] = ϵₖ[m+a_hₖ-1, z] - ceil((m+2n_min-2)/2)*ω/s
                 p += 1
 
                 # place the elements of the long lattice (S26)
