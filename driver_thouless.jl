@@ -132,7 +132,7 @@ n_min = 1
 n_max = 29
 n_bands = n_max-n_min+1
 ω = 398
-eₖ, Eₖ = compute_floquet_bands(;n_min, n_max, phases, s, l, gₗ, Vₗ=15, λₗ=λₗ, λₛ=λₛ, ω, pumptype=:spacetime)
+eₖ, Eₖ = compute_floquet_bands(;n_min, n_max, phases, s, l, gₗ, Vₗ=2, λₗ=λₗ, λₛ=λₛ, ω, pumptype=:time)
 permute_floquet_bands!(Eₖ, eₖ, n_min, ω, s)
 fig1 = plot();
 for i in 1:2n_bands
