@@ -30,7 +30,7 @@ end
 g = 6000; l = 1;
 gₗ = -2g*factorial(l) / √π / gamma(l + 0.5)
 Vₗ = 2
-λₛ = 40; λₗ = 40; ω = 410
+λₛ = 100; λₗ = 40; ω = 410
 s = 2
 params = [gₗ, l, Vₗ, λₛ, λₗ, ω]
 # H = SpacetimeHamiltonian(𝐻₀, 𝐻, params, s, (0.8, 1.1), (1.2, 1.8), 0.001)
@@ -54,13 +54,13 @@ savefig("h_0-parameters.pdf")
 
 ### Make a plot of the motion in the (𝐼, ϑ) phase-space in the secular approximation
 
-function plot_isoenergies(; ω, M, λₛ, Aₛ, χₛ, λₗ, Aₗ, χₗ, Iₛ, s, I_min, I_max)
+function plot_isoenergies(; ω, M, λₛ, Aₛ, χₛ, λₗ, Aₗ, χₗ, φₜ, Iₛ, s, I_min, I_max)
     ϑ = range(0, 2π, length=50)
     I = range(I_min, I_max, length=50)
     E = Matrix{Float64}(undef, length(ϑ), length(I))
     h₀ = H.𝐸(Iₛ) - ω/s*Iₛ
     for i in eachindex(I), t in eachindex(ϑ)
-        E[t, i] = h₀ + (I[i]-Iₛ)^2/2M + λₛ*Aₛ*cos(2s*ϑ[t] + χₛ) + λₗ*Aₗ*cos(s*ϑ[t] + χₗ)
+        E[t, i] = h₀ + (I[i]-Iₛ)^2/2M + λₛ*Aₛ*cos(2s*ϑ[t] + χₛ) + λₗ*Aₗ*cos(s*ϑ[t] + χₗ - φₜ)
     end
     contour(ϑ, I, E', xlabel=L"\Theta"*", rad", ylabel=L"I", cbartitle="Energy \$H\$ (S17)", color=:viridis, minorgrid=true, minorticks=5, levels=30)
     hline!([Iₛ], label=L"I_s = %$(round(Iₛ, sigdigits=4))", c=:white)
@@ -69,22 +69,20 @@ function plot_isoenergies(; ω, M, λₛ, Aₛ, χₛ, λₗ, Aₗ, χₗ, Iₛ,
            L"\lambda_S = %$λₛ, A_S = %$(round(Aₛ, sigdigits=2)), \chi_S = %$(round(χₛ, sigdigits=2))")
 end
 
-Iₛ, M, coeffs = compute_parameters(H, Function[𝑄ₛ, 𝑄ₗ], [-2s, -s])
+Iₛ, M, coeffs = compute_parameters(H, Function[𝑄ₛ, 𝑄ₗ], [2s, s])
 
 Aₛ = abs(coeffs[1]); χₛ = angle(coeffs[1])
-ϕₜ = pi/2
-eQ = cis(ϕₜ)*coeffs[2]
-Aₗ = abs(eQ); χₗ = angle(eQ)
+Aₗ = abs(coeffs[2]); χₗ = angle(coeffs[2])
 
 I_min = 22; I_max = 28
-plot_isoenergies(; ω, M, λₛ=λₛ, Aₛ, χₛ, λₗ=λₗ, Aₗ, χₗ, Iₛ, s, I_min, I_max)
+plot_isoenergies(; ω, M, λₛ, Aₛ, χₛ, λₗ, Aₗ, χₗ, φₜ=π/2, Iₛ, s, I_min, I_max)
 savefig("secular-isoenergies.pdf")
 
 ### Make an "exact" plot of the motion in the (𝐼, ϑ) phase-space
 
 fig = plot();
 for i in 22:0.2:28
-    I, Θ = compute_IΘ(H, i, n_T=100, χ₀=0) # use χ₀ = 0 and ±0.75
+    I, Θ = compute_IΘ(H, i, n_T=100, χ₀=-0.75) # use χ₀ = 0 and ±0.75
     scatter!(Θ, I, xlabel=L"\theta, rad", ylabel=L"I", markerstrokewidth=0, markeralpha=0.6, label=false, minorgrid=true, minorticks=5)
 end
 ylims!(I_min, I_max); xlims!(0, 2pi)
@@ -96,12 +94,17 @@ savefig(fig, "exact-isoenergies.pdf")
 include("bandsolvers.jl")
 
 phases = range(0, π, length=61) # values of the adiabatic phase in (S32)
-n_bands = 4
-bands = compute_qc_bands(; n_bands, phases, s, M, λₗAₗ=2λₗ*Aₗ, λₛAₛ=2λₛ*Aₛ) .+ H.𝐸(Iₛ) .- ω/s*Iₛ
+n_bands = 2
+bands = compute_qc_bands(; n_bands, phases, s, M, λₗAₗ=λₗ*Aₗ, λₛAₛ=λₛ*Aₛ, χₗ, χₛ) .+ H.𝐸(Iₛ) .- ω/s*Iₛ
+n_cells = 2
+levels2 = compute_qc_bands_pbc(; n_levels=5, phases, s, M, λₗAₗ=0.5λₗ*Aₗ, λₛAₛ=0.5λₛ*Aₛ) .+ H.𝐸(Iₛ) .- ω/s*Iₛ
 
 fig2 = plot();
 for i in 1:n_bands
     plot!(phases, bands[i, :], fillrange=bands[n_bands+i, :], fillalpha=0.35, label="band $i");
+end
+for i in 1:5
+    plot!(phases, levels2[i, :], label="level $i");
 end
 xlabel!(L"\varphi_t"*", rad"); ylabel!("Energy of quantised secular "*L"H"*" (S17)")
 title!(L"\omega = %$ω, M = %$(round(M, sigdigits=2)), \lambda_L = %$λₗ, A_L = %$(round(Aₗ, sigdigits=2)),"*
@@ -132,7 +135,7 @@ n_min = 20
 n_max = 30
 n_bands = n_max-n_min+1
 ω = 410
-eₖ, Eₖ = compute_floquet_bands(;n_min, n_max, phases, s, l, gₗ, Vₗ, λₗ, λₛ, ω, pumptype=:spacetime)
+eₖ, Eₖ = compute_floquet_bands(;n_min, n_max, phases, s, l, gₗ, Vₗ=2, λₗ=40, λₛ=100, ω, pumptype=:spacetime)
 permute_floquet_bands!(Eₖ, eₖ, n_min, ω, s)
 fig1 = plot();
 for i in 1:2n_bands
@@ -283,12 +286,13 @@ savefig("4D-bands.pdf")
 ### Quasiclassical bands with open boundary conditions
 
 phases = range(0, 2π, length=61)
-n_cells = 8
-n_bands = 2n_cells
-bands, states = compute_qc_bands_with_boundary(; n=n_cells, n_bands, phases, M, λₗAₗ=λₗ*Aₗ, λₛAₛ=λₛ*Aₛ)
+n_cells = 2
+n_levels = 2n_cells
+λₛ = 10; λₗ = 4
+bands, states = compute_qc_bands_obc(; n=n_cells, n_levels, phases, M, λₗAₗ=λₗ*Aₗ, λₛAₛ=λₛ*Aₛ, χₗ, χₛ)
 
 fig = plot();
-for i in 1:n_bands
+for i in 1:n_levels
     plot!(phases, bands[i, :], label="")
 end
 title!("Eigenenergy spectrum of "*L"H"*" (S32) with $n_cells cells and open BC")
@@ -311,11 +315,21 @@ i_ϕ = 15
 U = @. (λₗ*Aₗ*cos(s*θ + phases[i_ϕ]) + λₛ*Aₛ*cos(2s*θ))
 plot(θ, U, label="potential", c=:white, legend=:outerright)
 for i = 1:n_bands
-    ψ = make_coordinate_state(θ, states[i_ϕ][:, i], n=n_cells) .+ bands[i, i_ϕ]
+    ψ = 5abs2.(make_coordinate_state(θ, states[i_ϕ][:, i], n=n_cells)) .+ bands[i, i_ϕ]
     hline!([bands[i, i_ϕ]], c=:white, ls=:dot, label=false); plot!(θ, ψ, label=L"\psi_{%$i}(\theta)")
 end
-xlabel!(L"\theta"*", rad"); ylabel!(L"\psi_n(\theta)")
 title!("Wavefunctions at "*L"\varphi_t=\pi/2")
+
+@gif for i_ϕ in eachindex(phases)
+    U = @. (λₗ*Aₗ*cos(s*θ + phases[i_ϕ]) + λₛ*Aₛ*cos(2s*θ))
+    plot(θ, U, label="potential", c=:white, legend=:outerright)
+    for i = 1:3
+        ψ = 5abs2.(make_coordinate_state(θ, states[i_ϕ][:, i], n=n_cells)) .+ bands[i, i_ϕ]
+        hline!([bands[i, i_ϕ]], c=:white, ls=:dot, label=false); plot!(θ, ψ, label=L"\psi_{%$i}(\theta)")
+    end
+    ylims!(-15, 3)
+    xlabel!(L"\theta"*", rad"); ylabel!(L"\psi_n(\theta)")
+end
 
 ### Floquet bands with open boundary conditions
 

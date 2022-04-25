@@ -4,18 +4,20 @@ using KrylovKit: eigsolve
 using LinearAlgebra: eigen
 
 """
-Calculate `n_bands` of "quasiclassical" energy bands of Hamiltonian (S32) sweeping over the adiabatic `phases` (φₜ in (S32)).
+Calculate `n_bands` of energy bands of Hamiltonian (S32) assuming infinite crystal with a quasimomentum 𝑞,
+    𝐻 = (𝑝 + 𝑞)²/2𝑀 + 𝜆ₗ𝐴ₗcos(𝑠𝑥 - 𝜒ₗ - φₜ) + 𝜆ₛ𝐴ₛcos(2𝑠𝑥 - 𝜒ₛ)
+on 𝑥 ∈ (0; π) sweeping over the adiabatic `phases` φₜ. Boundary conditions are periodic, hence the basis exp(i𝑗𝑥) / √2π is used.
 In the returned matrix of bands, columns enumerate the adiabatic phases, while rows enumerate eigenvalues.
 Rows `1:n_bands` store the eigenvalues corresponding to the centre of BZ, 𝑘 = 0.
 Rows `n_bands:end` store the eigenvalues corresponding to the boundary of BZ, in our case λₗAₗcos(sϑ+φₜ) leads to 𝑘 = s/2.
 """
-function compute_qc_bands(; n_bands::Integer, phases::AbstractVector{<:Real}, s::Integer, M::Real, λₗAₗ::Real, λₛAₛ::Real)
+function compute_qc_bands(; n_bands::Integer, phases::AbstractVector{<:Real}, s::Integer, M::Real, λₗAₗ::Real, λₛAₛ::Real, χₛ::Real, χₗ::Real)
     n_j = 2n_bands # number of indices 𝑗 to use for constructing the Hamiltonian (its size will be (2n_j+1)×(2n_j+1))
     
     # Hamiltonian matrix
     H = BM.BandedMatrix{ComplexF64}(undef, (2n_j + 1, 2n_j + 1), (2, 2))
-    H[BM.band(-2)] .= λₛAₛ
-    H[BM.band(2)]  .= λₛAₛ
+    H[BM.band(-2)] .= λₛAₛ * cis(χₛ)
+    H[BM.band(2)]  .= λₛAₛ * cis(-χₛ)
     
     bands = Matrix{Float64}(undef, 2n_bands, length(phases))
     for k in [0, s÷2] # iterate over the centre of BZ and then the boundary
@@ -24,8 +26,8 @@ function compute_qc_bands(; n_bands::Integer, phases::AbstractVector{<:Real}, s:
         a = (k > 0)*n_bands + 1 
         b = a+n_bands - 1
         for (i, ϕ) in enumerate(phases)
-            H[BM.band(-1)] .= λₗAₗ*cis(-ϕ-pi/2)
-            H[BM.band(1)]  .= λₗAₗ*cis(ϕ+pi/2)
+            H[BM.band(-1)] .= λₗAₗ * cis( χₗ - ϕ)
+            H[BM.band(1)]  .= λₗAₗ * cis(-χₗ + ϕ)
             vals, _, _ = eigsolve(H, n_bands, :LR; krylovdim=n_bands+10)
             bands[a:b, i] .= vals[1:n_bands]
         end
@@ -34,17 +36,46 @@ function compute_qc_bands(; n_bands::Integer, phases::AbstractVector{<:Real}, s:
 end
 
 """
-Calculate "quasiclassical" energy bands of Hamiltonian (S32) with boundaries, sweeping over the adiabatic `phases` (φₜ in (S32)).
+Calculate `n_levels` of energy levels of Hamiltonian (S32):
+    𝐻 = 𝑝²/2𝑀 + 𝜆ₗ𝐴ₗcos(𝑠𝑥 + 𝜒ₗ - φₜ) + 𝜆ₛ𝐴ₛcos(2𝑠𝑥 + 𝜒ₛ)
+on 𝑥 ∈ (0; 2π) sweeping over the adiabatic `phases` φₜ. Boundary conditions are periodic, hence the basis exp(i𝑗𝑥) / √2π is used.
+In the returned matrix of levels, columns enumerate the adiabatic phases, while rows enumerate eigenvalues.
+The eigenvectors are returned as a triple array: `eigvecs[p][n]` holds an eigenvector of `n`th eigenvalue at `p`th phase.
+"""
+function compute_qc_bands_pbc(; n_levels::Integer, phases::AbstractVector{<:Real}, s::Integer, M::Real, λₗAₗ::Real, λₛAₛ::Real, χₛ::Real, χₗ::Real)
+    n_j = 2n_levels # number of indices 𝑗 to use for constructing the Hamiltonian (its size will be (2n_j+1)×(2n_j+1))
+    # # Hamiltonian matrix
+    H = BM.BandedMatrix(BM.Zeros{ComplexF64}(2n_j + 1, 2n_j + 1), (2s, 2s))
+    H[BM.band(0)] .= [j^2 / M for j = -n_j:n_j]
+    H[BM.band(-2s)] .= λₛAₛ * cis(χₛ)
+    H[BM.band(2s)]  .= λₛAₛ * cis(-χₛ)
+
+    levels = Matrix{Float64}(undef, n_levels, length(phases))
+    eigvecs = [[Vector{ComplexF64}(undef, 2n_j+1) for _ in 1:n_levels] for _ in 1:length(phases)]
+    for (i, ϕ) in enumerate(phases)
+        H[BM.band(-s)] .= λₗAₗ * cis( χₗ - ϕ)
+        H[BM.band(s)]  .= λₗAₗ * cis(-χₗ + ϕ)
+        vals, vecs,  _ = eigsolve(H, n_levels, :LR; krylovdim=2n_levels)
+        levels[:, i] = vals[1:n_levels]
+        eigvecs[i] .= vecs[1:n_levels]
+    end
+    return levels / 2, eigvecs
+end
+
+"""
+Calculate "quasiclassical" energy bands of Hamiltonian (S32):
+    𝐻 = 𝑝²/2𝑀 + 𝜆ₗ𝐴ₗcos(2𝑥 - φₜ) - 𝜆ₛ𝐴ₛcos(4𝑥)
+on 𝑥 ∈ (0; 2π𝑛) sweeping over the adiabatic `phases` φₜ. Boundary conditions are open, hence the basis sin(𝑗𝑥/𝑛) / √(𝑛π/2) is used.
+Parameter `n` is the number of cells in the lattice; 𝑗 runs from 0 to `5n_bands`.
 Return a tuple (`bands`, `states`): `bands[:, p]` stores eigenenergies at `p`th phase, while `states[p][:, m]` stores `m`th eigenvector at `p`th phase.
 Bands and states are sorted in energy-descending order so that for `M` negative, the bands of interest will be the first ones.
-Parameter `n` is the number of cells in the lattice; the eigenfunctions will be calculated in the basis of functions sin(𝑗𝑥/𝑛) / √(𝑛π/2),
-where 𝑗 runs from 0 to `5n_bands`. `n_bands` is the number of bands of interest, but a larger Hamiltonian matrix is constructed (of size `5n_bands` × `5n_bands`)
-so that the bands of interest are calculated correctly. However, all `5n_bands` energy levels and eigenstates are returned.
+`n_bands` is the number of bands of interest, but a larger Hamiltonian matrix is constructed (of size `5n_bands` × `5n_bands`)
+so that the bands of interest are calculated correctly. All `5n_bands` energy levels and eigenstates are returned.
 """
-function compute_qc_bands_with_boundary(; n::Integer, n_bands::Integer, phases::AbstractVector{<:Real}, M::Real, λₗAₗ::Real, λₛAₛ::Real)    
+function compute_qc_bands_obc(; n::Integer, n_levels::Integer, phases::AbstractVector{<:Real}, M::Real, λₗAₗ::Real, λₛAₛ::Real)    
     X(j′, j) = 16n*j*j′ / (π*((j-j′)^2-(2n)^2)*((j+j′)^2-(2n)^2))
     
-    n_j = 5n_bands # number of indices 𝑗 to use for constructing the Hamiltonian
+    n_j = 5n_levels # number of indices 𝑗 to use for constructing the Hamiltonian
     H = zeros(n_j, n_j)
     # for storing eigenstates and eigenvectors, see function docstring for format
     bands = Matrix{Float64}(undef, n_j, length(phases))
@@ -54,21 +85,21 @@ function compute_qc_bands_with_boundary(; n::Integer, n_bands::Integer, phases::
             for j′ in 1:n_j
                 val = 0.0
                 if abs(j′ + j) % 2 == 1 # if `j′ + j` is odd
-                    val += λₗAₗ * X(j′, j) * sin(ϕ)
+                    val += λₗAₗ * X(j′, j) * sin(-ϕ)
                 else
                     # check diagonals "\"
                     if j′ == j
                         val += j^2 / (2M * n^2)
                     elseif j′ == j - 2n || j′ == j + 2n
-                        val += λₗAₗ * cos(ϕ) / 2
+                        val += λₗAₗ * cos(-ϕ) / 2
                     elseif j′ == j - 4n || j′ == j + 4n
-                        val += λₛAₛ / 2
+                        val += -λₛAₛ / 2
                     end
                     # check anti-diagonals "/"
                     if j′ == -j - 2n || j′ == -j + 2n
-                        val += -λₗAₗ * cos(ϕ) / 2
+                        val += -λₗAₗ * cos(-ϕ) / 2
                     elseif j′ == -j - 4n || j′ == -j + 4n
-                        val += -λₛAₛ / 2
+                        val += λₛAₛ / 2
                     end
                 end
                 H[j′, j] = H[j, j′] = val # push the element to the conjugate positions
