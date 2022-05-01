@@ -97,7 +97,7 @@ phases = range(0, π, length=61) # values of the adiabatic phase in (S32)
 n_bands = 2
 bands = compute_qc_bands(; n_bands, phases, s, M, λₗAₗ=λₗ*Aₗ, λₛAₛ=λₛ*Aₛ, χₗ, χₛ) .+ H.𝐸(Iₛ) .- ω/s*Iₛ
 n_cells = 2
-levels2 = compute_qc_bands_pbc(; n_levels=5, phases, s, M, λₗAₗ=0.5λₗ*Aₗ, λₛAₛ=0.5λₛ*Aₛ) .+ H.𝐸(Iₛ) .- ω/s*Iₛ
+levels2 = compute_qc_bands_pbc(; n_levels=5, phases, s, M, λₗAₗ=λₗ*Aₗ, λₛAₛ=λₛ*Aₛ, χₗ, χₛ) .+ H.𝐸(Iₛ) .- ω/s*Iₛ
 
 fig2 = plot();
 for i in 1:n_bands

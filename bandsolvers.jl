@@ -38,7 +38,7 @@ end
 """
 Calculate `n_levels` of energy levels of Hamiltonian (S32):
     𝐻 = 𝑝²/2𝑀 + 𝜆ₗ𝐴ₗcos(𝑠𝑥 + 𝜒ₗ - φₜ) + 𝜆ₛ𝐴ₛcos(2𝑠𝑥 + 𝜒ₛ)
-on 𝑥 ∈ (0; 2π) sweeping over the adiabatic `phases` φₜ. Boundary conditions are periodic, hence the basis exp(i𝑗𝑥) / √2π is used.
+on 𝑥 ∈ [0; 2π) sweeping over the adiabatic `phases` φₜ. Boundary conditions are periodic, hence the basis exp(i𝑗𝑥) / √2π is used.
 In the returned matrix of levels, columns enumerate the adiabatic phases, while rows enumerate eigenvalues.
 The eigenvectors are returned as a triple array: `eigvecs[p][n]` holds an eigenvector of `n`th eigenvalue at `p`th phase.
 """
@@ -63,17 +63,17 @@ function compute_qc_bands_pbc(; n_levels::Integer, phases::AbstractVector{<:Real
 end
 
 """
-Calculate "quasiclassical" energy bands of Hamiltonian (S32):
-    𝐻 = 𝑝²/2𝑀 + 𝜆ₗ𝐴ₗcos(2𝑥 - φₜ) - 𝜆ₛ𝐴ₛcos(4𝑥)
-on 𝑥 ∈ (0; 2π𝑛) sweeping over the adiabatic `phases` φₜ. Boundary conditions are open, hence the basis sin(𝑗𝑥/𝑛) / √(𝑛π/2) is used.
+Calculate `n_levels` of energy levels of Hamiltonian (S32):
+    𝐻 = 𝑝²/2𝑀 + 𝜆ₗ𝐴ₗcos(𝑠𝑥 + 𝜒ₗ - φₜ) + 𝜆ₛ𝐴ₛcos(2𝑠𝑥 + 𝜒ₛ)
+on 𝑥 ∈ [0; 2π) sweeping over the adiabatic `phases` φₜ. Boundary conditions are open, hence the basis sin(𝑗𝑥/𝑛) / √(𝑛π/2) is used.
 Parameter `n` is the number of cells in the lattice; 𝑗 runs from 0 to `5n_bands`.
 Return a tuple (`bands`, `states`): `bands[:, p]` stores eigenenergies at `p`th phase, while `states[p][:, m]` stores `m`th eigenvector at `p`th phase.
 Bands and states are sorted in energy-descending order so that for `M` negative, the bands of interest will be the first ones.
 `n_bands` is the number of bands of interest, but a larger Hamiltonian matrix is constructed (of size `5n_bands` × `5n_bands`)
 so that the bands of interest are calculated correctly. All `5n_bands` energy levels and eigenstates are returned.
 """
-function compute_qc_bands_obc(; n::Integer, n_levels::Integer, phases::AbstractVector{<:Real}, M::Real, λₗAₗ::Real, λₛAₛ::Real)    
-    X(j′, j) = 16n*j*j′ / (π*((j-j′)^2-(2n)^2)*((j+j′)^2-(2n)^2))
+function compute_qc_bands_obc(; n_levels::Integer, phases::AbstractVector{<:Real}, s::Integer, M::Real, λₗAₗ::Real, λₛAₛ::Real, χₗ::Real, χₛ::Real)
+    X(j′, j, s) = 16s*j*j′ / (π*((j-j′)^2-4s^2)*((j+j′)^2-4s^2))
     
     n_j = 5n_levels # number of indices 𝑗 to use for constructing the Hamiltonian
     H = zeros(n_j, n_j)
@@ -84,22 +84,22 @@ function compute_qc_bands_obc(; n::Integer, n_levels::Integer, phases::AbstractV
         for j in 1:n_j
             for j′ in 1:n_j
                 val = 0.0
-                if abs(j′ + j) % 2 == 1 # if `j′ + j` is odd
-                    val += λₗAₗ * X(j′, j) * sin(-ϕ)
+                if (j′ + j) % 2 == 1 # if `j′ + j` is odd
+                    val += λₗAₗ*X(j′, j, s)*sin(χₗ - ϕ) + λₛAₛ*X(j′, j, 2s)*sin(χₛ)
                 else
                     # check diagonals "\"
                     if j′ == j
-                        val += j^2 / (2M * n^2)
-                    elseif j′ == j - 2n || j′ == j + 2n
-                        val += λₗAₗ * cos(-ϕ) / 2
-                    elseif j′ == j - 4n || j′ == j + 4n
-                        val += -λₛAₛ / 2
+                        val += j^2 / 8M
+                    elseif j′ == j - 2s || j′ == j + 2s
+                        val += λₗAₗ * cos(χₗ - ϕ) / 2
+                    elseif j′ == j - 4s || j′ == j + 4s
+                        val += λₛAₛ * cos(χₛ) / 2
                     end
                     # check anti-diagonals "/"
-                    if j′ == -j - 2n || j′ == -j + 2n
-                        val += -λₗAₗ * cos(-ϕ) / 2
-                    elseif j′ == -j - 4n || j′ == -j + 4n
-                        val += λₛAₛ / 2
+                    if j′ == -j + 2s
+                        val += -λₗAₗ * cos(χₗ - ϕ) / 2
+                    elseif j′ == -j + 4s
+                        val += -λₛAₛ * cos(χₛ) / 2
                     end
                 end
                 H[j′, j] = H[j, j′] = val # push the element to the conjugate positions
