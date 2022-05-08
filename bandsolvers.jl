@@ -1,7 +1,7 @@
 import BandedMatrices as BM
 using SparseArrays: sparse
 using KrylovKit: eigsolve
-using LinearAlgebra: eigen
+using LinearAlgebra: eigen, eigvals, ⋅
 
 """
 Calculate `n_bands` of energy bands of Hamiltonian (S32) assuming infinite crystal with a quasimomentum 𝑞,
@@ -410,6 +410,143 @@ function compute_floquet_bands_with_boundary(; n::Integer, n_min::Integer, n_max
 end
 
 """
+Calculate energy bands of the Floquet Hamiltonian (S20) with boundaries sweeping over the adiabatic `phases` φₓ. 
+The operation of this function follows that of [`compute_floquet_bands`](@ref).
+Parameter `n` is the number of cells in the lattice; the eigenfunctions will be calculated in the basis of functions sin(𝑗𝑥/𝑛) / √(𝑛π/2).
+"""
+function compute_floquet_bands_states(; n::Integer, n_min::Integer, n_max::Integer, phases::AbstractVector{<:Real}, s::Integer, gₗ::Real, Vₗ::Real, λₗ::Real, λₛ::Real, ω::Real, pumptype::Symbol)
+    X(j′, j) = 16n*j*j′ / (π*((j-j′)^2-(2n)^2)*((j+j′)^2-(2n)^2))
+    
+    gs1 = 2n - 1 # number of levels in the first band of spatial Hamiltonian (group size 1)
+    gs2 = 2n + 1 # number of levels in the second band of spatial Hamiltonian (group size 2)
+    # convert `n_min` and `n_max` to actual level numbers
+    n_min = (n_min-1) ÷ 2 * 4n + (isodd(n_min) ? 1 : gs1 + 1)
+    n_max = (n_max-1) ÷ 2 * 4n + (isodd(n_max) ? gs1 : gs1 + gs2)
+    if iseven(n_min) # swap `gs1` and `gs2` so that they correspond to actual group sizes
+        gs1, gs2 = gs2, gs1
+    end
+
+    n_j = 2n_max # number of indices 𝑗 to use for constructing the unperturbed Hamiltonian
+    h = zeros(n_j, n_j)
+
+    Δn = n_max - n_min + 1
+    ν = Vector{Int}(undef, Δn)
+    # FIll `ν`: [1 (`gs1` times), 2 (`gs2` times), 3 (`gs1` times), 4 (`gs2` times), ...]
+    number = 1
+    g = gs1 + gs2
+    for i in 0:Δn÷g-1
+        ν[g*i+1:g*i+gs1] .= number
+        number += 1
+        ν[g*i+gs1+1:g*i+g] .= number
+        number += 1
+    end
+    ν[Δn - Δn%g + 1:end] .= number
+
+    pattern = [fill(gs1, gs1); fill(gs2, gs2)]
+    G = repeat(pattern, Δn÷g) # a pattern which e.g. for `n == 2` looks like [3, 3, 3, 5, 5, 5, 5, 3, 3, 3, 5, 5, 5, 5, ...]
+    Δn % g != 0 && append!(G, fill(gs1, gs1))
+    
+    H_dim = Δn # dimension of the constructed 𝐻 matrix
+    # number of non-zero elements in 𝐻:
+    n_H_nonzeros = H_dim + 2*( # diagonal plus two times upper off-diagonal terms:
+                   (H_dim ÷ g - 1) * (gs1^2 + gs2^2) + # number of long  lattice blocks of size `g` × `g`, each having `(gs1^2 + gs2^2)` elements
+                   (H_dim ÷ g - 2) * (gs1^2 + gs2^2) + # number of short lattice blocks of size `g` × `g`, each having `(gs1^2 + gs2^2)` elements
+                   2(H_dim % g != 0 ? gs1^2 : 0) ) # if `H_dim % g != 0`, then one more block of size `gs1` is present, both for short and long lattice
+   
+    H_rows = zeros(Int, n_H_nonzeros)
+    H_cols = zeros(Int, n_H_nonzeros)
+    H_vals = zeros(ComplexF64, n_H_nonzeros)
+    
+    ϕ = phases[1]
+
+    for j in 1:n_j
+        for j′ in 1:n_j
+            val = 0.0
+            if abs(j′ + j) % 2 == 1 # if `j′ + j` is odd
+                val += Vₗ/2 * X(j′, j) * sin(2ϕ)
+            else
+                # check diagonals "\"
+                if j′ == j
+                    val += (gₗ + Vₗ)/2 + (j / n)^2
+                elseif j′ == j - 2n || j′ == j + 2n
+                    val += Vₗ/2 * cos(2ϕ) / 2
+                elseif j′ == j - 4n || j′ == j + 4n
+                    val += gₗ/2 / 2
+                end
+                # check anti-diagonals "/"
+                if j′ == -j - 2n || j′ == -j + 2n
+                    val += -Vₗ/2 * cos(2ϕ) / 2
+                elseif j′ == -j - 4n || j′ == -j + 4n
+                    val += -gₗ/2 / 2
+                end
+            end
+            h[j′, j] = h[j, j′] = val # push the element to the conjugate positions
+        end
+    end
+    f = eigen(h)
+    # save only energies and states for levels from `n_min` to `n_max`
+    ϵ = f.values[n_min:n_max]
+    c = f.vectors[:, n_min:n_max]
+
+    # Construct 𝐻
+    p = 1 # a counter for placing elements to the vectors `H_*`
+    for m in 1:H_dim
+        # place the diagonal element (S25)
+        H_rows[p] = H_cols[p] = m
+        H_vals[p] = ϵ[m] - ν[m]*ω/s
+        p += 1
+
+        # place the elements of the long lattice (S26)
+        for i in 1:G[m]
+            # skip `s` groups of `g`, then some more groups depending on `m`, then skip `G[1]` cells
+            m′ = g*(s÷2) + g*((ν[m]-1)÷2) + iseven(ν[m])*G[1] + i
+            m′ > H_dim && break
+            H_rows[p] = m′
+            H_cols[p] = m
+                j_sum = sum( (c[j+4n, m′]/4 + c[j-4n, m′]/4 + c[j, m′]/2) * c[j, m] for j = 4n+1:n_j-4n ) + 
+                        sum( (c[j+4n, m′]/4 - c[-j+4n, m′]/4 + c[j, m′]/2) * c[j, m] for j = 1:4n-1 ) +
+                        (c[4n+4n, m′]/4 + c[4n, m′]/2) * c[4n, m] + # iteration `j = 4n`
+                        sum( (c[j-4n, m′]/4 + c[j, m′]/2) * c[j, m] for j = n_j-4n+1:n_j )
+                H_vals[p] = (pumptype == :space ? λₗ/2 * j_sum : λₗ/2 * j_sum * cis(-2ϕ)) # a check for space or space-time pumping
+
+            p += 1
+            # place the conjugate element
+            H_rows[p] = m
+            H_cols[p] = m′
+            H_vals[p] = H_vals[p-1]'
+            p += 1
+        end
+        
+        # place the elements of the short lattice (S29)
+        for i in 1:G[m]
+            m′ = g*s + g*((ν[m]-1)÷2) + iseven(ν[m])*G[1] + i
+            m′ > H_dim && break
+            H_rows[p] = m′
+            H_cols[p] = m
+                j_sum = sum( (-c[j+4n, m′]/4 - c[j-4n, m′]/4 + c[j, m′]/2) * c[j, m] for j = 4n+1:n_j-4n ) + 
+                        sum( (-c[j+4n, m′]/4 + c[-j+4n, m′]/4 + c[j, m′]/2) * c[j, m] for j = 1:4n-1) +
+                        (-c[4n+4n, m′]/4 + c[4n, m′]/2) * c[4n, m] + # iteration `j = 4n`
+                        sum( (-c[j-4n, m′]/4 + c[j, m′]/2) * c[j, m] for j = n_j-4n+1:n_j)
+                H_vals[p] = λₛ/2 * j_sum
+            p += 1
+            # place the conjugate element
+            H_rows[p] = m
+            H_cols[p] = m′
+            H_vals[p] = H_vals[p-1]'
+            p += 1
+        end
+    end
+    H = sparse(H_rows, H_cols, H_vals)
+    E, b, info = eigsolve(H, Δn, :LR; krylovdim=H_dim)
+    if info.converged < Δn
+        @warn "Only $(info.converged) eigenvalues out of $(Δn) converged when diagonalising 𝐻ₖ. "*
+                "Results may be inaccurate." unconverged_norms=info.normres[info.converged+1:end]
+    end
+
+    return ϵ, E, c, b
+end
+
+"""
 Permute Floquet energy levels calculated with open boundary conditions contained in `E` so that they are stored in the same order as the eigenenergies `e` of
 the spatial Hamiltonian.
 The operation of this function follows that of [`permute_floquet_bands`](@ref).
@@ -442,3 +579,94 @@ function permute_floquet_bands_with_boundary!(E::AbstractMatrix{<:Float64}, e::A
         E[1:n_energies, p] .= E[invsort, p]
     end
 end
+
+###
+"""
+Calculate energy bands of the Floquet Hamiltonian (S20) with boundaries sweeping over the adiabatic `phases` φₓ. 
+The operation of this function follows that of [`compute_floquet_bands`](@ref).
+Parameter `n` is the number of cells in the lattice; the eigenfunctions will be calculated in the basis of functions sin(𝑗𝑥/𝑛) / √(𝑛π/2).
+"""
+function compute_wannier_centres(; N::Integer, n_min::Integer, n_max::Integer, n_target::Integer, phases::AbstractVector{<:Real}, s::Integer, gₗ::Real, Vₗ::Real, λₗ::Real, λₛ::Real, ω::Real)
+    X(j′, j) = 16N*j*j′ / (π*((j-j′)^2-(2N)^2)*((j+j′)^2-(2N)^2))
+    
+    gs1 = 2N - 1 # number of levels in the first band of spatial Hamiltonian (group size 1)
+    gs2 = 2N + 1 # number of levels in the second band of spatial Hamiltonian (group size 2)
+    # convert `n_min` and `n_max` to actual level numbers
+    n_min = (n_min-1) ÷ 2 * 4N + (isodd(n_min) ? 1 : gs1 + 1)
+    n_max = (n_max-1) ÷ 2 * 4N + (isodd(n_max) ? gs1 : gs1 + gs2)
+  
+    n_target_min = (n_target-1) ÷ 2 * 4N + (isodd(n_target) ? 1 : gs1 + 1)
+    n_target_max = n_target_min + (isodd(n_target_min) ? gs1 : gs2) - 1
+  
+
+    n_j = 2n_max # number of indices 𝑗 to use for constructing the unperturbed Hamiltonian
+    h = zeros(n_j, n_j)
+
+    n_w = n_target_max - n_target_min + 1 # numebr of Wannier levels
+    pos_lower = [Float64[] for _ in 1:length(phases)]
+    pos_higher = [Float64[] for _ in 1:length(phases)]
+    ε_lower = [Float64[] for _ in 1:length(phases)]
+    ε_higher = [Float64[] for _ in 1:length(phases)]
+
+    x = zeros(n_w÷2 + 1, n_w÷2 + 1)
+    
+    for (z, ϕ) in enumerate(phases)
+
+        for j in 1:n_j
+            for j′ in 1:n_j
+                val = 0.0
+                if abs(j′ + j) % 2 == 1 # if `j′ + j` is odd
+                    val += Vₗ/2 * X(j′, j) * sin(2ϕ)
+                else
+                    # check diagonals "\"
+                    if j′ == j
+                        val += (gₗ + Vₗ)/2 + (j / N)^2
+                    elseif j′ == j - 2N || j′ == j + 2N
+                        val += Vₗ/2 * cos(2ϕ) / 2
+                    elseif j′ == j - 4N || j′ == j + 4N
+                        val += gₗ/2 / 2
+                    end
+                    # check anti-diagonals "/"
+                    if j′ == -j - 2N || j′ == -j + 2N
+                        val += -Vₗ/2 * cos(2ϕ) / 2
+                    elseif j′ == -j - 4N || j′ == -j + 4N
+                        val += -gₗ/2 / 2
+                    end
+                end
+                h[j′, j] = h[j, j′] = val # push the element to the conjugate positions
+            end
+        end
+        f = eigen(h)
+        # save only target states
+        energies = f.values[n_target_min:n_target_max]
+        
+        q = energies[n_w÷2+1] > (energies[n_w÷2] + energies[n_w÷2+2])/2 # true if the edge state branch is above the mean value
+        # q = false
+        # Lower band
+        c = f.vectors[:, n_target_min:(n_target_min + n_w÷2 + !q - 1)]
+        n_levels = size(c, 2)
+        x = Matrix{Float64}(undef, n_levels, n_levels)
+        for n in 1:n_levels
+            for n′ in n:n_levels
+                x[n′, n] = x[n, n′] = N*sum(c[j, n] * (π/2 * c[j, n′] - 8/π * sum(c[j′, n′]*j*j′/(j^2-j′^2)^2 for j′ = (iseven(j) ? 1 : 2):2:n_j)) for j = 1:n_j)
+            end
+        end
+        pos_lower[z], d = eigen(x)
+        ε_lower[z] = [dˣ.^2 ⋅ energies[1:(n_w÷2 + !q)] for dˣ in eachcol(d)]
+
+        # Higher band
+        c = f.vectors[:, (n_target_min + n_w÷2 + !q):n_target_max]
+        n_levels = size(c, 2)
+        x = Matrix{Float64}(undef, n_levels, n_levels)
+        for n in 1:n_levels
+            for n′ in n:n_levels
+                x[n′, n] = x[n, n′] = N*sum(c[j, n] * (π/2 * c[j, n′] - 8/π * sum(c[j′, n′]*j*j′/(j^2-j′^2)^2 for j′ = (iseven(j) ? 1 : 2):2:n_j)) for j = 1:n_j)
+            end
+        end
+        pos_higher[z], d = eigen(x)
+        ε_higher[z] = [dˣ.^2 ⋅ energies[(n_w÷2 + !q+1):end] for dˣ in eachcol(d)]
+    end
+    return pos_lower, pos_higher, ε_lower, ε_higher
+end
+
+## TODO: check j iterations to only operate in one half
