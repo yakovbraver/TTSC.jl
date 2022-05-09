@@ -42,7 +42,7 @@ hline!([ee[i]], c=:white, ls=:dot, lw=0.5, label=false)
 plot!(x ./ π, u, label=false, title=ϕ_str, xlabel="z", ylabel="Energy")
 savefig("wf-phi-3pi4.pdf")
 
-### Wannier centres
+# Wannier centres
 
 phases = [range(0, 0.005, length=10); range(0.006, 3.11, length=101); range(3.14, pi, length=10)]  # values of the adiabatic phase in (S32)
 n_cells = 4
@@ -58,3 +58,27 @@ for (i, ϕ) in enumerate(phases)
 end
 plot!(minorgrid=true, xlabel=L"z", ylabel=L"\phi", cbtitle="Energy", title=L"(V_S, V_L) = (20, 30)")
 savefig("nakajima-wannier.pdf")
+
+########## Periodic case
+
+phases = range(0, π, length=61)
+n_cells = 4
+n_max = 4
+gₗ = -20; Vₗ = -30
+e, pos_lower, pos_higher, ε_lower, ε_higher = compute_wannier_centres_periodic(; N=n_cells, n_max, n_target=1, phases, gₗ, Vₗ)
+
+# Energy spectrum
+fig = plot();
+for r in eachrow(e)
+    plot!(phases, r, label=false)
+end
+plot!(xlabel=L"\phi", ylabel="Energy", title=L"(V_S, V_L) = (20, 30)")
+
+# Wannier centres
+fig = plot();
+for (i, ϕ) in enumerate(phases)
+    scatter!(pos_lower[:, i],  fill(ϕ, n_cells); marker_z=ε_lower[:, i],  c=:coolwarm, label=false, markerstrokewidth=0)
+    scatter!(pos_higher[:, i], fill(ϕ, n_cells); marker_z=ε_higher[:, i], c=:coolwarm, label=false, markerstrokewidth=0)
+end
+plot!(minorgrid=true, xlabel=L"z", ylabel=L"\phi", cbtitle="Energy", title=L"(V_S, V_L) = (20, 30)")
+savefig("nakajima-wannier-periodic.pdf")

@@ -1,7 +1,7 @@
 import BandedMatrices as BM
 using SparseArrays: sparse
 using KrylovKit: eigsolve
-using LinearAlgebra: eigen, eigvals, ⋅
+using LinearAlgebra: eigen, eigvals, schur, ⋅
 
 """
 Calculate `n_bands` of energy bands of Hamiltonian (S32) assuming infinite crystal with a quasimomentum 𝑞,
@@ -745,6 +745,66 @@ function compute_wannier_centres_qc(; n_levels::Integer, phases::AbstractVector{
         ε_higher[z] = [dˣ.^2 ⋅ energies[(n_w÷2 + !q + 1):end] for dˣ in eachcol(d)]
     end
     return pos_lower, pos_higher, ε_lower, ε_higher
+end
+
+###
+"""
+Calculate energy bands of the Floquet Hamiltonian (S20) with boundaries sweeping over the adiabatic `phases` φₓ. 
+The operation of this function follows that of [`compute_floquet_bands`](@ref).
+Parameter `n` is the number of cells in the lattice; the eigenfunctions will be calculated in the basis of functions sin(𝑗𝑥/𝑛) / √(𝑛π/2).
+"""
+function compute_wannier_centres_periodic(; N::Integer, n_max::Integer, n_target::Integer, phases::AbstractVector{<:Real}, gₗ::Real, Vₗ::Real)
+    n_w = 2N # number of Wannier levels
+    n_target_min = (n_target-1) * 2N + 1
+    n_target_max = n_target_min + 2N - 1
+
+    n_j = 2 * (n_max-1) * 2N # number of indices 𝑗 to use for constructing the unperturbed Hamiltonian
+
+    h = BM.BandedMatrix(BM.Zeros{ComplexF64}(2n_j + 1, 2n_j + 1), (2N, 2N))
+    h[BM.band(0)] .= [(2j/N)^2 for j = -n_j:n_j]
+    h[BM.band(-2N)] .= h[BM.band(2N)] .= gₗ/4
+
+    energies = Matrix{Float64}(undef, n_w, length(phases))
+
+    pos_lower = Matrix{Float64}(undef, N, length(phases))
+    pos_higher = Matrix{Float64}(undef, N, length(phases))
+    ε_lower = Matrix{Float64}(undef, N, length(phases))
+    ε_higher = Matrix{Float64}(undef, N, length(phases))
+
+    x = Matrix{ComplexF64}(undef, N, N) # position operator
+    d = Matrix{ComplexF64}(undef, N, N) # matrix of eigenvectors of the position operator
+    ε_complex = Vector{Float64}(undef, N) # eigenvalues of the position operator; we will be taking their angles
+    
+    for (z, ϕ) in enumerate(phases)
+        h[BM.band(-N)] .= Vₗ/4 * cis(2ϕ)
+        h[BM.band(N)]  .= Vₗ/4 * cis(-2ϕ)
+        f = eigsolve(h, 2n_max, :SR; krylovdim=2n_j+1)
+        energies[:, z] = f[1][n_target_min:n_target_max]
+        
+        # Lower band
+        c = view(f[2], n_target_min:n_target_min + N - 1)
+        for n in 1:N
+            for n′ in 1:N
+                x[n′, n] = sum(c[n′][j+1]' * c[n][j] for j = 1:n_j-1) 
+            end
+        end
+        _, d, ε_complex = schur(x)
+        pos_lower[:, z] = sort(@. (angle(ε_complex) + π) / 2π * N*π)
+        ε_lower[:, z] = [abs2.(dˣ) ⋅ energies[1:N, z] for dˣ in eachcol(d)]
+
+        # Higher band
+        c = view(f[2], n_target_min + N:n_target_max)
+        for n in 1:N
+            for n′ in 1:N
+                x[n′, n] = sum(c[n′][j+1]' * c[n][j] for j = 1:n_j-1) 
+            end
+        end
+        _, d, ε_complex = schur(x)
+        pos_higher[:, z] = sort(@. (angle(ε_complex) + π) / 2π * N*π)
+        ε_higher[:, z] = [abs2.(dˣ) ⋅ energies[N+1:2N, z] for dˣ in eachcol(d)]
+    end
+    # return pos_lower, pos_higher, ε_lower, ε_higher
+    return energies, pos_lower, pos_higher, ε_lower, ε_higher
 end
 
 ## TODO: check j iterations to only operate in one half
