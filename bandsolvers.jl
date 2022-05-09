@@ -84,7 +84,7 @@ function compute_qc_bands_obc(; n_levels::Integer, phases::AbstractVector{<:Real
         for j in 1:n_j
             for j′ in 1:n_j
                 val = 0.0
-                if (j′ + j) % 2 == 1 # if `j′ + j` is odd
+                if (j′ + j) % 2 == 1 # if `j′ + j` is odd # TODO: use isodd()
                     val += λₗAₗ*X(j′, j, s)*sin(χₗ - ϕ) + λₛAₛ*X(j′, j, 2s)*sin(χₛ)
                 else
                     # check diagonals "\"
@@ -313,7 +313,7 @@ function compute_floquet_bands_with_boundary(; n::Integer, n_min::Integer, n_max
             for j in 1:n_j
                 for j′ in 1:n_j
                     val = 0.0
-                    if abs(j′ + j) % 2 == 1 # if `j′ + j` is odd
+                    if abs(j′ + j) % 2 == 1 # if `j′ + j` is odd # TODO: use isodd()
                         val += Vₗ/2 * X(j′, j) * sin(2ϕ)
                     else
                         # check diagonals "\"
@@ -462,7 +462,7 @@ function compute_floquet_bands_states(; n::Integer, n_min::Integer, n_max::Integ
     for j in 1:n_j
         for j′ in 1:n_j
             val = 0.0
-            if abs(j′ + j) % 2 == 1 # if `j′ + j` is odd
+            if abs(j′ + j) % 2 == 1 # if `j′ + j` is odd # TODO: use isodd()
                 val += Vₗ/2 * X(j′, j) * sin(2ϕ)
             else
                 # check diagonals "\"
@@ -615,7 +615,7 @@ function compute_wannier_centres(; N::Integer, n_min::Integer, n_max::Integer, n
         for j in 1:n_j
             for j′ in 1:n_j
                 val = 0.0
-                if abs(j′ + j) % 2 == 1 # if `j′ + j` is odd
+                if abs(j′ + j) % 2 == 1 # if `j′ + j` is odd # TODO: use isodd()
                     val += Vₗ/2 * X(j′, j) * sin(2ϕ)
                 else
                     # check diagonals "\"
@@ -665,6 +665,84 @@ function compute_wannier_centres(; N::Integer, n_min::Integer, n_max::Integer, n
         end
         pos_higher[z], d = eigen(x)
         ε_higher[z] = [dˣ.^2 ⋅ energies[(n_w÷2 + !q+1):end] for dˣ in eachcol(d)]
+    end
+    return pos_lower, pos_higher, ε_lower, ε_higher
+end
+
+"""
+Calculate energy bands of the Floquet Hamiltonian (S20) with boundaries sweeping over the adiabatic `phases` φₓ. 
+The operation of this function follows that of [`compute_floquet_bands`](@ref).
+Parameter `n` is the number of cells in the lattice; the eigenfunctions will be calculated in the basis of functions sin(𝑗𝑥/𝑛) / √(𝑛π/2).
+"""
+function compute_wannier_centres_qc(; n_levels::Integer, phases::AbstractVector{<:Real}, s::Integer, M::Real, λₗAₗ::Real, λₛAₛ::Real, χₗ::Real, χₛ::Real)
+    X(j′, j, s) = 16s*j*j′ / (π*((j-j′)^2-4s^2)*((j+j′)^2-4s^2))
+    
+    n_j = 5n_levels # number of indices 𝑗 to use for constructing the Hamiltonian
+    H = zeros(n_j, n_j)
+
+    n_w = 2s - 1 # numebr of Wannier levels
+    pos_lower = [Float64[] for _ in 1:length(phases)]
+    pos_higher = [Float64[] for _ in 1:length(phases)]
+    ε_lower = [Float64[] for _ in 1:length(phases)]
+    ε_higher = [Float64[] for _ in 1:length(phases)]
+
+    x = zeros(n_w÷2 + 1, n_w÷2 + 1)
+    
+    for (z, ϕ) in enumerate(phases)
+        for j in 1:n_j
+            for j′ in 1:n_j
+                val = 0.0
+                if (j′ + j) % 2 == 1 # if `j′ + j` is odd # TODO: use isodd()
+                    val += λₗAₗ*X(j′, j, s)*sin(χₗ - ϕ) + λₛAₛ*X(j′, j, 2s)*sin(χₛ)
+                else
+                    # check diagonals "\"
+                    if j′ == j
+                        val += j^2 / 8M
+                    elseif j′ == j - 2s || j′ == j + 2s
+                        val += λₗAₗ * cos(χₗ - ϕ) / 2
+                    elseif j′ == j - 4s || j′ == j + 4s
+                        val += λₛAₛ * cos(χₛ) / 2
+                    end
+                    # check anti-diagonals "/"
+                    if j′ == -j + 2s
+                        val += -λₗAₗ * cos(χₗ - ϕ) / 2
+                    elseif j′ == -j + 4s
+                        val += -λₛAₛ * cos(χₛ) / 2
+                    end
+                end
+                H[j′, j] = H[j, j′] = val # push the element to the conjugate positions
+            end
+        end
+
+        f = eigen(H, sortby=-) # sort in descending order
+        # save only target states
+        energies = f.values[1:n_w]
+        
+        q = energies[n_w÷2+1] < (energies[n_w÷2] + energies[n_w÷2+2])/2 # true if the edge state branch is below the mean value
+# q = false        
+        # Lower band
+        c = f.vectors[:, 1:(n_w÷2 + !q)]
+        n_levels = size(c, 2)
+        x = Matrix{Float64}(undef, n_levels, n_levels)
+        for n in 1:n_levels
+            for n′ in n:n_levels
+                x[n′, n] = x[n, n′] = 2*sum(c[j, n] * (π/2 * c[j, n′] - 8/π * sum(c[j′, n′]*j*j′/(j^2-j′^2)^2 for j′ = (iseven(j) ? 1 : 2):2:n_j)) for j = 1:n_j)
+            end
+        end
+        pos_lower[z], d = eigen(x)
+        ε_lower[z] = [dˣ.^2 ⋅ energies[1:(n_w÷2 + !q)] for dˣ in eachcol(d)]
+
+        # Higher band
+        c = f.vectors[:, (n_w÷2 + !q + 1):n_w]
+        n_levels = size(c, 2)
+        x = Matrix{Float64}(undef, n_levels, n_levels)
+        for n in 1:n_levels
+            for n′ in n:n_levels
+                x[n′, n] = x[n, n′] = 2*sum(c[j, n] * (π/2 * c[j, n′] - 8/π * sum(c[j′, n′]*j*j′/(j^2-j′^2)^2 for j′ = (iseven(j) ? 1 : 2):2:n_j)) for j = 1:n_j)
+            end
+        end
+        pos_higher[z], d = eigen(x)
+        ε_higher[z] = [dˣ.^2 ⋅ energies[(n_w÷2 + !q + 1):end] for dˣ in eachcol(d)]
     end
     return pos_lower, pos_higher, ε_lower, ε_higher
 end
