@@ -33,7 +33,7 @@ end
 ϕ = 3pi/4; ϕ_str = L"\phi = 3\pi/4"
 ee, EE, c, b = compute_floquet_bands_states(;n=n_cells, n_min, n_max, phases=[ϕ], s=2, gₗ, Vₗ, λₗ=0, λₛ=0, ω=0, pumptype=:space)
 
-x = range(0, n_cells*π, length=2001)
+x = range(0, n_cells*π, length=100n_cells)
 U = @. gₗ*cos(2x)^2 + Vₗ*cos(x + ϕ)^2
 i = 5 # state number
 u = 4make_coordinate_state(x, c[:, i], n=n_cells) .+ ee[i]
@@ -59,6 +59,14 @@ end
 plot!(minorgrid=true, xlabel=L"z", ylabel=L"\phi", cbtitle="Energy", title=L"(V_S, V_L) = (20, 30)")
 savefig("nakajima-wannier.pdf")
 
+x = range(0, n_cells*π, length=100n_cells)
+@gif for (i, ϕ) in enumerate(phases)
+    U = @. gₗ*cos(2x)^2 + Vₗ*cos(x + ϕ)^2
+    plot(x, U, label=false, ylims=(-50, 0))
+    scatter!(pos_lower[i],  ε_lower[i]; marker_z=ε_lower[i],  c=:coolwarm, label=false,  markerstrokewidth=0, clims=(-41, -22))
+    scatter!(pos_higher[i], ε_higher[i]; marker_z=ε_higher[i], c=:coolwarm, label=false, markerstrokewidth=0)
+end
+
 ########## Periodic case
 
 phases = range(0, π, length=61)
@@ -82,3 +90,11 @@ for (i, ϕ) in enumerate(phases)
 end
 plot!(minorgrid=true, xlabel=L"z", ylabel=L"\phi", cbtitle="Energy", title=L"(V_S, V_L) = (20, 30)")
 savefig("nakajima-wannier-periodic.pdf")
+
+x = range(0, n_cells*π, length=100n_cells)
+@gif for (i, ϕ) in enumerate(phases)
+    U = @. gₗ*cos(2x)^2 + Vₗ*cos(x + ϕ)^2
+    plot(x, U, label=false, ylims=(-50, 2))
+    scatter!(pos_lower[:, i],  ε_lower[:, i]; marker_z=ε_lower[:, i],  c=:coolwarm, label=false,  markerstrokewidth=0, clims=(-41, -22))
+    scatter!(pos_higher[:, i], ε_higher[:, i]; marker_z=ε_higher[:, i], c=:coolwarm, label=false, markerstrokewidth=0)
+end

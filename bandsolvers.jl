@@ -582,9 +582,7 @@ end
 
 ###
 """
-Calculate energy bands of the Floquet Hamiltonian (S20) with boundaries sweeping over the adiabatic `phases` φₓ. 
-The operation of this function follows that of [`compute_floquet_bands`](@ref).
-Parameter `n` is the number of cells in the lattice; the eigenfunctions will be calculated in the basis of functions sin(𝑗𝑥/𝑛) / √(𝑛π/2).
+Diagonalise spatial Hamiltonian and calculate Wannier centres in non-periodic case
 """
 function compute_wannier_centres(; N::Integer, n_min::Integer, n_max::Integer, n_target::Integer, phases::AbstractVector{<:Real}, s::Integer, gₗ::Real, Vₗ::Real, λₗ::Real, λₛ::Real, ω::Real)
     X(j′, j) = 16N*j*j′ / (π*((j-j′)^2-(2N)^2)*((j+j′)^2-(2N)^2))
@@ -778,8 +776,8 @@ function compute_wannier_centres_periodic(; N::Integer, n_max::Integer, n_target
     for (z, ϕ) in enumerate(phases)
         h[BM.band(-N)] .= Vₗ/4 * cis(2ϕ)
         h[BM.band(N)]  .= Vₗ/4 * cis(-2ϕ)
-        f = eigsolve(h, 2n_max, :SR; krylovdim=2n_j+1)
-        energies[:, z] = f[1][n_target_min:n_target_max]
+        f = eigsolve(h, n_target_max, :SR; krylovdim=2n_j+1)
+        energies[:, z] = f[1][n_target_min:n_target_max] .+ (gₗ + Vₗ) / 2
         
         # Lower band
         c = view(f[2], n_target_min:n_target_min + N - 1)
@@ -804,6 +802,65 @@ function compute_wannier_centres_periodic(; N::Integer, n_max::Integer, n_target
         ε_higher[:, z] = [abs2.(dˣ) ⋅ energies[N+1:2N, z] for dˣ in eachcol(d)]
     end
     # return pos_lower, pos_higher, ε_lower, ε_higher
+    return energies, pos_lower, pos_higher, ε_lower, ε_higher
+end
+
+"""
+Calculate energy bands of the Floquet Hamiltonian (S20) with boundaries sweeping over the adiabatic `phases` φₓ. 
+The operation of this function follows that of [`compute_floquet_bands`](@ref).
+Parameter `n` is the number of cells in the lattice; the eigenfunctions will be calculated in the basis of functions sin(𝑗𝑥/𝑛) / √(𝑛π/2).
+"""
+function compute_wannier_centres_qc_periodic(; phases::AbstractVector{<:Real}, s::Integer, M::Real, λₗAₗ::Real, λₛAₛ::Real, χₛ::Real, χₗ::Real)
+    n_w = 2s # number of Wannier levels
+    n_target_min = 1
+    n_target_max = 2s
+
+    n_j = 10s
+
+    h = BM.BandedMatrix(BM.Zeros{ComplexF64}(2n_j + 1, 2n_j + 1), (2s, 2s))
+    h[BM.band(0)] .= [j^2 / M for j = -n_j:n_j]
+    h[BM.band(-2s)] .= λₛAₛ * cis(χₛ)
+    h[BM.band(2s)]  .= λₛAₛ * cis(-χₛ)
+
+    energies = Matrix{Float64}(undef, n_w, length(phases))
+
+    pos_lower = Matrix{Float64}(undef, s, length(phases))
+    pos_higher = Matrix{Float64}(undef, s, length(phases))
+    ε_lower = Matrix{Float64}(undef, s, length(phases))
+    ε_higher = Matrix{Float64}(undef, s, length(phases))
+
+    x = Matrix{ComplexF64}(undef, s, s) # position operator
+    d = Matrix{ComplexF64}(undef, s, s) # matrix of eigenvectors of the position operator
+    ε_complex = Vector{Float64}(undef, s) # eigenvalues of the position operator; we will be taking their angles
+    
+    for (z, ϕ) in enumerate(phases)
+        h[BM.band(-s)] .= λₗAₗ * cis( χₗ - ϕ)
+        h[BM.band(s)]  .= λₗAₗ * cis(-χₗ + ϕ)
+        f = eigsolve(h, n_target_max, :LR; krylovdim=2n_j+1)
+        energies[:, z] = f[1][n_target_min:n_target_max]
+        
+        # Lower band
+        c = view(f[2], n_target_min:n_target_min + s - 1)
+        for n in 1:s
+            for n′ in 1:s
+                x[n′, n] = sum(c[n′][j+1]' * c[n][j] for j = 1:n_j-1) 
+            end
+        end
+        _, d, ε_complex = schur(x)
+        pos_lower[:, z] = sort(angle.(ε_complex) .+ π)
+        ε_lower[:, z] = [abs2.(dˣ) ⋅ energies[1:s, z] for dˣ in eachcol(d)]
+
+        # Higher band
+        c = view(f[2], n_target_min + s:n_target_max)
+        for n in 1:s
+            for n′ in 1:s
+                x[n′, n] = sum(c[n′][j+1]' * c[n][j] for j = 1:n_j-1) 
+            end
+        end
+        _, d, ε_complex = schur(x)
+        pos_higher[:, z] = sort(angle.(ε_complex) .+ π)
+        ε_higher[:, z] = [abs2.(dˣ) ⋅ energies[s+1:2s, z] for dˣ in eachcol(d)]
+    end
     return energies, pos_lower, pos_higher, ε_lower, ε_higher
 end
 
