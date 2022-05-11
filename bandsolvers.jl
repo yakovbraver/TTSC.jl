@@ -580,6 +580,15 @@ function permute_floquet_bands_with_boundary!(E::AbstractMatrix{<:Float64}, e::A
     end
 end
 
+"Reconstruct the coordinate space wavefunction 𝜓(𝑥) = ∑ⱼ𝑐ⱼsin(𝑗𝑥/𝑛) / √(𝑛π/2)"
+function make_sine_state(x::AbstractVector{<:Real}, coeffs::AbstractVector{<:Number}; n)
+    ψ = zeros(eltype(coeffs), length(x))
+    for (j, c) in enumerate(coeffs)
+        @. ψ += c * sin(j/n * x)
+    end
+    return ψ ./ sqrt(n*π/2)
+end
+
 ###
 """
 Diagonalise spatial Hamiltonian and calculate Wannier centres in non-periodic case
@@ -600,16 +609,18 @@ function compute_wannier_centres(; N::Integer, n_min::Integer, n_max::Integer, n
     n_j = 2n_max # number of indices 𝑗 to use for constructing the unperturbed Hamiltonian
     h = zeros(n_j, n_j)
 
+    coords = range(0, N*pi, length=50N) # x's for wavefunctions
     n_w = n_target_max - n_target_min + 1 # numebr of Wannier levels
     pos_lower = [Float64[] for _ in 1:length(phases)]
     pos_higher = [Float64[] for _ in 1:length(phases)]
     ε_lower = [Float64[] for _ in 1:length(phases)]
     ε_higher = [Float64[] for _ in 1:length(phases)]
+    wf_lower = [zeros(length(coords), n_w÷2 + 1) for _ in 1:length(phases)]
+    wf_higher = [zeros(length(coords), n_w÷2 + 1) for _ in 1:length(phases)]
 
     x = zeros(n_w÷2 + 1, n_w÷2 + 1)
     
     for (z, ϕ) in enumerate(phases)
-
         for j in 1:n_j
             for j′ in 1:n_j
                 val = 0.0
@@ -639,7 +650,7 @@ function compute_wannier_centres(; N::Integer, n_min::Integer, n_max::Integer, n
         energies = f.values[n_target_min:n_target_max]
         
         q = energies[n_w÷2+1] > (energies[n_w÷2] + energies[n_w÷2+2])/2 # true if the edge state branch is above the mean value
-        # q = false
+        
         # Lower band
         c = f.vectors[:, n_target_min:(n_target_min + n_w÷2 + !q - 1)]
         n_levels = size(c, 2)
@@ -651,6 +662,9 @@ function compute_wannier_centres(; N::Integer, n_min::Integer, n_max::Integer, n
         end
         pos_lower[z], d = eigen(x)
         ε_lower[z] = [dˣ.^2 ⋅ energies[1:(n_w÷2 + !q)] for dˣ in eachcol(d)]
+        for i in 1:n_levels
+            wf_lower[z][:, i] = abs2.(sum(d[j, i] * make_sine_state(coords, c[:, j]; n=N) for j = 1:n_levels))
+        end
 
         # Higher band
         c = f.vectors[:, (n_target_min + n_w÷2 + !q):n_target_max]
@@ -663,8 +677,11 @@ function compute_wannier_centres(; N::Integer, n_min::Integer, n_max::Integer, n
         end
         pos_higher[z], d = eigen(x)
         ε_higher[z] = [dˣ.^2 ⋅ energies[(n_w÷2 + !q+1):end] for dˣ in eachcol(d)]
+        for i in 1:n_levels
+            wf_higher[z][:, i] = abs2.(sum(d[j, i] * make_sine_state(coords, c[:, j]; n=N) for j = 1:n_levels))
+        end
     end
-    return pos_lower, pos_higher, ε_lower, ε_higher
+    return pos_lower, pos_higher, ε_lower, ε_higher, wf_lower, wf_higher
 end
 
 """
@@ -717,7 +734,7 @@ function compute_wannier_centres_qc(; n_levels::Integer, phases::AbstractVector{
         energies = f.values[1:n_w]
         
         q = energies[n_w÷2+1] < (energies[n_w÷2] + energies[n_w÷2+2])/2 # true if the edge state branch is below the mean value
-# q = false        
+
         # Lower band
         c = f.vectors[:, 1:(n_w÷2 + !q)]
         n_levels = size(c, 2)
@@ -745,6 +762,16 @@ function compute_wannier_centres_qc(; n_levels::Integer, phases::AbstractVector{
     return pos_lower, pos_higher, ε_lower, ε_higher
 end
 
+"Reconstruct the coordinate space wavefunction 𝜓(𝑥) = ∑ⱼ𝑐ⱼexp(i2𝑗𝑥/𝑛) / √𝑛π"
+function make_exp_state(x::AbstractVector{<:Real}, coeffs::AbstractVector{<:Number}; n)
+    ψ = zeros(eltype(coeffs), length(x))
+    n_j = (length(coeffs) - 1) ÷ 2
+    for j in -n_j:n_j
+        @. ψ += coeffs[j+n_j+1] * cis(2j/n * x)
+    end
+    return ψ ./ sqrt(n*π)
+end
+
 ###
 """
 Calculate energy bands of the Floquet Hamiltonian (S20) with boundaries sweeping over the adiabatic `phases` φₓ. 
@@ -759,15 +786,18 @@ function compute_wannier_centres_periodic(; N::Integer, n_max::Integer, n_target
     n_j = 2 * (n_max-1) * 2N # number of indices 𝑗 to use for constructing the unperturbed Hamiltonian
 
     h = BM.BandedMatrix(BM.Zeros{ComplexF64}(2n_j + 1, 2n_j + 1), (2N, 2N))
-    h[BM.band(0)] .= [(2j/N)^2 for j = -n_j:n_j]
+    h[BM.band(0)] .= [(2j/N)^2 + (gₗ + Vₗ)/2 for j = -n_j:n_j]
     h[BM.band(-2N)] .= h[BM.band(2N)] .= gₗ/4
 
     energies = Matrix{Float64}(undef, n_w, length(phases))
 
+    coords = range(0, N*pi, length=50N) # x's for wavefunctions
     pos_lower = Matrix{Float64}(undef, N, length(phases))
     pos_higher = Matrix{Float64}(undef, N, length(phases))
     ε_lower = Matrix{Float64}(undef, N, length(phases))
     ε_higher = Matrix{Float64}(undef, N, length(phases))
+    wf_lower = Array{Float64, 3}(undef, length(coords), N, length(phases))
+    wf_higher = Array{Float64, 3}(undef, length(coords), N, length(phases))
 
     x = Matrix{ComplexF64}(undef, N, N) # position operator
     d = Matrix{ComplexF64}(undef, N, N) # matrix of eigenvectors of the position operator
@@ -777,32 +807,37 @@ function compute_wannier_centres_periodic(; N::Integer, n_max::Integer, n_target
         h[BM.band(-N)] .= Vₗ/4 * cis(2ϕ)
         h[BM.band(N)]  .= Vₗ/4 * cis(-2ϕ)
         f = eigsolve(h, n_target_max, :SR; krylovdim=2n_j+1)
-        energies[:, z] = f[1][n_target_min:n_target_max] .+ (gₗ + Vₗ) / 2
+        energies[:, z] = f[1][n_target_min:n_target_max]
         
         # Lower band
         c = view(f[2], n_target_min:n_target_min + N - 1)
         for n in 1:N
             for n′ in 1:N
-                x[n′, n] = sum(c[n′][j+1]' * c[n][j] for j = 1:n_j-1) 
+                x[n′, n] = sum(c[n′][j+1]' * c[n][j] for j = 1:2n_j)
             end
         end
         _, d, ε_complex = schur(x)
         pos_lower[:, z] = sort(@. (angle(ε_complex) + π) / 2π * N*π)
         ε_lower[:, z] = [abs2.(dˣ) ⋅ energies[1:N, z] for dˣ in eachcol(d)]
+        for i in 1:N
+            wf_lower[:, i, z] = abs2.(sum(d[j, i] * make_exp_state(coords, c[j]; n=N) for j = 1:N))
+        end
 
         # Higher band
         c = view(f[2], n_target_min + N:n_target_max)
         for n in 1:N
             for n′ in 1:N
-                x[n′, n] = sum(c[n′][j+1]' * c[n][j] for j = 1:n_j-1) 
+                x[n′, n] = sum(c[n′][j+1]' * c[n][j] for j = 1:2n_j)
             end
         end
         _, d, ε_complex = schur(x)
         pos_higher[:, z] = sort(@. (angle(ε_complex) + π) / 2π * N*π)
         ε_higher[:, z] = [abs2.(dˣ) ⋅ energies[N+1:2N, z] for dˣ in eachcol(d)]
+        for i in 1:N
+            wf_higher[:, i, z] = abs2.(sum(d[j, i] * make_exp_state(coords, c[j]; n=N) for j = 1:N))
+        end
     end
-    # return pos_lower, pos_higher, ε_lower, ε_higher
-    return energies, pos_lower, pos_higher, ε_lower, ε_higher
+    return energies, pos_lower, pos_higher, ε_lower, ε_higher, wf_lower, wf_higher
 end
 
 """
