@@ -8,7 +8,7 @@ phases = range(0, π, length=61)
 n_cells = 5
 n_min = 1
 n_max = 5
-gₗ = -10; Vₗ = -15
+gₗ = -20; Vₗ = -30
 e, E = compute_floquet_bands_with_boundary(;n=n_cells, n_min, n_max, phases, s=2, gₗ, Vₗ, λₗ=0, λₛ=0, ω=0, pumptype=:space)
 
 fig = plot();
