@@ -28,8 +28,8 @@ function 𝑄ₗ(p::Real, x::Real)
 end
 
 g = 6000; l = 1;
-gₗ = -2g*factorial(l) / √π / gamma(l + 0.5)
-Vₗ = 2
+gₗ = -7640 # -2g*factorial(l) / √π / gamma(l + 0.5)
+Vₗ = -30 #2
 λₛ = 100; λₗ = 40; ω = 410
 s = 2
 params = [gₗ, l, Vₗ, λₛ, λₗ, ω]
@@ -74,37 +74,37 @@ Iₛ, M, coeffs = compute_parameters(H, Function[𝑄ₛ, 𝑄ₗ], [2s, s])
 Aₛ = abs(coeffs[1]); χₛ = angle(coeffs[1])
 Aₗ = abs(coeffs[2]); χₗ = angle(coeffs[2])
 
-I_min = 22; I_max = 28
-plot_isoenergies(; ω, M, λₛ, Aₛ, χₛ, λₗ, Aₗ, χₗ, φₜ=π/2, Iₛ, s, I_min, I_max)
+I_min = 20; I_max = 30
+plot_isoenergies(; ω, M, λₛ=λₛ, Aₛ, χₛ, λₗ=λₗ, Aₗ, χₗ, φₜ=π/2, Iₛ, s, I_min, I_max)
 savefig("secular-isoenergies.pdf")
 
 ### Make an "exact" plot of the motion in the (𝐼, ϑ) phase-space
-
+pyplot()
 fig = plot();
-for i in 22:0.2:28
+for i in 5:0.2:10
     I, Θ = compute_IΘ(H, i, n_T=100, χ₀=-0.75) # use χ₀ = 0 and ±0.75
     scatter!(Θ, I, xlabel=L"\theta, rad", ylabel=L"I", markerstrokewidth=0, markeralpha=0.6, label=false, minorgrid=true, minorticks=5)
 end
 ylims!(I_min, I_max); xlims!(0, 2pi)
-title!(L"\ell = %$l, g = %$g, V_L = %$Vₗ, \lambda_S = %$λₛ, \lambda_L = %$λₗ, \omega = %$ω")
+title!(L"g_l = %$gₗ, V_L = %$Vₗ, \lambda_S = %$λₛ, \lambda_L = %$λₗ, \omega = %$ω")
 savefig(fig, "exact-isoenergies.pdf")
 
 ### Calculate secular bands
-
+# 1/0.5 : 20 : 30
+# 1/0.2 : 50 : 75
 include("bandsolvers.jl")
 
 phases = range(0, π, length=61) # values of the adiabatic phase in (S32)
-n_bands = 2
+n_bands = 4
 bands = compute_qc_bands(; n_bands, phases, s, M, λₗAₗ=λₗ*Aₗ, λₛAₛ=λₛ*Aₛ, χₗ, χₛ) .+ H.𝐸(Iₛ) .- ω/s*Iₛ
-n_cells = 2
-levels2 = compute_qc_bands_pbc(; n_levels=5, phases, s, M, λₗAₗ=λₗ*Aₗ, λₛAₛ=λₛ*Aₛ, χₗ, χₛ) .+ H.𝐸(Iₛ) .- ω/s*Iₛ
+levels, states = compute_qc_bands_pbc(; n_levels=5, phases, s, M, λₗAₗ=3λₗ*Aₗ, λₛAₛ=3λₛ*Aₛ, χₗ, χₛ) #.+ H.𝐸(Iₛ) .- ω/s*Iₛ
 
 fig2 = plot();
 for i in 1:n_bands
     plot!(phases, bands[i, :], fillrange=bands[n_bands+i, :], fillalpha=0.35, label="band $i");
 end
 for i in 1:5
-    plot!(phases, levels2[i, :], label="level $i");
+    plot!(phases, levels[i, :], label="level $i");
 end
 xlabel!(L"\varphi_t"*", rad"); ylabel!("Energy of quantised secular "*L"H"*" (S17)")
 title!(L"\omega = %$ω, M = %$(round(M, sigdigits=2)), \lambda_L = %$λₗ, A_L = %$(round(Aₗ, sigdigits=2)),"*
@@ -134,8 +134,7 @@ phases = range(0, π, length=61) # values of the adiabatic phase in (S32)
 n_min = 20
 n_max = 30
 n_bands = n_max-n_min+1
-ω = 410
-eₖ, Eₖ = compute_floquet_bands(;n_min, n_max, phases, s, l, gₗ, Vₗ=2, λₗ=40, λₛ=100, ω, pumptype=:spacetime)
+eₖ, Eₖ = compute_floquet_bands(;n_min, n_max, phases, s, l, gₗ, Vₗ=0, λₗ=λₗ, λₛ=λₛ, ω, pumptype=:time)
 permute_floquet_bands!(Eₖ, eₖ, n_min, ω, s)
 fig1 = plot();
 for i in 1:2n_bands
@@ -199,8 +198,8 @@ savefig("pumping-space.pdf")
 
 fig2 = plot();
 plot!(range(0, π, length=200), x -> 𝐻₀(0, x, params), lw=2, c=:white, label=false) # Spatial potential
-for i in 1:58
-    plot!(phases, eₖ[i, :], fillrange=eₖ[2n_bands+i, :], fillalpha=0.3, label="m = $(i+2n_min-2)")
+for i in 1:2n_bands
+    plot!(phases, eₖ[i, :], fillrange=eₖ[2n_bands+i, :], fillalpha=0.3)
 end
 for i in 1:2n_bands
     plot!(phases, eₖ[i, :], label="")
@@ -286,10 +285,8 @@ savefig("4D-bands.pdf")
 ### Quasiclassical bands with open boundary conditions
 
 phases = range(0, 2π, length=61)
-n_cells = 2
-n_levels = 2n_cells
-λₛ = 10; λₗ = 4
-bands, states = compute_qc_bands_obc(; n=n_cells, n_levels, phases, M, λₗAₗ=λₗ*Aₗ, λₛAₛ=λₛ*Aₛ, χₗ, χₛ)
+n_levels = 5
+bands, states = compute_qc_bands_obc(; n_levels, phases, M, λₗAₗ=10λₗ*Aₗ, λₛAₛ=2λₛ*Aₛ, χₗ, χₛ, s)
 
 fig = plot();
 for i in 1:n_levels
@@ -301,30 +298,26 @@ savefig("obc-time-8.pdf")
 
 # plot states
 
-"Reconstruct the coordinate space wavefunction 𝜓(𝑥) = ∑ⱼ𝑐ⱼsin(𝑗𝑥/𝑛) / √(𝑛π/2)"
-function make_coordinate_state(x::AbstractVector{<:Real}, coeffs::AbstractVector{<:Number}; n)
-    ψ = zeros(eltype(coeffs), length(x))
-    for (j, c) in enumerate(coeffs)
-        @. ψ += c * sin(j/n * x)
-    end
-    return ψ ./ (n*π/2)
-end
-
-θ = range(0, n_cells*π, length=501)
+θ = range(0, 2π, length=501)
 i_ϕ = 15
-U = @. (λₗ*Aₗ*cos(s*θ + phases[i_ϕ]) + λₛ*Aₛ*cos(2s*θ))
+U = @. 10λₗ*Aₗ*cos(s*θ - χₗ - phases[i_ϕ]) + λₛ*Aₛ*cos(2s*θ - χₛ) #+ H.𝐸(Iₛ) - ω/s*Iₛ
 plot(θ, U, label="potential", c=:white, legend=:outerright)
-for i = 1:n_bands
-    ψ = 5abs2.(make_coordinate_state(θ, states[i_ϕ][:, i], n=n_cells)) .+ bands[i, i_ϕ]
+for i = 1:n_levels
+    ψ = 5abs2.(make_sine_state(θ, states[i_ϕ][:, i], n=n_cells)) .+ bands[i, i_ϕ]
     hline!([bands[i, i_ϕ]], c=:white, ls=:dot, label=false); plot!(θ, ψ, label=L"\psi_{%$i}(\theta)")
 end
 title!("Wavefunctions at "*L"\varphi_t=\pi/2")
+
+@gif for ϕ in phases
+    U = @. 10λₗ*Aₗ*cos(s*θ - χₗ - ϕ) + 2λₛ*Aₛ*cos(2s*θ - χₛ)
+    plot(θ, U, label=false, ylims=(-150, 150))
+end
 
 @gif for i_ϕ in eachindex(phases)
     U = @. (λₗ*Aₗ*cos(s*θ + phases[i_ϕ]) + λₛ*Aₛ*cos(2s*θ))
     plot(θ, U, label="potential", c=:white, legend=:outerright)
     for i = 1:3
-        ψ = 5abs2.(make_coordinate_state(θ, states[i_ϕ][:, i], n=n_cells)) .+ bands[i, i_ϕ]
+        ψ = 5abs2.(make_sine_state(θ, states[i_ϕ][:, i], n=n_cells)) .+ bands[i, i_ϕ]
         hline!([bands[i, i_ϕ]], c=:white, ls=:dot, label=false); plot!(θ, ψ, label=L"\psi_{%$i}(\theta)")
     end
     ylims!(-15, 3)
@@ -347,29 +340,191 @@ end
 title!(L"V_L = 15, \lambda_S = 150, \lambda_L = 55, \omega = 398")
 savefig("15-150-55-398.pdf")
 
-###
+### Wannier centre temporal
 
-x = range(0, n_cells*π, length=501)
-i_ϕ = 1
-U = @. (100Vₗ*cos(2x + phases[i_ϕ]) + gₗ*cos(4x))
-plot(x, U, label="potential", c=:white, legend=:outerright)#, ylims=(-32,32))
-for i = 1:n_bands
-    ψ = make_coordinate_state(x, states[i_ϕ][:, i], n=n_cells) .+ bands[i, i_ϕ]
-    # hline!([bands[i, i_ϕ]], c=:white, ls=:dot, label=false); plot!(x, ψ, label=false, c=(i > 3 ? i+1 : i))
-    hline!([bands[i, i_ϕ]], c=:white, ls=:dot, label=false); plot!(x, ψ, label=L"\psi_{%$i}(\theta)", c=(i > 3 ? i+1 : i))
-end
-xlabel!("θ, rad"); ylabel!("𝜓ₙ")
-xlabel!(L"\theta"*", rad"); ylabel!(L"\psi_n(\theta)")
-title!("Wavefunctions at "*L"\varphi_t=\pi/2")
-savefig("wf-4-extended-pi2.pdf")
+phases = [range(0, 0.768, length=5); range(0.769, 0.77, length=10); range(0.9, 5.38, length=20); range(5.39, 5.51, length=20); range(5.51, 2pi, length=5)]
+phases = range(0, 2pi, length=50);
+pos_lower, pos_higher, ε_lower, ε_higher = compute_wannier_centres_qc(; n_levels=10, phases, M, λₗAₗ=10λₗ*Aₗ, λₛAₛ=10λₛ*Aₛ, χₗ, χₛ, s)
 
-x = range(0, n_cells*π, length=1001)
-U = @. ((Vₗ+gₗ)/2 + Vₗ/2*cos(2x + 2phases[1]) + gₗ/2*cos(4x))
-fig = plot(x, U, label="", c=:white)#, ylims=(-32,32))
-xlabel!(L"x")
-for ns = 16:47
-    ψ = make_coordinate_state(x, c[:, ns], n=n_cells) .+ e[ns]
-    hline!([e[ns]], c=:white, ls=:dot, label=false); plot!(x, ψ, label="", c=ns) 
+fig = plot();
+for (i, ϕ) in enumerate(phases)
+    scatter!(pos_lower[i],  fill(ϕ, length(pos_lower[i]));  marker_z=ε_lower[i],  c=:coolwarm, label=false, markerstrokewidth=0)
+    scatter!(pos_higher[i], fill(ϕ, length(pos_higher[i])); marker_z=ε_higher[i], c=:coolwarm, label=false, markerstrokewidth=0)
 end
-title!("Eigenfunctions of "*L"h_0"*" at "*L"\varphi_x = \pi/4")
-savefig("h_k_wavefunctions-enlarged-3.pdf")
+plot!(minorgrid=true, xlabel=L"\theta", ylabel=L"\phi_t", cbtitle="Quasienergy", title=L"M = -0.082")
+savefig("temporal_bad.pdf")
+
+### Wannier centre spatial
+
+phases = [range(0, 0.7, length=10); range(0.75, 0.85, length=200); range(0.9, 2.2, length=20); range(2.3, 2.4, length=200); range(2.4, pi, length=10)]
+phases = range(0, pi, length=50)
+n_cells = 4
+n_max = 15
+n_target = 10
+pos_lower, pos_higher, ε_lower, ε_higher, wf_lower, wf_higher = compute_wannier_centres(;N=n_cells, n_target, n_min=1, n_max, phases, s=2, gₗ, Vₗ, λₗ=0, λₛ=0, ω=0)
+
+fig = plot();
+for (i, ϕ) in enumerate(phases)
+    scatter!(pos_lower[i],  fill(ϕ, length(pos_lower[i]));  marker_z=ε_lower[i],  c=:coolwarm, label=false, markerstrokewidth=0)
+    scatter!(pos_higher[i], fill(ϕ, length(pos_higher[i])); marker_z=ε_higher[i], c=:coolwarm, label=false, markerstrokewidth=0)
+end
+plot!(xlabel=L"\varphi_X", ylabel="Energy", title="Space pumping, band $n_target")
+savefig(fig, "10-centres-nonperiodic.pdf")
+
+x = range(0, n_cells*π, length=50n_cells)
+@gif for (i, ϕ) in enumerate(phases)
+    U = @. gₗ*cos(2x)^2 + Vₗ*cos(x + ϕ)^2
+    plot(x, U, label=false, ylims=(gₗ+Vₗ, 10), xlabel=L"x", ylabel="Energy", title="Space pumping, band $n_target")
+    scatter!(pos_lower[i],  ε_lower[i]; marker_z=ε_lower[i],  c=:coolwarm, label=false,  markerstrokewidth=0, clims=(-65, -34))
+    scatter!(pos_higher[i], ε_higher[i]; marker_z=ε_higher[i], c=:coolwarm, label=false, markerstrokewidth=0)
+    # for j in 1:length(pos_lower[i])
+    #     plot!(x, wf_lower[i][:, j] .+ ε_lower[i][j], label=false, c=j)
+    # end
+    # for j in 1:length(pos_higher[i])
+    #     plot!(x, wf_higher[i][:, j] .+ ε_higher[i][j], label=false, c=5+j)
+    # end
+end
+
+### Periodic
+# Energy spectrum
+n_cells = 4
+n_min = 1
+n_max = 30
+e, E = compute_floquet_bands_with_boundary(;n=n_cells, n_min, n_max, phases, s, gₗ, Vₗ=0, λₗ, λₛ, ω, pumptype=:time)
+fig = plot();
+for r in eachrow(E)
+    plot!(phases, r, label=false)
+end
+plot!(xlabel=L"\varphi_x", ylabel="Energy")
+ylims!(-100, 0)
+phases = [range(0, 0.7, length=10); range(0.75, 0.85, length=50); range(0.9, 2.2, length=20); range(2.3, 2.4, length=50); range(2.4, pi, length=10)]
+phases = range(0, pi, length=50)
+n_cells = 4
+n_max = 34
+n_target = 29
+e, pos_lower, pos_higher, ε_lower, ε_higher, wf_lower, wf_higher = compute_wannier_centres_periodic(; N=n_cells, n_max, n_target, phases, gₗ, Vₗ)
+@gif for (i, ϕ) in enumerate(phases)
+    U = @. gₗ*cos(2x)^2 + Vₗ*cos(x + ϕ)^2
+    plot(x, U, label=false, ylims=(gₗ+Vₗ, 10))
+end
+
+fig = plot();
+for r in eachrow(e)
+    plot!(phases, r, label=false)
+end
+plot!(xlabel=L"\varphi_x", ylabel="Energy", title="band $n_target")
+savefig(fig, "$n_target-spectrum.pdf")
+
+pyplot()
+fig = plot();
+clims = ( minimum(ε_lower), maximum(ε_higher) )
+for (i, ϕ) in enumerate(phases)
+    scatter!(pos_lower[:, i],  fill(ϕ, n_cells); marker_z=ε_lower[:, i],  c=:coolwarm, label=false, markerstrokewidth=0, clims)
+    scatter!(pos_higher[:, i], fill(ϕ, n_cells); marker_z=ε_higher[:, i], c=:coolwarm, label=false, markerstrokewidth=0)
+end
+plot!(xlabel=L"\varphi_X", ylabel="Energy", title="Space pumping, band $n_target")
+savefig(fig, "$n_target-centres.pdf")
+
+x = range(0, n_cells*π, length=50n_cells)
+@gif for (i, ϕ) in enumerate(phases)
+    U = @. gₗ*cos(2x)^2 + Vₗ*cos(x + ϕ)^2
+    plot(x, U, label=false, ylims=(-100, 10), xlabel=L"x", ylabel="Energy", title="Space pumping, band $n_target")
+    scatter!(pos_lower[:, i],  ε_lower[:, i]; marker_z=ε_lower[:, i],  c=:coolwarm, label=false,  markerstrokewidth=0, clims)
+    scatter!(pos_higher[:, i], ε_higher[:, i]; marker_z=ε_higher[:, i], c=:coolwarm, label=false, markerstrokewidth=0)
+    # for j in 1:size(pos_lower, 1)
+    #     plot!(x, 4wf_lower[:, j, i] .+ ε_lower[j, i], label=false)
+    #     plot!(x, 4wf_higher[:, j, i] .+ ε_higher[j, i], label=false)
+    # end
+end
+
+# temporal
+λₗAₗ=λₗ*Aₗ; λₛAₛ=λₛ*Aₛ
+phases = range(0, 2pi, length=50);
+θ = range(0, 2π, length=501)
+@gif for (i, ϕ) in enumerate(phases)
+    U = @. λₗAₗ*cos(s*θ - χₗ - ϕ) + λₛAₛ*cos(2s*θ - χₛ)
+    plot(θ, U, label=false, ylims=(-λₗAₗ-λₛAₛ, λₗAₗ+λₛAₛ))
+end
+
+phases = [range(0, 0.768, length=5); range(0.769, 0.77, length=10); range(0.9, 5.38, length=20); range(5.39, 5.51, length=20); range(5.51, 2pi, length=5)]
+phases = range(0, 2pi, length=50);
+e, pos_lower, pos_higher, ε_lower, ε_higher = compute_wannier_centres_qc_periodic(; phases, M, λₗAₗ, λₛAₛ, χₗ, χₛ, s)
+
+# Energy spectrum
+fig = plot();
+for r in eachrow(e)
+    plot!(phases, r, label=false)
+end
+plot!(xlabel=L"\phi", ylabel="Energy")
+
+fig = plot();
+clims = ( minimum(ε_higher), maximum(ε_lower) )
+for (i, ϕ) in enumerate(phases)
+    scatter!(pos_lower[:, i],  fill(ϕ, s); marker_z=ε_lower[:, i],  c=:coolwarm, label=false, markerstrokewidth=0, clims)
+    scatter!(pos_higher[:, i], fill(ϕ, s); marker_z=ε_higher[:, i], c=:coolwarm, label=false, markerstrokewidth=0)
+end
+plot!(minorgrid=true, xlabel=L"\theta", ylabel=L"\varphi_t", cbtitle="Energy", title="Time pumping")
+savefig(fig, "time-centres.pdf")
+
+θ = range(0, 2π, length=501)
+@gif for (i, ϕ) in enumerate(phases)
+    U = @. λₗAₗ*cos(s*θ - χₗ - ϕ) + λₛAₛ*cos(2s*θ - χₛ)
+    plot(θ, U, label=false, ylims=(e[end, length(phases)÷4]-10, λₗAₗ+λₛAₛ), xlabel=L"\theta", ylabel="Energy", title="Time pumping")
+    scatter!(pos_lower[:, i],  ε_lower[:, i]; marker_z=ε_lower[:, i],  c=:coolwarm, label=false,  markerstrokewidth=0, clims)
+    scatter!(pos_higher[:, i], ε_higher[:, i]; marker_z=ε_higher[:, i], c=:coolwarm, label=false, markerstrokewidth=0)
+end
+
+
+
+######## Floquet
+
+
+phases = range(0, pi, length=50)
+n_cells = 4
+n_max = 30
+e, E = compute_floquet_wannier_centres(;N=n_cells, n_target=10, n_max, phases, s, gₗ, Vₗ=0, λₗ=λₗ, λₛ=λₛ, ω, pumptype=:time)
+fig = plot();
+for r in eachrow(E)
+    plot!(phases, r, label=false)
+end
+plot!(xlabel=L"\varphi_x", ylabel="Energy")
+ylims!(-100, 0)
+phases = [range(0, 0.7, length=10); range(0.75, 0.85, length=50); range(0.9, 2.2, length=20); range(2.3, 2.4, length=50); range(2.4, pi, length=10)]
+phases = range(0, pi, length=50)
+n_cells = 4
+n_max = 15
+n_target = 8
+e, pos_lower, pos_higher, ε_lower, ε_higher, wf_lower, wf_higher = compute_wannier_centres_periodic(; N=n_cells, n_max, n_target, phases, gₗ, Vₗ)
+@gif for (i, ϕ) in enumerate(phases)
+    U = @. gₗ*cos(2x)^2 + Vₗ*cos(x + ϕ)^2
+    plot(x, U, label=false, ylims=(gₗ+Vₗ, 10))
+end
+
+fig = plot();
+for r in eachrow(e)
+    plot!(phases, r, label=false)
+end
+plot!(xlabel=L"\varphi_x", ylabel="Energy", title="band $n_target")
+savefig(fig, "$n_target-spectrum.pdf")
+
+pyplot()
+fig = plot();
+clims = ( minimum(ε_lower), maximum(ε_higher) )
+for (i, ϕ) in enumerate(phases)
+    scatter!(pos_lower[:, i],  fill(ϕ, n_cells); marker_z=ε_lower[:, i],  c=:coolwarm, label=false, markerstrokewidth=0, clims)
+    scatter!(pos_higher[:, i], fill(ϕ, n_cells); marker_z=ε_higher[:, i], c=:coolwarm, label=false, markerstrokewidth=0)
+end
+plot!(xlabel=L"\varphi_X", ylabel="Energy", title="Space pumping, band $n_target")
+savefig(fig, "$n_target-centres.pdf")
+
+x = range(0, n_cells*π, length=50n_cells)
+@gif for (i, ϕ) in enumerate(phases)
+    U = @. gₗ*cos(2x)^2 + Vₗ*cos(x + ϕ)^2
+    plot(x, U, label=false, ylims=(gₗ+Vₗ, 10), xlabel=L"x", ylabel="Energy", title="Space pumping, band $n_target")
+    scatter!(pos_lower[:, i],  ε_lower[:, i]; marker_z=ε_lower[:, i],  c=:coolwarm, label=false,  markerstrokewidth=0, clims)
+    scatter!(pos_higher[:, i], ε_higher[:, i]; marker_z=ε_higher[:, i], c=:coolwarm, label=false, markerstrokewidth=0)
+    # for j in 1:size(pos_lower, 1)
+    #     plot!(x, 4wf_lower[:, j, i] .+ ε_lower[j, i], label=false)
+    #     plot!(x, 4wf_higher[:, j, i] .+ ε_higher[j, i], label=false)
+    # end
+end
