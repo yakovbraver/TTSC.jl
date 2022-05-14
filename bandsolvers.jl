@@ -183,9 +183,9 @@ function compute_floquet_bands(; n_min::Integer, n_max::Integer, phases::Abstrac
                     Hₖ_rows[p] = m′
                     Hₖ_cols[p] = m
                     if pumptype != :time || z == 1 # If pumping is time-only, this may be calculated only once
-                        j_sum = sum( (cₖ[m′][j+2]/4 + cₖ[m′][j-2]/4 + cₖ[m′][j]/2)' * cₖ[m][j] for j = 3:2n_j-1 ) + 
-                                     (cₖ[m′][3]/4 + cₖ[m′][1]/2)' * cₖ[m][1] +                # iteration j = 1
-                                     (cₖ[m′][2n_j-1]/4 + cₖ[m′][2n_j+1]/2)' * cₖ[m][2n_j+1]   # iteration j = 2n_j+1
+                        j_sum = sum( (                cₖ[m′][j]/2 + cₖ[m′][j+2]/4)' * cₖ[m][j] for j = 1:2 ) +
+                                sum( (cₖ[m′][j-2]/4 + cₖ[m′][j]/2 + cₖ[m′][j+2]/4)' * cₖ[m][j] for j = 3:2n_j-1 ) + 
+                                sum( (cₖ[m′][j-2]/4 + cₖ[m′][j]/2                )' * cₖ[m][j] for j = 2n_j:2n_j+1)
                         Hₖ_vals[p] = (pumptype == :space ? λₗ/2 * j_sum : λₗ/2 * j_sum * cis(-2ϕ)) # a check for space or space-time pumping
                     elseif pumptype == :time 
                         Hₖ_vals[p] *= cis(-2(phases[2]-phases[1]))
@@ -205,9 +205,9 @@ function compute_floquet_bands(; n_min::Integer, n_max::Integer, phases::Abstrac
                     Hₖ_rows[p] = m′
                     Hₖ_cols[p] = m
                     if pumptype != :time || z == 1 # If pumping is time-only, this may be calculated only once
-                        j_sum = sum( (-cₖ[m′][j+2]/4 - cₖ[m′][j-2]/4 + cₖ[m′][j]/2)' * cₖ[m][j] for j = 3:2n_j-1 ) + 
-                                     (-cₖ[m′][3]/4 + cₖ[m′][1]/2)' * cₖ[m][1] +                # iteration j = 1        ### FIX: include also j = 2
-                                     (-cₖ[m′][2n_j-1]/4 + cₖ[m′][2n_j+1]/2)' * cₖ[m][2n_j+1]   # iteration j = 2n_j+1   ### FIX: include also j = 2n_j
+                        j_sum = sum( (                 cₖ[m′][j]/2 - cₖ[m′][j+2]/4)' * cₖ[m][j] for j = 1:2 ) +
+                                sum( (-cₖ[m′][j-2]/4 + cₖ[m′][j]/2 - cₖ[m′][j+2]/4)' * cₖ[m][j] for j = 3:2n_j-1 ) + 
+                                sum( (-cₖ[m′][j-2]/4 + cₖ[m′][j]/2                )' * cₖ[m][j] for j = 2n_j:2n_j+1)
                         Hₖ_vals[p] = λₛ/2 * j_sum
                     end
                     p += 1
