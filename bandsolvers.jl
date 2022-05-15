@@ -951,6 +951,7 @@ function compute_wannier_centres_periodic(; N::Integer, n_max::Integer, n_target
     h[diagind(h, -2N)] .= h[diagind(h, 2N)] .= gₗ/4
 
     energies = Matrix{Float64}(undef, n_w, length(phases))
+    c = Matrix{ComplexF64}(undef, 2n_j+1, N) # eigenvectors of ℎ
 
     coords = range(0, N*pi, length=50N) # x's for wavefunctions
     pos_lower = Matrix{Float64}(undef, N, length(phases))
@@ -974,7 +975,7 @@ function compute_wannier_centres_periodic(; N::Integer, n_max::Integer, n_target
         
         # Lower band
         # c = view(f[2], n_target_min:n_target_min + N - 1)
-        c = view(f.vectors, :, n_target_min:n_target_min + N - 1)
+        c .= f.vectors[:, n_target_min:n_target_min + N - 1]
         for n in 1:N
             for n′ in 1:N
                 # x[n′, n] = sum(c[n′][j+1]' * c[n][j] for j = 1:2n_j)
@@ -989,8 +990,8 @@ function compute_wannier_centres_periodic(; N::Integer, n_max::Integer, n_target
         end
 
         # Higher band
-        # c = view(f.vectors, :, n_target_min + N:n_target_max)
-        c = view(f.vectors, :, n_target_min + N:n_target_max)
+        # c = view(f[2], :, n_target_min + N:n_target_max)
+        c .= f.vectors[:, n_target_min + N:n_target_max]
         for n in 1:N
             for n′ in 1:N
                 # x[n′, n] = sum(c[n′][j+1]' * c[n][j] for j = 1:2n_j)
@@ -1067,4 +1068,3 @@ function compute_wannier_centres_qc_periodic(; phases::AbstractVector{<:Real}, s
 end
 
 ## TODO: check j iterations to only operate in one half
-## TODO: consider using views for `c` coeffs when calculating Floquet spectra
