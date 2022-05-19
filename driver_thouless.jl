@@ -467,8 +467,8 @@ end
 
 
 phases = [range(0, 0.7, length=10); range(0.75, 0.85, length=15); range(0.9, 2.2, length=10); range(2.3, 2.4, length=15); range(2.4, pi, length=10)]
-phases = range(0, pi, length=10)
-n_cells = 4
+phases = range(0, pi, length=29)
+n_cells = 2
 n_max = 34
 n_target = 1
 e, E, pos_lower, pos_higher, ε_lower, ε_higher, wf_lower, wf_higher = compute_floquet_wannier_centres(;N=n_cells, n_target, n_max, phases, s, gₗ, Vₗ, λₗ, λₛ, ω, pumptype=:time)
@@ -504,3 +504,16 @@ x = range(0, n_cells*π, length=10n_cells)
     end
     title!("Lower spatial bands, "*L"\omega t = 0, \varphi_t=\varphi_x=%$(round(2ϕ, digits=3))")
 end
+
+x = range(0, n_cells*π, length=40n_cells)
+ωts = range(0, 2π, length=41) # time moments for wavefunctions: 𝜔𝑡/𝑠 ∈ [0; 2π]
+clims = extrema(wf_lower)
+@gif for (i, ϕ) in enumerate(phases)
+    fig1 = heatmap(x, ωts, abs2.(wf_higher[:, 3, :, i]'), xlabel=L"x", ylabel=L"\omega t/s", title=L"j=1, \beta=1"; clims, c=:viridis, cbar=false)
+    fig2 = heatmap(x, ωts, abs2.(wf_higher[:, 4, :, i]'), xlabel=L"x", title=L"j=1, \beta=2"; clims, c=:viridis, yformatter=_->"")
+    plot(fig1, fig2, layout=(1, 2), link=:y, plot_title=L"\varphi_t=%$(round(2ϕ, digits=3))")
+end
+
+fig1 = heatmap(x, ωts, abs2.(wf_higher[:, 1, :, 1]'), xlabel=L"x", ylabel=L"\omega t/s", title=L"j=1, \beta=1"; c=:viridis, cbar=false)
+fig2 = heatmap(x, ωts, abs2.(wf_higher[:, 3, :, 1]'), xlabel=L"x", ylabel=L"\omega t/s", title=L"j=1, \beta=2"; c=:viridis, cbar=false)
+plot(fig1, fig2, layout=(1, 2), link=:y)

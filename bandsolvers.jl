@@ -2,7 +2,7 @@ import BandedMatrices as BM
 using SparseArrays: sparse
 using KrylovKit: eigsolve
 using LinearAlgebra: eigen, eigvals, schur, ⋅, diagm, diagind, ishermitian, Hermitian
-using ProgressMeter
+using ProgressMeter, LoopVectorization
 
 """
 Calculate `n_bands` of energy bands of Hamiltonian (S32) assuming infinite crystal with a quasimomentum 𝑞,
@@ -597,31 +597,28 @@ function compute_floquet_wannier_centres(; N::Integer, n_min::Integer=1, n_targe
     h = diagm(0 => ComplexF64[(2j/N)^2 + (gₗ + Vₗ)/2 for j = -n_j:n_j])
     h[diagind(h, -2N)] .= h[diagind(h, 2N)] .= gₗ/4
 
-    coords = range(0, N*pi, length=10N) # x's for wavefunctions
+    coords = range(0, N*pi, length=40N) # x's for wavefunctions
+    ωts = range(0, 2π, length=41) # time moments for wavefunctions: 𝜔𝑡/𝑠 ∈ [0; 2π]
     pos_lower = Matrix{Float64}(undef, 2N, length(phases))
     pos_higher = Matrix{Float64}(undef, 2N, length(phases))
     ε_lower = Matrix{Float64}(undef, 2N, length(phases))
     ε_higher = Matrix{Float64}(undef, 2N, length(phases))
-    wf_lower = Array{Float64, 3}(undef, length(coords), 2N, length(phases))
-    wf_higher = Array{Float64, 3}(undef, length(coords), 2N, length(phases))
+    wf_lower = Array{ComplexF64, 4}(undef, length(coords), 2N, length(ωts), length(phases))
+    wf_higher = Array{ComplexF64, 4}(undef, length(coords), 2N, length(ωts), length(phases))
 
-    x = Matrix{ComplexF64}(undef, 2N, 2N) # position operator
-    d = Matrix{ComplexF64}(undef, 2N, 2N) # matrix of eigenvectors of the position operator
-    pos_complex = Vector{Float64}(undef, 2N) # eigenvalues of the position operator; we will be taking their angles
-    
     n_min = (n_min-1) * 2N + 1 # convert `n_min` to actual level number
     n_max = n_max * 2N # convert `n_max` to actual level number
     Δn = n_max - n_min + 1 # number of levels of spatial Hamiltonian to use for constructing Floquet Hamiltonian
     ν(m) = ceil(Int, m/2N)
 
     ϵ = Matrix{Float64}(undef, Δn, length(phases)) # eigenvalues of ℎ (the unperturbed Hamiltonian)
-    c = Matrix{ComplexF64}(undef, 2n_j+1, Δn) # eigenvectors of ℎ
+    c = Matrix{ComplexF64}(undef, 2n_j+1, Δn) # eigenvectors of ℎ in 𝑗-representation
+    ψ = Matrix{ComplexF64}(undef, length(coords), Δn) # eigenvectors of ℎ in 𝑥-representation
+    cc = Matrix{ComplexF64}(undef, Δn, Δn) # matrix of products of `c`'s that will be needed multiple times
     
-    E = Matrix{Float64}(undef, Δn, length(phases)) # eigenvalues of 𝐻 (Floquet quasi-energies)
     H_dim = Δn # dimension of the constructed 𝐻 matrix
-    b = Matrix{ComplexF64}(undef, Δn, 2N) # eigenvectors of a half of a band of 𝐻
-   
     H = zeros(ComplexF64, H_dim, H_dim)
+    E = Matrix{Float64}(undef, Δn, length(phases)) # eigenvalues of 𝐻 (Floquet quasi-energies)
 
     @showprogress for (z, ϕ) in enumerate(phases)
         if pumptype != :time || z == 1 # If pupming is not time-only, ℎ has to be diagonalised on each iteration. If it's time-only, then we diagonalise only once, at `z == 1`.
@@ -631,6 +628,13 @@ function compute_floquet_wannier_centres(; N::Integer, n_min::Integer=1, n_targe
             # save only energies and states for levels from `n_min` to `n_max`
             ϵ[:, z] = f.values[n_min:n_max]
             c .= f.vectors[:, n_min:n_max]
+            # construct coordinate representation of eigenfunctions and compute products of `c`'s that will be needed multiple times
+            for m in 1:Δn
+                ψ[:, m] = make_exp_state(coords, c[:, m]; n=N)
+                for m′ in 1:Δn
+                    cc[m′, m] = sum(c[j+1, m′]' * c[j, m] for j = 1:2n_j)
+                end
+            end
             if pumptype == :time
                 for p in 2:length(phases) # copy the calculated first column of `ϵ` to all other columns for consistency
                     ϵ[:, p] = ϵ[:, 1]
@@ -678,54 +682,57 @@ function compute_floquet_wannier_centres(; N::Integer, n_min::Integer=1, n_targe
 
         ### Wannier centres
         
-        # Higher band
-        # the loop below runs faster if we make a copy rather than a view of `f.vectors`; 
-        # both approaches are ~6 times faster compared to iterating directly over `f.vectors`
-        window = [n_target_min:n_target_min + N - 1; n_target_min+2N:n_target_min+2N + N - 1]
-        b .= f.vectors[:, window]
-        # Threads.@threads for n in 1:2N # secular calculation
-        #     for n′ in 1:2N
-        #         x[n′, n] = sum( sum( sum( b[m′, n′]' * b[m, n] * c[j+1, m′]' * c[j, m] for j = 1:2n_j) for m′ in (ν(m)-1)*2N+1:ν(m)*2N) for m in 1:Δn)
-        #     end
-        # end
-        Threads.@threads for n in 1:2N # exact calculation at t = 0
-            for n′ in 1:2N
-                x[n′, n] = sum( sum( sum( b[m′, n′]' * b[m, n] * c[j+1, m′]' * c[j, m] for j = 1:2n_j) for m′ in 1:Δn) for m in 1:Δn)
-            end
-        end
-        _, d, pos_complex = schur(x)
-        pos_real = (angle.(pos_complex) .+ π) / 2π * N*π # take angle and convert from (-π, π) to (0, 2π)
-        sp = sortperm(pos_real)
-        pos_higher[:, z] = pos_real[sp]   # sort positions in increasing order
-        Base.permutecols!!(d, sp)         # sort the eigenvalues in the same way
-        ε_higher[:, z] = [abs2.(dˣ) ⋅ E[window, z] for dˣ in eachcol(d)]
-        Threads.@threads for X in 1:2N
-            wf_higher[:, X, z] = abs2.(sum(d[l, X] * sum(b[m, l] * make_exp_state(coords, c[:, m]; n=N) for m in 1:Δn) for l = 1:2N))
-            # wf_higher[:, X, z] = abs2.( sum(b[m, X] * cis(ν(m)*pi/4/s) * make_exp_state(coords, c[:, m]; n=N) for m in 1:Δn) )
-        end
+        # Threads.@threads for (t, ωt) in enumerate(ωts)
+        Threads.@threads for t in eachindex(ωts)
+            ωt = ωts[t]
+            x = Matrix{ComplexF64}(undef, 2N, 2N) # position operator
 
-        # Lower band
-        window = [n_target_min+N:n_target_min+2N-1; n_target_min+3N:n_target_max]
-        b .= f.vectors[:, window]
-        # Threads.@threads for n in 1:2N # secular calculation
-        #     for n′ in 1:2N
-        #         x[n′, n] = sum( sum( sum( b[m′, n′]' * b[m, n] * c[j+1, m′]' * c[j, m] for j = 1:2n_j) for m′ in (ν(m)-1)*2N+1:ν(m)*2N) for m in 1:Δn)
-        #     end
-        # end
-        Threads.@threads for n in 1:2N # exact calculation at t = 0
-            for n′ in 1:2N
-                x[n′, n] = sum( sum( sum( b[m′, n′]' * b[m, n] * c[j+1, m′]' * c[j, m] for j = 1:2n_j) for m′ in 1:Δn) for m in 1:Δn)
+            ccc = Matrix{ComplexF64}(undef, Δn, Δn) # matrix of products of `c`'s that will be needed multiple times
+            for m in 1:Δn, m′ in 1:Δn
+                ccc[m′, m] = cc[m′, m] * cis((ν(m′)-ν(m))*ωt)
             end
-        end
-        _, d, pos_complex = schur(x)
-        pos_real = (angle.(pos_complex) .+ π) / 2π * N*π
-        sp = sortperm(pos_real)
-        pos_lower[:, z] = pos_real[sp]
-        Base.permutecols!!(d, sp)
-        ε_lower[:, z] = [abs2.(dˣ) ⋅ E[window, z] for dˣ in eachcol(d)]
-        Threads.@threads for X in 1:2N
-            wf_lower[:, X, z] = abs2.(sum(d[l, X] * sum(b[m, l] * make_exp_state(coords, c[:, m]; n=N) for m in 1:Δn) for l = 1:2N))
-            # wf_lower[:, X, z] = abs2.( sum(b[m, X] * cis(ν(m)*pi/4/s) * make_exp_state(coords, c[:, m]; n=N) for m in 1:Δn) )
+
+            # Higher band
+            # the loop below runs faster if we make a copy rather than a view of `f.vectors`; 
+            # both approaches are ~6 times faster compared to iterating directly over `f.vectors`
+            window = [n_target_min:n_target_min + N - 1; n_target_min+2N:n_target_min+2N + N - 1]
+            b = f.vectors[:, window]
+            for n in 1:2N, n′ in 1:2N
+                x[n′, n] = sum( b[m, n] * sum( b[m′, n′]' * ccc[m′, m] for m′ in 1:Δn) for m in 1:Δn)
+            end
+            # _, d, pos_complex = schur(x)
+            pos_complex, d = eigen(x)
+            pos_real = (angle.(pos_complex) .+ π) / 2π * N*π # take angle and convert from (-π, π) to (0, 2π)
+            sp = sortperm(pos_real)
+            Base.permutecols!!(d, sp)         # sort the eigenvalues in the same way
+            # if t == length(ωts) ÷ 4
+            #     pos_higher[:, z] = sort(pos_real)   # sort positions again because `sp` has been overwritten
+            #     ε_higher[:, z] = [abs2.(dˣ) ⋅ E[window, z] for dˣ in eachcol(d)]
+            # end
+            for X in 1:2N
+                wf_higher[:, X, t, z] = abs2.(sum(cis(-ν(m)*ωt) * ψ[:, m] * sum(d[l, X] * b[m, l] for l = 1:2N) for m in 1:Δn))
+                # wf_higher[:, X, z] = abs2.( sum(b[m, X] * cis(ν(m)*pi/4/s) * ψ[:, m] for m in 1:Δn) )
+            end
+
+            # Lower band
+            window = [n_target_min+N:n_target_min+2N-1; n_target_min+3N:n_target_max]
+            b = f.vectors[:, window]
+            for n in 1:2N, n′ in 1:2N
+                x[n′, n] = sum( b[m, n] * sum( b[m′, n′]' * ccc[m′, m] for m′ in 1:Δn) for m in 1:Δn)
+            end
+            # _, d, pos_complex = schur(x)
+            pos_complex, d = eigen(x)
+            pos_real = (angle.(pos_complex) .+ π) / 2π * N*π # take angle and convert from (-π, π) to (0, 2π)
+            sp = sortperm(pos_real)
+            Base.permutecols!!(d, sp)         # sort the eigenvalues in the same way
+            # if t == length(ωts) ÷ 4
+            #     pos_lower[:, z] = sort(pos_real)   # sort positions again because `sp` has been overwrittern
+            #     ε_lower[:, z] = [abs2.(dˣ) ⋅ E[window, z] for dˣ in eachcol(d)]
+            # end
+            for X in 1:2N
+                wf_lower[:, X, t, z] = abs2.(sum(cis(-ν(m)*ωt) * ψ[:, m] * sum(d[l, X] * b[m, l] for l = 1:2N) for m in 1:Δn))
+                # wf_lower[:, X, z] = abs2.( sum(b[m, X] * cis(ν(m)*pi/4/s) * ψ[:, m] for m in 1:Δn) )
+            end
         end
     end
     return ϵ, E, pos_lower, pos_higher, ε_lower, ε_higher, wf_lower, wf_higher
