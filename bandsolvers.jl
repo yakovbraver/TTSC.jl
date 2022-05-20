@@ -603,8 +603,8 @@ function compute_floquet_wannier_centres(; N::Integer, n_min::Integer=1, n_targe
     pos_higher = Matrix{Float64}(undef, 2N, length(phases))
     ε_lower = Matrix{Float64}(undef, 2N, length(phases))
     ε_higher = Matrix{Float64}(undef, 2N, length(phases))
-    wf_lower = Array{ComplexF64, 4}(undef, length(coords), 2N, length(ωts), length(phases))
-    wf_higher = Array{ComplexF64, 4}(undef, length(coords), 2N, length(ωts), length(phases))
+    wf_lower = Array{Float64,4}(undef, length(coords), 2N, length(ωts), length(phases))
+    wf_higher = Array{Float64,4}(undef, length(coords), 2N, length(ωts), length(phases))
 
     n_min = (n_min-1) * 2N + 1 # convert `n_min` to actual level number
     n_max = n_max * 2N # convert `n_max` to actual level number
@@ -682,56 +682,50 @@ function compute_floquet_wannier_centres(; N::Integer, n_min::Integer=1, n_targe
 
         ### Wannier centres
         
-        # Threads.@threads for (t, ωt) in enumerate(ωts)
-        Threads.@threads for t in eachindex(ωts)
-            ωt = ωts[t]
-            x = Matrix{ComplexF64}(undef, 2N, 2N) # position operator
+        x = Matrix{ComplexF64}(undef, 2N, 2N) # position operator
+        
+        ccc = Matrix{ComplexF64}(undef, Δn, Δn) # matrix of products of `c`'s that will be needed multiple times
+        for m in 1:Δn, m′ in 1:Δn
+            ccc[m′, m] = cc[m′, m] * cis((ν(m′)-ν(m))*(1-z/length(phases)*pi/2))
+        end
 
-            ccc = Matrix{ComplexF64}(undef, Δn, Δn) # matrix of products of `c`'s that will be needed multiple times
-            for m in 1:Δn, m′ in 1:Δn
-                ccc[m′, m] = cc[m′, m] * cis((ν(m′)-ν(m))*ωt)
-            end
-
-            # Higher band
-            # the loop below runs faster if we make a copy rather than a view of `f.vectors`; 
-            # both approaches are ~6 times faster compared to iterating directly over `f.vectors`
-            window = [n_target_min:n_target_min + N - 1; n_target_min+2N:n_target_min+2N + N - 1]
-            b = f.vectors[:, window]
-            for n in 1:2N, n′ in 1:2N
-                x[n′, n] = sum( b[m, n] * sum( b[m′, n′]' * ccc[m′, m] for m′ in 1:Δn) for m in 1:Δn)
-            end
-            # _, d, pos_complex = schur(x)
-            pos_complex, d = eigen(x)
-            pos_real = (angle.(pos_complex) .+ π) / 2π * N*π # take angle and convert from (-π, π) to (0, 2π)
-            sp = sortperm(pos_real)
-            Base.permutecols!!(d, sp)         # sort the eigenvalues in the same way
-            # if t == length(ωts) ÷ 4
-            #     pos_higher[:, z] = sort(pos_real)   # sort positions again because `sp` has been overwritten
-            #     ε_higher[:, z] = [abs2.(dˣ) ⋅ E[window, z] for dˣ in eachcol(d)]
-            # end
+        # Higher band
+        # the loop below runs faster if we make a copy rather than a view of `f.vectors`; 
+        # both approaches are ~6 times faster compared to iterating directly over `f.vectors`
+        window = [n_target_min:n_target_min + N - 1; n_target_min+2N:n_target_min+2N + N - 1]
+        b = f.vectors[:, window]
+        for n in 1:2N, n′ in 1:2N
+            x[n′, n] = sum(b[m, n] * sum(b[m′, n′]' * ccc[m′, m] for m′ in 1:Δn) for m in 1:Δn)
+        end
+        _, d, pos_complex = schur(x)
+        # pos_complex, d = eigen(x)
+        pos_real = (angle.(pos_complex) .+ π) / 2π * N*π # take angle and convert from (-π, π) to (0, 2π)
+        sp = sortperm(pos_real)
+        Base.permutecols!!(d, sp)         # sort the eigenvalues in the same way
+        pos_higher[:, z] = sort(pos_real)   # sort positions again because `sp` has been overwritten
+        ε_higher[:, z] = [abs2.(dˣ) ⋅ E[window, z] for dˣ in eachcol(d)]
+        for (t, ωt) in enumerate(ωts)
             for X in 1:2N
                 wf_higher[:, X, t, z] = abs2.(sum(cis(-ν(m)*ωt) * ψ[:, m] * sum(d[l, X] * b[m, l] for l = 1:2N) for m in 1:Δn))
-                # wf_higher[:, X, z] = abs2.( sum(b[m, X] * cis(ν(m)*pi/4/s) * ψ[:, m] for m in 1:Δn) )
             end
+        end
 
-            # Lower band
-            window = [n_target_min+N:n_target_min+2N-1; n_target_min+3N:n_target_max]
-            b = f.vectors[:, window]
-            for n in 1:2N, n′ in 1:2N
-                x[n′, n] = sum( b[m, n] * sum( b[m′, n′]' * ccc[m′, m] for m′ in 1:Δn) for m in 1:Δn)
-            end
-            # _, d, pos_complex = schur(x)
-            pos_complex, d = eigen(x)
-            pos_real = (angle.(pos_complex) .+ π) / 2π * N*π # take angle and convert from (-π, π) to (0, 2π)
-            sp = sortperm(pos_real)
-            Base.permutecols!!(d, sp)         # sort the eigenvalues in the same way
-            # if t == length(ωts) ÷ 4
-            #     pos_lower[:, z] = sort(pos_real)   # sort positions again because `sp` has been overwrittern
-            #     ε_lower[:, z] = [abs2.(dˣ) ⋅ E[window, z] for dˣ in eachcol(d)]
-            # end
+        # Lower band
+        window = [n_target_min+N:n_target_min+2N-1; n_target_min+3N:n_target_max]
+        b = f.vectors[:, window]
+        for n in 1:2N, n′ in 1:2N
+            x[n′, n] = sum( b[m, n] * sum( b[m′, n′]' * ccc[m′, m] for m′ in 1:Δn) for m in 1:Δn)
+        end
+        _, d, pos_complex = schur(x)
+        # pos_complex, d = eigen(x)
+        pos_real = (angle.(pos_complex) .+ π) / 2π * N*π # take angle and convert from (-π, π) to (0, 2π)
+        sp = sortperm(pos_real)
+        Base.permutecols!!(d, sp)         # sort the eigenvalues in the same way
+        pos_lower[:, z] = sort(pos_real)   # sort positions again because `sp` has been overwritten
+        ε_lower[:, z] = [abs2.(dˣ) ⋅ E[window, z] for dˣ in eachcol(d)]
+        for (t, ωt) in enumerate(ωts)
             for X in 1:2N
                 wf_lower[:, X, t, z] = abs2.(sum(cis(-ν(m)*ωt) * ψ[:, m] * sum(d[l, X] * b[m, l] for l = 1:2N) for m in 1:Δn))
-                # wf_lower[:, X, z] = abs2.( sum(b[m, X] * cis(ν(m)*pi/4/s) * ψ[:, m] for m in 1:Δn) )
             end
         end
     end
