@@ -3,18 +3,19 @@ using SpecialFunctions: gamma
 using Combinatorics: factorial, binomial
 pyplot()
 plotlyjs()
-theme(:dark, size=(700, 600))
+theme(:default, size=(700, 600))
 
 ### Calculate the spatial Hamiltonian as a function of the action, and compute the associated derivatives
 
+include("bandsolvers.jl")
 include("SpacetimeHamiltonian.jl")
 
 function 𝐻₀(p, x, params)
-    p^2 + params[1]*cos(2x)^(2params[2]) + params[3]*cos(x + 3pi/2)^2
+    p^2 + params[1]*cos(2x)^(2params[2]) + params[3]*cos(x)^2
 end
 
 function 𝐻(p, x, params, t)
-    p^2 + params[1]*cos(2x)^(2params[2]) + params[3]*cos(x + pi/4)^2 +
+    p^2 + params[1]*cos(2x)^(2params[2]) + params[3]*cos(x)^2 +
     params[4]*sin(2x)^2*cos(2params[6]*t) + 
     params[5]*cos(2x)^2*cos(params[6]*t + 3pi/2)
 end
@@ -90,8 +91,6 @@ title!(L"g_l = %$gₗ, V_L = %$Vₗ, \lambda_S = %$λₛ, \lambda_L = %$λₗ, \
 savefig(fig, "exact-isoenergies.pdf")
 
 ### Calculate secular bands
-
-include("bandsolvers.jl")
 
 phases = range(0, 2π, length=61) # values of the adiabatic phase in (S32)
 n_bands = 4
@@ -427,48 +426,66 @@ end
 
 # temporal
 λₗAₗ=λₗ*Aₗ; λₛAₛ=λₛ*Aₛ
-phases = range(0, 2pi, length=50);
-θ = range(0, 2π, length=501)
+phases = range(0, 2pi, length=61);
+θ = range(0, 2π, length=20s)
 @gif for (i, ϕ) in enumerate(phases)
     U = @. λₗAₗ*cos(s*θ - χₗ - ϕ) + λₛAₛ*cos(2s*θ - χₛ)
     plot(θ, U, label=false, ylims=(-λₗAₗ-λₛAₛ, λₗAₗ+λₛAₛ))
 end
 
 phases = [range(0, 0.768, length=5); range(0.769, 0.77, length=10); range(0.9, 5.38, length=20); range(5.39, 5.51, length=20); range(5.51, 2pi, length=5)]
-phases = range(0, 2pi, length=61);
-e, pos_lower, pos_higher, ε_lower, ε_higher = compute_wannier_centres_qc_periodic(; phases, M, λₗAₗ, λₛAₛ, χₗ, χₛ, s)
+e, pos_lo, pos_hi, ε_lo, ε_hi, wf_lo, wf_hi = compute_wannier_centres_qc_periodic(; phases, M, λₗAₗ, λₛAₛ, χₗ, χₛ, s)
 
-# Energy spectrum
 fig = plot();
 for r in eachrow(e)
     plot!(phases, r, label=false)
 end
 plot!(xlabel=L"\varphi_t", ylabel="Energy")
 
+clims = ( minimum(ε_lo), maximum(ε_hi) )
 fig = plot();
-clims = ( minimum(ε_higher), maximum(ε_lower) )
 for (i, ϕ) in enumerate(phases)
-    scatter!(pos_lower[:, i],  fill(ϕ, s); marker_z=ε_lower[:, i],  c=:coolwarm, label=false, markerstrokewidth=0, clims)
-    scatter!(pos_higher[:, i], fill(ϕ, s); marker_z=ε_higher[:, i], c=:coolwarm, label=false, markerstrokewidth=0)
+    scatter!(pos_lo[:, i],  fill(ϕ, s); marker_z=ε_lo[:, i],  c=:coolwarm, label=false, markerstrokewidth=0, clims)
+    scatter!(pos_hi[:, i], fill(ϕ, s); marker_z=ε_hi[:, i], c=:coolwarm, label=false, markerstrokewidth=0)
 end
 plot!(minorgrid=true, xlabel=L"\theta", ylabel=L"\varphi_t", cbtitle="Energy", title="Time pumping")
 savefig(fig, "time-centres.pdf")
 
-θ = range(0, 2π, length=501)
 @gif for (i, ϕ) in enumerate(phases)
     U = @. λₗAₗ*cos(s*θ - χₗ - ϕ) + λₛAₛ*cos(2s*θ - χₛ)
     plot(θ, U, label=false, ylims=(e[end, length(phases)÷4]-10, λₗAₗ+λₛAₛ), xlabel=L"\theta", ylabel="Energy", title="Time pumping")
-    scatter!(pos_lower[:, i],  ε_lower[:, i]; marker_z=ε_lower[:, i],  c=:coolwarm, label=false,  markerstrokewidth=0, clims)
-    scatter!(pos_higher[:, i], ε_higher[:, i]; marker_z=ε_higher[:, i], c=:coolwarm, label=false, markerstrokewidth=0)
+    scatter!(pos_lo[:, i],  ε_lo[:, i]; marker_z=ε_lo[:, i],  c=:coolwarm, label=false,  markerstrokewidth=0, clims)
+    scatter!(pos_hi[:, i], ε_hi[:, i]; marker_z=ε_hi[:, i], c=:coolwarm, label=false, markerstrokewidth=0)
 end
 
+ylims = extrema(wf_lo)
+i_ϕ = 60
+plot(θ, wf_lo[:, 1, i_ϕ]; ylims, label=L"|w_{\alpha=1}(\theta)|^2", palette=palette(:coolwarm, 2))
+plot!(θ, wf_lo[:, 2, i_ϕ]; ylims, label=L"|w_{\alpha=2}(\theta)|^2")
+plot!(xlabel=L"\theta", ylabel="probability density", title="Quasiclassical Wannier functions; "*L"\varphi_t=2\pi")
+savefig("qc-lo-phi=2pi.pdf")
+
+θ = range(0, 2π, length=40s)
+@gif for (i, ϕ) in enumerate(phases)
+    plot()
+    for j in 1:s
+        plot!(θ, wf_lo[:, j, i], label=false; ylims)
+        # plot!(θ, wf_hi[:, j, i], label=false; ylims)
+    end
+    plot!(xlabel=L"\theta", title="Lower temporal band, "*L"\varphi_t=%$(round(ϕ, digits=3))")
+end
+
+heatmap(θ, phases, wf_hi[:, 1, :]', c=:viridis)
+heatmap(θ, phases, wf_hi[:, 2, :]', c=:viridis)
+heatmap(θ, phases[1:end-1], (-wf_hi[:, 1, 1:end-1] .+ wf_hi[:, 2, 1:end-1])', c=:coolwarm, xlabel=L"\theta", ylabel=L"\varphi_t", cbar=false)
+title!("Quasiclassical Wannier functions; blue: "*L"|w_{\alpha=1}(\theta)|^2"*", red: "*L"|w_{\alpha=2}(\theta)|^2")
+savefig("qc-map.pdf")
 
 ######## Floquet
 
-
 phases = [range(0, 0.7, length=10); range(0.75, 0.85, length=15); range(0.9, 2.2, length=10); range(2.3, 2.4, length=15); range(2.4, pi, length=10)]
-phases = range(0, pi, length=29)
-n_cells = 2
+phases = range(0, pi, length=61)
+n_cells = 1
 n_max = 34
 n_target = 1
 e, E, pos_lower, pos_higher, ε_lower, ε_higher, wf_lower, wf_higher = compute_floquet_wannier_centres(;N=n_cells, n_target, n_max, phases, s, gₗ, Vₗ, λₗ, λₛ, ω, pumptype=:time)
@@ -507,13 +524,16 @@ end
 
 x = range(0, n_cells*π, length=40n_cells)
 ωts = range(0, 2π, length=41) # time moments for wavefunctions: 𝜔𝑡/𝑠 ∈ [0; 2π]
-clims = extrema(wf_lower)
+clims = extrema(wf_higher)
 @gif for (i, ϕ) in enumerate(phases)
-    fig1 = heatmap(x, ωts, abs2.(wf_higher[:, 3, :, i]'), xlabel=L"x", ylabel=L"\omega t/s", title=L"j=1, \beta=1"; clims, c=:viridis, cbar=false)
-    fig2 = heatmap(x, ωts, abs2.(wf_higher[:, 4, :, i]'), xlabel=L"x", title=L"j=1, \beta=2"; clims, c=:viridis, yformatter=_->"")
+    fig1 = heatmap(x, ωts, wf_higher[:, 1, :, i]', xlabel=L"x", ylabel=L"\omega t/s", title=L"|w_{j=1,\beta=1}(x,t)|^2"; c=:viridis, clims, cbar=false)
+    fig2 = heatmap(x, ωts, wf_higher[:, 2, :, i]', xlabel=L"x", yformatter=_->"", title=L"|w_{j=1,\beta=2}(x,t)|^2"; c=:viridis, clims)
     plot(fig1, fig2, layout=(1, 2), link=:y, plot_title=L"\varphi_t=%$(round(2ϕ, digits=3))")
 end
 
-fig1 = heatmap(x, ωts, abs2.(wf_higher[:, 1, :, 1]'), xlabel=L"x", ylabel=L"\omega t/s", title=L"j=1, \beta=1"; c=:viridis, cbar=false)
-fig2 = heatmap(x, ωts, abs2.(wf_higher[:, 3, :, 1]'), xlabel=L"x", ylabel=L"\omega t/s", title=L"j=1, \beta=2"; c=:viridis, cbar=false)
-plot(fig1, fig2, layout=(1, 2), link=:y)
+pyplot()
+i_ϕ = 61
+fig1 = heatmap(x, ωts, wf_higher[:, 1, :, i_ϕ]', xlabel=L"x", ylabel=L"\omega t/s", title=L"|w_{j=1,\beta=1}(x,t)|^2"; c=:viridis, clims, cbar=false)
+fig2 = heatmap(x, ωts, wf_higher[:, 2, :, i_ϕ]', xlabel=L"x", yformatter=_->"", title=L"|w_{j=1,\beta=2}(x,t)|^2"; c=:viridis, clims)
+plot(fig1, fig2, layout=(1, 2), link=:y, plot_title=L"\varphi_t=%$(round(2phases[i_ϕ], digits=3))")
+savefig("phi=2pi.pdf")
