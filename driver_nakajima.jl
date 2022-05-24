@@ -39,7 +39,7 @@ n_cells = 4
 n_min = 1
 n_max = 5
 n_target = 1
-pos_lower, pos_higher, ε_lower, ε_higher, wf_lower, wf_higher = compute_wannier_centres(;N=n_cells, n_target, n_min, n_max, phases, s=2, gₗ, Vₗ, λₗ=0, λₛ=0, ω=0)
+pos_lower, pos_higher, ε_lower, ε_higher, wf_lower, wf_higher = compute_wannier_centres(;N=n_cells, n_target, n_min, n_max, phases, gₗ, Vₗ)
 
 fig = plot();
 for (i, ϕ) in enumerate(phases)

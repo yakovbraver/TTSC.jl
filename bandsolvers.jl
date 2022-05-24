@@ -736,7 +736,7 @@ end
 """
 Diagonalise spatial Hamiltonian and calculate Wannier centres in non-periodic case
 """
-function compute_wannier_centres(; N::Integer, n_min::Integer, n_max::Integer, n_target::Integer, phases::AbstractVector{<:Real}, s::Integer, gₗ::Real, Vₗ::Real, λₗ::Real, λₛ::Real, ω::Real)
+function compute_wannier_centres(; N::Integer, n_min::Integer, n_max::Integer, n_target::Integer, phases::AbstractVector{<:Real}, gₗ::Real, Vₗ::Real)
     X(j′, j) = 16N*j*j′ / (π*((j-j′)^2-(2N)^2)*((j+j′)^2-(2N)^2))
     
     gs1 = 2N - 1 # number of levels in the first band of spatial Hamiltonian (group size 1)

@@ -292,7 +292,7 @@ fig = plot();
 for i in 1:n_levels
     plot!(phases, bands[i, :], label="")
 end
-title!("Eigenenergy spectrum of "*L"H"*" (S32) with $n_cells cells and open BC")
+title!("Eigenenergy spectrum of "*L"H"*" (S32) with 2 cells and open BC")
 xlabel!(L"\varphi_t"*", rad"); ylabel!("Eigenenergy of "*L"H"*" (S32)")
 savefig("obc-time-8.pdf")
 
@@ -361,7 +361,7 @@ phases = range(0, pi, length=50)
 n_cells = 4
 n_max = 15
 n_target = 10
-pos_lo, pos_hi, ε_lo, ε_hi, wf_lo, wf_hi = compute_wannier_centres(;N=n_cells, n_target, n_min=1, n_max, phases, s=2, gₗ, Vₗ, λₗ=0, λₛ=0, ω=0)
+pos_lo, pos_hi, ε_lo, ε_hi, wf_lo, wf_hi = compute_wannier_centres(;N=n_cells, n_target, n_min=1, n_max, phases, gₗ, Vₗ)
 
 fig = plot();
 for (i, ϕ) in enumerate(phases)
