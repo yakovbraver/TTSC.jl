@@ -1,8 +1,8 @@
 import BandedMatrices as BM
 using SparseArrays: sparse
 using KrylovKit: eigsolve
-using LinearAlgebra: eigen, eigvals, schur, ⋅, diagm, diagind, ishermitian, Hermitian
-using ProgressMeter, LoopVectorization
+using LinearAlgebra: eigen, eigvals, schur, ⋅, diagm, diagind
+using ProgressMeter
 
 """
 Calculate `n_bands` of energy bands of Hamiltonian (S32) assuming infinite crystal with a quasimomentum 𝑞,
@@ -83,9 +83,9 @@ function compute_qc_bands_obc(; n_levels::Integer, phases::AbstractVector{<:Real
     states = [Matrix{Float64}(undef, n_j, n_j) for _ in 1:length(phases)]
     for (i, ϕ) in enumerate(phases)
         for j in 1:n_j
-            for j′ in 1:n_j
+            for j′ in j:n_j
                 val = 0.0
-                if (j′ + j) % 2 == 1 # if `j′ + j` is odd # TODO: use isodd()
+                if isodd(j′ + j)
                     val += λₗAₗ*X(j′, j, s)*sin(χₗ - ϕ) + λₛAₛ*X(j′, j, 2s)*sin(χₛ)
                 else
                     # check diagonals "\"
@@ -312,9 +312,9 @@ function compute_floquet_bands_with_boundary(; n::Integer, n_min::Integer, n_max
     for (z, ϕ) in enumerate(phases)
         if pumptype != :time || z == 1 # If pupming is not time-only, ℎ has to be diagonalised on each iteration. If it's time-only, then we diagonalise only once, at `z == 1`.
             for j in 1:n_j
-                for j′ in 1:n_j
+                for j′ in j:n_j
                     val = 0.0
-                    if abs(j′ + j) % 2 == 1 # if `j′ + j` is odd # TODO: use isodd()
+                    if isodd(j′ + j)
                         val += Vₗ/2 * X(j′, j) * sin(2ϕ)
                     else
                         # check diagonals "\"
@@ -461,9 +461,9 @@ function compute_floquet_bands_states(; n::Integer, n_min::Integer, n_max::Integ
     ϕ = phases[1]
 
     for j in 1:n_j
-        for j′ in 1:n_j
+        for j′ in j:n_j
             val = 0.0
-            if abs(j′ + j) % 2 == 1 # if `j′ + j` is odd # TODO: use isodd()
+            if isodd(j′ + j)
                 val += Vₗ/2 * X(j′, j) * sin(2ϕ)
             else
                 # check diagonals "\"
@@ -765,9 +765,9 @@ function compute_wannier_centres(; N::Integer, n_min::Integer, n_max::Integer, n
     
     for (z, ϕ) in enumerate(phases)
         for j in 1:n_j
-            for j′ in 1:n_j
+            for j′ in j:n_j
                 val = 0.0
-                if abs(j′ + j) % 2 == 1 # if `j′ + j` is odd # TODO: use isodd()
+                if isodd(j′ + j)
                     val += Vₗ/2 * X(j′, j) * sin(2ϕ)
                 else
                     # check diagonals "\"
@@ -940,9 +940,9 @@ function compute_wannier_centres_qc(; n_levels::Integer, phases::AbstractVector{
     
     for (z, ϕ) in enumerate(phases)
         for j in 1:n_j
-            for j′ in 1:n_j
+            for j′ in j:n_j
                 val = 0.0
-                if (j′ + j) % 2 == 1 # if `j′ + j` is odd # TODO: use isodd()
+                if isodd(j′ + j)
                     val += λₗAₗ*X(j′, j, s)*sin(χₗ - ϕ) + λₛAₛ*X(j′, j, 2s)*sin(χₛ)
                 else
                     # check diagonals "\"
@@ -1064,5 +1064,3 @@ function compute_wannier_centres_qc_periodic(; phases::AbstractVector{<:Real}, s
     end
     return energies, pos_lower, pos_higher, ε_lower, ε_higher, wf_lower, wf_higher
 end
-
-## TODO: check j iterations to only operate in one half
