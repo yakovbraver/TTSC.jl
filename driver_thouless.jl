@@ -50,6 +50,8 @@ function plot_actions(H::SpacetimeHamiltonian)
     plot(figs..., layout=lay)
 end
 
+plot(range(0, 2pi, 200), H.𝑈, xlabel=L"x", ylabel=L"U(x)=-7640cos^{2}(2x)-2000\cos^{2}(x)", legend=false)
+savefig("U.pdf")
 plot_actions(H)
 savefig("h_0-parameters.pdf")
 
@@ -342,12 +344,12 @@ savefig("15-150-55-398.pdf")
 
 phases = [range(0, 0.768, length=5); range(0.769, 0.77, length=10); range(0.9, 5.38, length=20); range(5.39, 5.51, length=20); range(5.51, 2pi, length=5)]
 phases = range(0, 2pi, length=50);
-pos_lower, pos_higher, ε_lower, ε_higher = compute_wannier_centres_qc(; n_levels=10, phases, M, λₗAₗ=10λₗ*Aₗ, λₛAₛ=10λₛ*Aₛ, χₗ, χₛ, s)
+pos_lo, pos_hi, ε_lo, ε_hi = compute_wannier_centres_qc(; n_levels=10, phases, M, λₗAₗ=10λₗ*Aₗ, λₛAₛ=10λₛ*Aₛ, χₗ, χₛ, s)
 
 fig = plot();
 for (i, ϕ) in enumerate(phases)
-    scatter!(pos_lower[i],  fill(ϕ, length(pos_lower[i]));  marker_z=ε_lower[i],  c=:coolwarm, label=false, markerstrokewidth=0)
-    scatter!(pos_higher[i], fill(ϕ, length(pos_higher[i])); marker_z=ε_higher[i], c=:coolwarm, label=false, markerstrokewidth=0)
+    scatter!(pos_lo[i],  fill(ϕ, length(pos_lo[i]));  marker_z=ε_lo[i],  c=:coolwarm, label=false, markerstrokewidth=0)
+    scatter!(pos_hi[i], fill(ϕ, length(pos_hi[i])); marker_z=ε_hi[i], c=:coolwarm, label=false, markerstrokewidth=0)
 end
 plot!(minorgrid=true, xlabel=L"\theta", ylabel=L"\phi_t", cbtitle="Quasienergy", title=L"M = -0.082")
 savefig("temporal_bad.pdf")
@@ -359,12 +361,12 @@ phases = range(0, pi, length=50)
 n_cells = 4
 n_max = 15
 n_target = 10
-pos_lower, pos_higher, ε_lower, ε_higher, wf_lower, wf_higher = compute_wannier_centres(;N=n_cells, n_target, n_min=1, n_max, phases, s=2, gₗ, Vₗ, λₗ=0, λₛ=0, ω=0)
+pos_lo, pos_hi, ε_lo, ε_hi, wf_lo, wf_hi = compute_wannier_centres(;N=n_cells, n_target, n_min=1, n_max, phases, s=2, gₗ, Vₗ, λₗ=0, λₛ=0, ω=0)
 
 fig = plot();
 for (i, ϕ) in enumerate(phases)
-    scatter!(pos_lower[i],  fill(ϕ, length(pos_lower[i]));  marker_z=ε_lower[i],  c=:coolwarm, label=false, markerstrokewidth=0)
-    scatter!(pos_higher[i], fill(ϕ, length(pos_higher[i])); marker_z=ε_higher[i], c=:coolwarm, label=false, markerstrokewidth=0)
+    scatter!(pos_lo[i],  fill(ϕ, length(pos_lo[i]));  marker_z=ε_lo[i],  c=:coolwarm, label=false, markerstrokewidth=0)
+    scatter!(pos_hi[i], fill(ϕ, length(pos_hi[i])); marker_z=ε_hi[i], c=:coolwarm, label=false, markerstrokewidth=0)
 end
 plot!(xlabel=L"\varphi_X", ylabel="Energy", title="Space pumping, band $n_target")
 savefig(fig, "10-centres-nonperiodic.pdf")
@@ -373,13 +375,13 @@ x = range(0, n_cells*π, length=50n_cells)
 @gif for (i, ϕ) in enumerate(phases)
     U = @. gₗ*cos(2x)^2 + Vₗ*cos(x + ϕ)^2
     plot(x, U, label=false, ylims=(gₗ+Vₗ, 10), xlabel=L"x", ylabel="Energy", title="Space pumping, band $n_target")
-    scatter!(pos_lower[i],  ε_lower[i]; marker_z=ε_lower[i],  c=:coolwarm, label=false,  markerstrokewidth=0, clims=(-65, -34))
-    scatter!(pos_higher[i], ε_higher[i]; marker_z=ε_higher[i], c=:coolwarm, label=false, markerstrokewidth=0)
-    # for j in 1:length(pos_lower[i])
-    #     plot!(x, wf_lower[i][:, j] .+ ε_lower[i][j], label=false, c=j)
+    scatter!(pos_lo[i],  ε_lo[i]; marker_z=ε_lo[i],  c=:coolwarm, label=false,  markerstrokewidth=0, clims=(-65, -34))
+    scatter!(pos_hi[i], ε_hi[i]; marker_z=ε_hi[i], c=:coolwarm, label=false, markerstrokewidth=0)
+    # for j in 1:length(pos_lo[i])
+    #     plot!(x, wf_lo[i][:, j] .+ ε_lo[i][j], label=false, c=j)
     # end
-    # for j in 1:length(pos_higher[i])
-    #     plot!(x, wf_higher[i][:, j] .+ ε_higher[i][j], label=false, c=5+j)
+    # for j in 1:length(pos_hi[i])
+    #     plot!(x, wf_hi[i][:, j] .+ ε_hi[i][j], label=false, c=5+j)
     # end
 end
 
@@ -389,7 +391,7 @@ phases = range(0, pi, length=61)
 n_cells = 4
 n_max = 35
 n_target = 31
-e, pos_lower, pos_higher, ε_lower, ε_higher, wf_lower, wf_higher = compute_wannier_centres_periodic(; N=n_cells, n_max, n_target, phases, gₗ, Vₗ)
+e, pos_lo, pos_hi, ε_lo, ε_hi, wf_lo, wf_hi = compute_wannier_centres_periodic(; N=n_cells, n_max, n_target, phases, gₗ, Vₗ)
 @gif for (i, ϕ) in enumerate(phases)
     U = @. -2000*cos(2x)^2 + 20*cos(x + ϕ)^2
     plot(x, U, label=false, ylims=(gₗ+Vₗ, 10))
@@ -404,10 +406,10 @@ savefig(fig, "$n_target-VL3-spectrum.pdf")
 
 pyplot()
 fig = plot();
-clims = ( minimum(ε_lower), maximum(ε_higher) )
+clims = ( minimum(ε_lo), maximum(ε_hi) )
 for (i, ϕ) in enumerate(phases)
-    scatter!(pos_lower[:, i],  fill(ϕ, n_cells); marker_z=ε_lower[:, i],  c=:coolwarm, label=false, markerstrokewidth=0, clims)
-    scatter!(pos_higher[:, i], fill(ϕ, n_cells); marker_z=ε_higher[:, i], c=:coolwarm, label=false, markerstrokewidth=0)
+    scatter!(pos_lo[:, i],  fill(ϕ, n_cells); marker_z=ε_lo[:, i],  c=:coolwarm, label=false, markerstrokewidth=0, clims)
+    scatter!(pos_hi[:, i], fill(ϕ, n_cells); marker_z=ε_hi[:, i], c=:coolwarm, label=false, markerstrokewidth=0)
 end
 plot!(xlabel=L"x", ylabel=L"\varphi_x", title="Space pumping, band $n_target")
 savefig(fig, "$n_target-centres.pdf")
@@ -416,18 +418,18 @@ x = range(0, n_cells*π, length=25n_cells)
 @gif for (i, ϕ) in enumerate(phases)
     U = @. gₗ*cos(2x)^2 + -3*cos(x + ϕ)^2
     plot(x, U, label=false, ylims=(400, 500), xlabel=L"x", ylabel="Energy", title="Space pumping, band $n_target")
-    scatter!(pos_lower[:, i],  ε_lower[:, i]; marker_z=ε_lower[:, i],  c=:coolwarm, label=false,  markerstrokewidth=0, clims)
-    scatter!(pos_higher[:, i], ε_higher[:, i]; marker_z=ε_higher[:, i], c=:coolwarm, label=false, markerstrokewidth=0)
-    for j in 1:size(pos_lower, 1)
-        plot!(x, 4wf_lower[:, j, i] .+ ε_lower[j, i], label=false)
-        plot!(x, 4wf_higher[:, j, i] .+ ε_higher[j, i], label=false)
+    scatter!(pos_lo[:, i],  ε_lo[:, i]; marker_z=ε_lo[:, i],  c=:coolwarm, label=false,  markerstrokewidth=0, clims)
+    scatter!(pos_hi[:, i], ε_hi[:, i]; marker_z=ε_hi[:, i], c=:coolwarm, label=false, markerstrokewidth=0)
+    for j in 1:size(pos_lo, 1)
+        plot!(x, 4wf_lo[:, j, i] .+ ε_lo[j, i], label=false)
+        plot!(x, 4wf_hi[:, j, i] .+ ε_hi[j, i], label=false)
     end
 end
 
 # temporal
 λₗAₗ=λₗ*Aₗ; λₛAₛ=λₛ*Aₛ
 phases = range(0, 2pi, length=61);
-θ = range(0, 2π, length=20s)
+θ = range(0, 2π, length=40s)
 @gif for (i, ϕ) in enumerate(phases)
     U = @. λₗAₗ*cos(s*θ - χₗ - ϕ) + λₛAₛ*cos(2s*θ - χₛ)
     plot(θ, U, label=false, ylims=(-λₗAₗ-λₛAₛ, λₗAₗ+λₛAₛ))
@@ -458,10 +460,11 @@ savefig(fig, "time-centres.pdf")
     scatter!(pos_hi[:, i], ε_hi[:, i]; marker_z=ε_hi[:, i], c=:coolwarm, label=false, markerstrokewidth=0)
 end
 
-ylims = extrema(wf_lo)
-i_ϕ = 60
-plot(θ, wf_lo[:, 1, i_ϕ]; ylims, label=L"|w_{\alpha=1}(\theta)|^2", palette=palette(:coolwarm, 2))
-plot!(θ, wf_lo[:, 2, i_ϕ]; ylims, label=L"|w_{\alpha=2}(\theta)|^2")
+ylims = extrema(wf_hi)
+i_ϕ = 20
+pos_hi[1, i_ϕ]
+plot(θ, wf_hi[:, 1, i_ϕ]; ylims, label=L"|w_{\alpha=1}(\theta)|^2", palette=palette(:coolwarm, 2))
+plot!(θ, wf_hi[:, 2, i_ϕ]; ylims, label=L"|w_{\alpha=2}(\theta)|^2")
 plot!(xlabel=L"\theta", ylabel="probability density", title="Quasiclassical Wannier functions; "*L"\varphi_t=2\pi")
 savefig("qc-lo-phi=2pi.pdf")
 
@@ -484,11 +487,11 @@ savefig("qc-map.pdf")
 ######## Floquet
 
 phases = [range(0, 0.7, length=10); range(0.75, 0.85, length=15); range(0.9, 2.2, length=10); range(2.3, 2.4, length=15); range(2.4, pi, length=10)]
-phases = range(0, pi, length=61)
-n_cells = 1
+phases = range(0, pi, length=21)
+n_cells = 2
 n_max = 34
 n_target = 1
-e, E, pos_lower, pos_higher, ε_lower, ε_higher, wf_lower, wf_higher = compute_floquet_wannier_centres(;N=n_cells, n_target, n_max, phases, s, gₗ, Vₗ, λₗ, λₛ, ω, pumptype=:time)
+e, E, pos_lo, pos_hi, ε_lo, ε_hi, wf_lo, wf_hi = compute_floquet_wannier_centres(;N=n_cells, n_target, n_max, phases, s, gₗ, Vₗ, λₗ, λₛ, ω, pumptype=:spacetime)
 
 fig = plot();
 for r in eachrow(E)
@@ -498,42 +501,107 @@ plot!(xlabel=L"\varphi_t=2\varphi_x", ylabel="Quasienergy")
 savefig(fig, "timespace-spectrum.pdf")
 ylims!(-5716, -5694)
 
-pyplot()
-clims = ( minimum(ε_lower), maximum(ε_higher) )
+clims = ( minimum(ε_lo), maximum(ε_hi) )
 fig = plot();
 for (i, ϕ) in enumerate(phases)
-    scatter!(pos_lower[:, i],  fill(2ϕ, n_cells); marker_z=ε_lower[:, i],  c=:coolwarm, label=false, markerstrokewidth=0, clims)
-    scatter!(pos_higher[:, i], fill(2ϕ, n_cells); marker_z=ε_higher[:, i], c=:coolwarm, label=false, markerstrokewidth=0, clims)
+    # scatter!(pos_lo[:, i],  fill(ϕ, n_cells); marker_z=ε_lo[:, i],  c=:coolwarm, label=false, markerstrokewidth=0, clims)
+    scatter!(pos_hi[:, i], fill(ϕ, n_cells); marker_z=ε_hi[:, i], c=:coolwarm, label=false, markerstrokewidth=0, clims)
 end
 plot!(xlabel=L"x", ylabel=L"\varphi_t=2\varphi_x", title=L"\omega t = 0")
 savefig(fig, "timespace-centres.pdf")
 
-x = range(0, n_cells*π, length=10n_cells)
 @gif for (i, ϕ) in enumerate(phases)
     plot()
     # U = @. gₗ*cos(2x)^2 + -3*cos(x + ϕ)^2
     # plot(x, U, label=false, ylims=(400, 500), xlabel=L"x", ylabel="Energy", title="Space pumping, band $n_target")
-    scatter!(pos_lower[:, i],  ε_lower[:, i]; marker_z=ε_lower[:, i],  c=:coolwarm, label=false,  markerstrokewidth=0, clims, ylims=clims.+(-2, 5), xlims=(0, n_cells*π), markersize=7)
-    # scatter!(pos_higher[:, i], ε_higher[:, i]; marker_z=ε_higher[:, i], c=:coolwarm, label=false, markerstrokewidth=0, clims, xlims=(0, n_cells*π), markersize=7)
-    for j in 1:size(pos_lower, 1)
-        plot!(x, wf_lower[:, j, i] .+ ε_lower[j, i], label=false, ylims=(-5698, -5695))
-        # plot!(x, wf_higher[:, j, i] .+ ε_higher[j, i], label=false, ylims=(-5697, -5694))
+    scatter!(pos_lo[:, i],  ε_lo[:, i]; marker_z=ε_lo[:, i],  c=:coolwarm, label=false,  markerstrokewidth=0, clims, ylims=clims.+(-2, 5), xlims=(0, n_cells*π), markersize=7)
+    # scatter!(pos_hi[:, i], ε_hi[:, i]; marker_z=ε_hi[:, i], c=:coolwarm, label=false, markerstrokewidth=0, clims, xlims=(0, n_cells*π), markersize=7)
+    for j in 1:size(pos_lo, 1)
+        plot!(x, wf_lo[:, j, i] .+ ε_lo[j, i], label=false, ylims=(-5698, -5695))
+        # plot!(x, wf_hi[:, j, i] .+ ε_hi[j, i], label=false, ylims=(-5697, -5694))
     end
     title!("Lower spatial bands, "*L"\omega t = 0, \varphi_t=\varphi_x=%$(round(2ϕ, digits=3))")
 end
 
 x = range(0, n_cells*π, length=40n_cells)
-ωts = range(0, 2π, length=41) # time moments for wavefunctions: 𝜔𝑡/𝑠 ∈ [0; 2π]
-clims = extrema(wf_higher)
+ωts = range(0, 2π, length=40s) # time moments for wavefunctions: 𝜔𝑡/𝑠 ∈ [0; 2π]
+clims = extrema(wf_hi)
 @gif for (i, ϕ) in enumerate(phases)
-    fig1 = heatmap(x, ωts, wf_higher[:, 1, :, i]', xlabel=L"x", ylabel=L"\omega t/s", title=L"|w_{j=1,\beta=1}(x,t)|^2"; c=:viridis, clims, cbar=false)
-    fig2 = heatmap(x, ωts, wf_higher[:, 2, :, i]', xlabel=L"x", yformatter=_->"", title=L"|w_{j=1,\beta=2}(x,t)|^2"; c=:viridis, clims)
+    fig1 = heatmap(x, ωts, wf_hi[:, 1, :, i]', xlabel=L"x", ylabel=L"\omega t/s", title=L"|w_{j=1,\beta=1}(x,t)|^2"; c=:viridis, clims, cbar=false)
+    fig2 = heatmap(x, ωts, wf_hi[:, 2, :, i]', xlabel=L"x", yformatter=_->"", title=L"|w_{j=1,\beta=2}(x,t)|^2"; c=:viridis, clims)
     plot(fig1, fig2, layout=(1, 2), link=:y, plot_title=L"\varphi_t=%$(round(2ϕ, digits=3))")
 end
 
-pyplot()
-i_ϕ = 61
-fig1 = heatmap(x, ωts, wf_higher[:, 1, :, i_ϕ]', xlabel=L"x", ylabel=L"\omega t/s", title=L"|w_{j=1,\beta=1}(x,t)|^2"; c=:viridis, clims, cbar=false)
-fig2 = heatmap(x, ωts, wf_higher[:, 2, :, i_ϕ]', xlabel=L"x", yformatter=_->"", title=L"|w_{j=1,\beta=2}(x,t)|^2"; c=:viridis, clims)
+i_ϕ = 1
+fig1 = heatmap(x, ωts, wf_hi[:, 1, :, i_ϕ]', xlabel=L"x", ylabel=L"\omega t/s", title=L"|w_{i=1,\alpha=1}^{\rm higher}(x,t)|^2"; c=:viridis, clims, cbar=false)
+fig2 = heatmap(x, ωts, wf_hi[:, 2, :, i_ϕ]', xlabel=L"x", yformatter=_->"", title=L"|w_{i=1,\alpha=2}(x,t)^{\rm higher}|^2"; c=:viridis, clims)
 plot(fig1, fig2, layout=(1, 2), link=:y, plot_title=L"\varphi_t=%$(round(2phases[i_ϕ], digits=3))")
-savefig("phi=2pi.pdf")
+savefig("floq-phi=0.pdf")
+
+# time
+i_ϕ = 1
+
+fig1 = heatmap(x, ωts, (wf_hi[:, 4, :, i_ϕ] #=.+ wf_hi[:, 2, :, i_ϕ]=#)', xlabel=L"x", ylabel=L"\omega t/s"; clims,
+        title="blue: "*L"|w_{\alpha=1}^{\rm higher}(x,t)|^2"*", red: "*L"|w_{\alpha=2}^{\rm higher}(x,t)|^2"*"; "*L"\varphi_t=0", c=:coolwarm, cbar=false, titlepos=:left)
+savefig("floq-2D-phi=0.pdf")
+
+clims = ( -maximum(wf_hi[:, 1, :, :]), maximum(wf_hi[:, 2, :, :]) )
+@gif for (i, ϕ) in enumerate(phases)
+    heatmap(x, ωts, (-wf_hi[:, 1, :, i] .+ wf_hi[:, 2, :, i])', xlabel=L"x", ylabel=L"\omega t/s"; clims,
+            title="blue: "*L"|w_{\alpha=1}^{\rm higher}(x,t)|^2"*", red: "*L"|w_{\alpha=2}^{\rm higher}(x,t)|^2"*"; "*L"\varphi_t=%$(round(2phases[i], digits=3))", c=:coolwarm, cbar=false, titlepos=:left)
+end
+
+# space
+@gif for i_ϕ in eachindex(phases)
+fig1 = heatmap(x, ωts, (-wf_hi[:, 1, :, i_ϕ] .+ wf_hi[:, 2, :, i_ϕ] .- wf_hi[:, 3, :, i_ϕ] .+ wf_hi[:, 4, :, i_ϕ])', xlabel=L"x", ylabel=L"\omega t/s",
+           title="blue: "*L"|w_{i,\alpha=1}^{\rm higher}(x,t)|^2"*", red: "*L"|w_{i,\alpha=2}^{\rm higher}(x,t)|^2"*"; "*L"\varphi_t=0"; c=:coolwarm, cbar=false, titlepos=:left)
+end
+vspan!([(i÷2)*pi/2 + pi/4 + (-1)^iseven(i)*0.02 for i in 0:4n_cells-1], c=:black, widen=false, label=false)
+savefig("floq-2D-phi=0.pdf")
+
+clims = ( -maximum(wf_hi[:, 1, :, :]), maximum(wf_hi[:, 2, :, :]) )
+@gif for (i, ϕ) in enumerate(phases)
+    heatmap(x, ωts, (-wf_hi[:, 1, :, i] .+ wf_hi[:, 2, :, i] .- wf_hi[:, 3, :, i] .+ wf_hi[:, 4, :, i])', xlabel=L"x", ylabel=L"\omega t/s",
+            title="blue: "*L"|w_{i,\alpha=1}^{\rm higher}(x,t)|^2"*", red: "*L"|w_{i,\alpha=2}^{\rm higher}(x,t)|^2"*"; "*L"\varphi_t=2\varphi_x=%$(round(2phases[i], digits=3))"; c=:coolwarm, cbar=false, titlepos=:left)
+    vspan!([(i÷2)*pi/2 + pi/4 + (-1)^iseven(i)*0.01 for i in 0:4n_cells-1], c=:black, widen=false, label=false)
+end
+
+plotlyjs()
+zlimss = (0, maximum(wf_hi))
+surface(x, ωts, wf_hi[:, 1, :, 1]', c=:Blues, camera=(-4, 45), cbar=false, xlabel="𝑥", ylabel="𝜔𝑡/𝑠"; zlims)
+surface!(x, ωts, wf_hi[:, 2, :, 1]', c=:Greens, camera=(0, 90), cbar=false)
+
+i_ϕ = 1
+@gif for (i_ϕ, ϕ) in enumerate(phases)
+    c1, c2 = (1 <= i_ϕ <= 16 ? (:Blues, :Greens) : (:Greens, :Blues))
+    surface(x, ωts, wf_hi[:, 1, :, i_ϕ]', c=c1)
+    surface!(x, ωts, wf_hi[:, 3, :, i_ϕ]', c=c2)
+    c1, c2 = (1 <= i_ϕ <= 44 ? (:Reds, :Greys) : (:Greys, :Reds))
+    surface!(x, ωts, wf_hi[:, 2, :, i_ϕ]', c=c1)
+    surface!(x, ωts, wf_hi[:, 4, :, i_ϕ]', c=c2, camera=(0, 80), cbar=false, xlabel="𝑥", ylabel="𝜔𝑡/𝑠"; zlims=zlimss, title="𝜑ₜ = 2𝜑ₓ = $(round(2phases[i_ϕ], digits=3))")
+end
+savefig("space-phi=0.png")
+
+ylims = extrema(wf_hi)
+i_ϕ = 60
+i_x = 28; # right turning point for higher
+i_x = 13; # left turning point for higher
+i_x = 8; # left turning point for lower
+plot(ωts, wf_hi[i_x, 1, :, i_ϕ]; ylims, label=L"|w_{i=1,\alpha=1}^{\rm higher}(x=x_0,t)|^2", palette=palette(:coolwarm, 2))
+plot!(ωts, wf_hi[i_x, 2, :, i_ϕ]; ylims, label=L"|w_{i=1,\alpha=2}^{\rm higher}(x=x_0,t)|^2")
+plot!(xlabel=L"\omega t/s", ylabel="probability density", title="Floquet Wannier functions; "*L"\varphi_t=2pi")
+savefig("floq-phi=2pi.pdf")
+
+θ = range(0, 2π, length=40s)
+@gif for (i, ϕ) in enumerate(phases)
+    plot()
+    for j in 1:s
+        plot!(θ, wf_lo[:, j, i], label=false; ylims)
+        # plot!(θ, wf_hi[:, j, i], label=false; ylims)
+    end
+    plot!(xlabel=L"\theta", title="Lower temporal band, "*L"\varphi_t=%$(round(ϕ, digits=3))")
+end
+
+heatmap(ωts, 2phases, (-wf_hi[i_x, 1, :, :] .+ wf_hi[i_x, 2, :, :])', c=:coolwarm, xlabel=L"\omega t/s", ylabel=L"\varphi_t", cbar=false)
+title!("Floquet Wannier functions; blue: "*L"|w_{\alpha=1}^{\rm higher}(x_0,t)|^2"*", red: "*L"|w_{\alpha=2}^{\rm higher}(x_0,t)|^2")
+savefig("floq-map.pdf")

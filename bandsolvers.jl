@@ -598,7 +598,7 @@ function compute_floquet_wannier_centres(; N::Integer, n_min::Integer=1, n_targe
     h[diagind(h, -2N)] .= h[diagind(h, 2N)] .= gₗ/4
 
     coords = range(0, N*pi, length=40N) # x's for wavefunctions
-    ωts = range(0, 2π, length=41) # time moments for wavefunctions: 𝜔𝑡/𝑠 ∈ [0; 2π]
+    ωts = range(0, 2π, length=40s) # time moments for wavefunctions: 𝜔𝑡/𝑠 ∈ [0; 2π]
     pos_lower = Matrix{Float64}(undef, 2N, length(phases))
     pos_higher = Matrix{Float64}(undef, 2N, length(phases))
     ε_lower = Matrix{Float64}(undef, 2N, length(phases))
@@ -615,10 +615,14 @@ function compute_floquet_wannier_centres(; N::Integer, n_min::Integer=1, n_targe
     c = Matrix{ComplexF64}(undef, 2n_j+1, Δn) # eigenvectors of ℎ in 𝑗-representation
     ψ = Matrix{ComplexF64}(undef, length(coords), Δn) # eigenvectors of ℎ in 𝑥-representation
     cc = Matrix{ComplexF64}(undef, Δn, Δn) # matrix of products of `c`'s that will be needed multiple times
+    ccc = Matrix{ComplexF64}(undef, Δn, Δn) # products `cc`'s and cis
     
+    x = Matrix{ComplexF64}(undef, 2N, 2N) # position operator
+
     H_dim = Δn # dimension of the constructed 𝐻 matrix
     H = zeros(ComplexF64, H_dim, H_dim)
-    E = Matrix{Float64}(undef, Δn, length(phases)) # eigenvalues of 𝐻 (Floquet quasi-energies)
+    E = Matrix{Float64}(undef, H_dim, length(phases)) # eigenvalues of 𝐻 (Floquet quasi-energies)
+    b = Matrix{ComplexF64}(undef, H_dim, 2N) # matrix of eigenvectors of 𝐻
 
     @showprogress for (z, ϕ) in enumerate(phases)
         if pumptype != :time || z == 1 # If pupming is not time-only, ℎ has to be diagonalised on each iteration. If it's time-only, then we diagonalise only once, at `z == 1`.
@@ -682,27 +686,24 @@ function compute_floquet_wannier_centres(; N::Integer, n_min::Integer=1, n_targe
 
         ### Wannier centres
         
-        x = Matrix{ComplexF64}(undef, 2N, 2N) # position operator
-        
-        ccc = Matrix{ComplexF64}(undef, Δn, Δn) # matrix of products of `c`'s that will be needed multiple times
+        t = (pumptype == :space ? pi/5 : pi/5 - z/length(phases)*pi/2) # time moment at which to diagonalise the coordinate operator
         for m in 1:Δn, m′ in 1:Δn
-            ccc[m′, m] = cc[m′, m] * cis((ν(m′)-ν(m))*(1-z/length(phases)*pi/2))
+            ccc[m′, m] = cc[m′, m] * cis((ν(m′)-ν(m))*t)
         end
 
         # Higher band
         # the loop below runs faster if we make a copy rather than a view of `f.vectors`; 
         # both approaches are ~6 times faster compared to iterating directly over `f.vectors`
         window = [n_target_min:n_target_min + N - 1; n_target_min+2N:n_target_min+2N + N - 1]
-        b = f.vectors[:, window]
+        b .= f.vectors[:, window]
         for n in 1:2N, n′ in 1:2N
             x[n′, n] = sum(b[m, n] * sum(b[m′, n′]' * ccc[m′, m] for m′ in 1:Δn) for m in 1:Δn)
         end
         _, d, pos_complex = schur(x)
-        # pos_complex, d = eigen(x)
         pos_real = (angle.(pos_complex) .+ π) / 2π * N*π # take angle and convert from (-π, π) to (0, 2π)
         sp = sortperm(pos_real)
-        Base.permutecols!!(d, sp)         # sort the eigenvalues in the same way
-        pos_higher[:, z] = sort(pos_real)   # sort positions again because `sp` has been overwritten
+        pos_higher[:, z] = pos_real[sp]   # sort positions
+        Base.permutecols!!(d, sp)         # sort eigenvectors in the same way
         ε_higher[:, z] = [abs2.(dˣ) ⋅ E[window, z] for dˣ in eachcol(d)]
         for (t, ωt) in enumerate(ωts)
             for X in 1:2N
@@ -712,16 +713,15 @@ function compute_floquet_wannier_centres(; N::Integer, n_min::Integer=1, n_targe
 
         # Lower band
         window = [n_target_min+N:n_target_min+2N-1; n_target_min+3N:n_target_max]
-        b = f.vectors[:, window]
+        b .= f.vectors[:, window]
         for n in 1:2N, n′ in 1:2N
-            x[n′, n] = sum( b[m, n] * sum( b[m′, n′]' * ccc[m′, m] for m′ in 1:Δn) for m in 1:Δn)
+            x[n′, n] = sum(b[m, n] * sum(b[m′, n′]' * ccc[m′, m] for m′ in 1:Δn) for m in 1:Δn)
         end
         _, d, pos_complex = schur(x)
-        # pos_complex, d = eigen(x)
         pos_real = (angle.(pos_complex) .+ π) / 2π * N*π # take angle and convert from (-π, π) to (0, 2π)
         sp = sortperm(pos_real)
-        Base.permutecols!!(d, sp)         # sort the eigenvalues in the same way
-        pos_lower[:, z] = sort(pos_real)   # sort positions again because `sp` has been overwritten
+        pos_lower[:, z] = pos_real[sp]   # sort positions
+        Base.permutecols!!(d, sp)         # sort eigenvectors in the same way
         ε_lower[:, z] = [abs2.(dˣ) ⋅ E[window, z] for dˣ in eachcol(d)]
         for (t, ωt) in enumerate(ωts)
             for X in 1:2N
@@ -730,15 +730,6 @@ function compute_floquet_wannier_centres(; N::Integer, n_min::Integer=1, n_targe
         end
     end
     return ϵ, E, pos_lower, pos_higher, ε_lower, ε_higher, wf_lower, wf_higher
-end
-
-"Reconstruct the coordinate space wavefunction 𝜓(𝑥) = ∑ⱼ𝑐ⱼsin(𝑗𝑥/𝑛) / √(𝑛π/2)"
-function make_sine_state(x::AbstractVector{<:Real}, coeffs::AbstractVector{<:Number}; n)
-    ψ = zeros(eltype(coeffs), length(x))
-    for (j, c) in enumerate(coeffs)
-        @. ψ += c * sin(j/n * x)
-    end
-    return ψ ./ sqrt(n*π/2)
 end
 
 ###
@@ -836,7 +827,7 @@ function compute_wannier_centres(; N::Integer, n_min::Integer, n_max::Integer, n
     return pos_lower, pos_higher, ε_lower, ε_higher, wf_lower, wf_higher
 end
 
-"Reconstruct the coordinate space wavefunction 𝜓(𝑥) = ∑ⱼ𝑐ⱼexp(i2𝑗𝑥/𝑛) / √𝑛π"
+"Reconstruct the periodic coordinate space wavefunction 𝜓(𝑥) = ∑ⱼ𝑐ⱼexp(i2𝑗𝑥/𝑛) / √𝑛π"
 function make_exp_state(x::AbstractVector{<:Real}, coeffs::AbstractVector{<:Number}; n)
     ψ = zeros(eltype(coeffs), length(x))
     n_j = (length(coeffs) - 1) ÷ 2
@@ -846,11 +837,17 @@ function make_exp_state(x::AbstractVector{<:Real}, coeffs::AbstractVector{<:Numb
     return ψ ./ sqrt(n*π)
 end
 
-###
+"Reconstruct the non-periodic coordinate space wavefunction 𝜓(𝑥) = ∑ⱼ𝑐ⱼsin(𝑗𝑥/𝑛) / √(𝑛π/2)"
+function make_sine_state(x::AbstractVector{<:Real}, coeffs::AbstractVector{<:Number}; n)
+    ψ = zeros(eltype(coeffs), length(x))
+    for (j, c) in enumerate(coeffs)
+        @. ψ += c * sin(j/n * x)
+    end
+    return ψ ./ sqrt(n*π/2)
+end
+
 """
-Calculate energy bands of the Floquet Hamiltonian (S20) with boundaries sweeping over the adiabatic `phases` φₓ. 
-The operation of this function follows that of [`compute_floquet_bands`](@ref).
-Parameter `n` is the number of cells in the lattice; the eigenfunctions will be calculated in the basis of functions sin(𝑗𝑥/𝑛) / √(𝑛π/2).
+
 """
 function compute_wannier_centres_periodic(; N::Integer, n_max::Integer, n_target::Integer, phases::AbstractVector{<:Real}, gₗ::Real, Vₗ::Real)
     n_w = 2N # number of Wannier levels
@@ -925,9 +922,7 @@ function compute_wannier_centres_periodic(; N::Integer, n_max::Integer, n_target
 end
 
 """
-Calculate energy bands of the Floquet Hamiltonian (S20) with boundaries sweeping over the adiabatic `phases` φₓ. 
-The operation of this function follows that of [`compute_floquet_bands`](@ref).
-Parameter `n` is the number of cells in the lattice; the eigenfunctions will be calculated in the basis of functions sin(𝑗𝑥/𝑛) / √(𝑛π/2).
+
 """
 function compute_wannier_centres_qc(; n_levels::Integer, phases::AbstractVector{<:Real}, s::Integer, M::Real, λₗAₗ::Real, λₛAₛ::Real, χₗ::Real, χₛ::Real)
     X(j′, j, s) = 16s*j*j′ / (π*((j-j′)^2-4s^2)*((j+j′)^2-4s^2))
@@ -1003,15 +998,9 @@ function compute_wannier_centres_qc(; n_levels::Integer, phases::AbstractVector{
 end
 
 """
-Calculate energy bands of the Floquet Hamiltonian (S20) with boundaries sweeping over the adiabatic `phases` φₓ. 
-The operation of this function follows that of [`compute_floquet_bands`](@ref).
-Parameter `n` is the number of cells in the lattice; the eigenfunctions will be calculated in the basis of functions sin(𝑗𝑥/𝑛) / √(𝑛π/2).
+
 """
 function compute_wannier_centres_qc_periodic(; phases::AbstractVector{<:Real}, s::Integer, M::Real, λₗAₗ::Real, λₛAₛ::Real, χₛ::Real, χₗ::Real)
-    n_w = 2s # number of Wannier levels
-    n_target_min = 1
-    n_target_max = 2s
-
     n_j = 10s
 
     h = BM.BandedMatrix(BM.Zeros{ComplexF64}(2n_j + 1, 2n_j + 1), (2s, 2s))
@@ -1019,7 +1008,7 @@ function compute_wannier_centres_qc_periodic(; phases::AbstractVector{<:Real}, s
     h[BM.band(-2s)] .= λₛAₛ * cis(χₛ)
     h[BM.band(2s)]  .= λₛAₛ * cis(-χₛ)
 
-    energies = Matrix{Float64}(undef, n_w, length(phases))
+    energies = Matrix{Float64}(undef, 2s, length(phases))
 
     θ = range(0, 2π, length=40s) # x's for wavefunctions
     pos_lower = Matrix{Float64}(undef, s, length(phases))
@@ -1036,11 +1025,11 @@ function compute_wannier_centres_qc_periodic(; phases::AbstractVector{<:Real}, s
     for (z, ϕ) in enumerate(phases)
         h[BM.band(-s)] .= λₗAₗ * cis( χₗ - ϕ)
         h[BM.band(s)]  .= λₗAₗ * cis(-χₗ + ϕ)
-        f = eigsolve(h, n_target_max, :LR; krylovdim=2n_j+1)
-        energies[:, z] = f[1][n_target_min:n_target_max]
+        f = eigsolve(h, 2s, :LR; krylovdim=2n_j+1)
+        energies[:, z] = f[1][1:2s]
         
         # Higher band
-        c = view(f[2], n_target_min:n_target_min + s - 1)
+        c = view(f[2], 1:2s)
         for n in 1:s
             for n′ in 1:s
                 x[n′, n] = sum(c[n′][j+1]' * c[n][j] for j = 1:2n_j) 
@@ -1057,7 +1046,7 @@ function compute_wannier_centres_qc_periodic(; phases::AbstractVector{<:Real}, s
         end
 
         # Lower band
-        c = view(f[2], n_target_min + s:n_target_max)
+        c = view(f[2], 1+s:2s)
         for n in 1:s
             for n′ in 1:s
                 x[n′, n] = sum(c[n′][j+1]' * c[n][j] for j = 1:2n_j) 
