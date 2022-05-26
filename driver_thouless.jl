@@ -493,7 +493,7 @@ n_max = 34
 n_target = 1
 x = range(0, n_cells*π, length=50n_cells) # x's for wavefunctions
 ωts = range(0, 2π, length=40s) # time moments for wavefunctions: 𝜔𝑡/𝑠 ∈ [0; 2π]
-e, E, pos_lo, pos_hi, ε_lo, ε_hi, wf_lo, wf_hi = compute_floquet_wannier_centres(;N=n_cells, n_target, n_max, phases, s, gₗ, Vₗ, λₗ, λₛ, ω, x, ωts, pumptype=:spacetime)
+e, E, pos_lo, pos_hi, ε_lo, ε_hi, wf_lo, wf_hi = compute_floquet_wannier_centres(;N=n_cells, n_target, n_max, phases, s, gₗ, Vₗ, λₗ, λₛ, ω, coords=x, ωts, pumptype=:spacetime)
 
 fig = plot();
 for r in eachrow(E)
