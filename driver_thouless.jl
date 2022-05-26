@@ -491,7 +491,9 @@ phases = range(0, pi, length=21)
 n_cells = 2
 n_max = 34
 n_target = 1
-e, E, pos_lo, pos_hi, ε_lo, ε_hi, wf_lo, wf_hi = compute_floquet_wannier_centres(;N=n_cells, n_target, n_max, phases, s, gₗ, Vₗ, λₗ, λₛ, ω, pumptype=:spacetime)
+x = range(0, n_cells*π, length=50n_cells) # x's for wavefunctions
+ωts = range(0, 2π, length=40s) # time moments for wavefunctions: 𝜔𝑡/𝑠 ∈ [0; 2π]
+e, E, pos_lo, pos_hi, ε_lo, ε_hi, wf_lo, wf_hi = compute_floquet_wannier_centres(;N=n_cells, n_target, n_max, phases, s, gₗ, Vₗ, λₗ, λₛ, ω, x, ωts, pumptype=:spacetime)
 
 fig = plot();
 for r in eachrow(E)
@@ -523,8 +525,6 @@ savefig(fig, "timespace-centres.pdf")
     title!("Lower spatial bands, "*L"\omega t = 0, \varphi_t=\varphi_x=%$(round(2ϕ, digits=3))")
 end
 
-x = range(0, n_cells*π, length=40n_cells)
-ωts = range(0, 2π, length=40s) # time moments for wavefunctions: 𝜔𝑡/𝑠 ∈ [0; 2π]
 clims = extrema(wf_hi)
 @gif for (i, ϕ) in enumerate(phases)
     fig1 = heatmap(x, ωts, wf_hi[:, 1, :, i]', xlabel=L"x", ylabel=L"\omega t/s", title=L"|w_{j=1,\beta=1}(x,t)|^2"; c=:viridis, clims, cbar=false)

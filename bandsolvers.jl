@@ -586,8 +586,10 @@ Diagonalise Floquet Hamiltonian for a periodic system and calculate Wannier cent
     `n_min` - lowest band number of spatial Hamiltonian to use when constructing Floquet Hamiltonian
     `n_max` - highest band number of spatial Hamiltonian to consider
     `n_target` - number of Floquet band (counting from the highest) to use for Wannier calculations
+    `coords` - x's for wavefunctions
+    `ωts` - time moments for wavefunctions
 """
-function compute_floquet_wannier_centres(; N::Integer, n_min::Integer=1, n_target::Integer, n_max::Integer, phases::AbstractVector{<:Real}, s::Integer, gₗ::Real, Vₗ::Real, λₗ::Real, λₛ::Real, ω::Real, pumptype::Symbol)
+function compute_floquet_wannier_centres(; N::Integer, n_min::Integer=1, n_target::Integer, n_max::Integer, phases::AbstractVector{<:Real}, s::Integer, gₗ::Real, Vₗ::Real, λₗ::Real, λₛ::Real, ω::Real, coords::AbstractVector{<:Real}, ωts::AbstractVector{<:Real}, pumptype::Symbol)
     n_target_min = (n_target-1) * 4N + 1
     n_target_max = n_target_min + 4N - 1
 
@@ -597,8 +599,6 @@ function compute_floquet_wannier_centres(; N::Integer, n_min::Integer=1, n_targe
     h = diagm(0 => ComplexF64[(2j/N)^2 + (gₗ + Vₗ)/2 for j = -n_j:n_j])
     h[diagind(h, -2N)] .= h[diagind(h, 2N)] .= gₗ/4
 
-    coords = range(0, N*pi, length=40N) # x's for wavefunctions
-    ωts = range(0, 2π, length=40s) # time moments for wavefunctions: 𝜔𝑡/𝑠 ∈ [0; 2π]
     pos_lower = Matrix{Float64}(undef, 2N, length(phases))
     pos_higher = Matrix{Float64}(undef, 2N, length(phases))
     ε_lower = Matrix{Float64}(undef, 2N, length(phases))
