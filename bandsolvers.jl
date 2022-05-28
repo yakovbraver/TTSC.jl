@@ -1007,7 +1007,7 @@ end
 
 """
 function compute_wannier_centres_qc_periodic(; phases::AbstractVector{<:Real}, s::Integer, M::Real, λₗAₗ::Real, λₛAₛ::Real, χₛ::Real, χₗ::Real)
-    n_j = 10s
+    n_j = 4s
 
     h = BM.BandedMatrix(BM.Zeros{ComplexF64}(2n_j + 1, 2n_j + 1), (2s, 2s))
     h[BM.band(0)] .= [j^2 / M for j = -n_j:n_j]
@@ -1031,15 +1031,13 @@ function compute_wannier_centres_qc_periodic(; phases::AbstractVector{<:Real}, s
     for (z, ϕ) in enumerate(phases)
         h[BM.band(-s)] .= λₗAₗ * cis( χₗ - ϕ)
         h[BM.band(s)]  .= λₗAₗ * cis(-χₗ + ϕ)
-        f = eigsolve(h, 2s, :LR; krylovdim=2n_j+1)
-        energies[:, z] = f[1][1:2s]
+        f = eigsolve(h, 2s, :LR; krylovdim=n_j)
+        energies[:, z] = f[1][1:2s] ./ 2 # restore the overal factor 1/2 of the Hamiltonian
         
         # Higher band
-        c = view(f[2], 1:2s)
-        for n in 1:s
-            for n′ in 1:s
-                x[n′, n] = sum(c[n′][j+1]' * c[n][j] for j = 1:2n_j) 
-            end
+        c = view(f[2], 1:s)
+        for n in 1:s, n′ in 1:s
+            x[n′, n] = sum(c[n′][j+1]' * c[n][j] for j = 1:2n_j) 
         end
         _, d, pos_complex = schur(x)
         pos_real = angle.(pos_complex) .+ π
@@ -1053,10 +1051,8 @@ function compute_wannier_centres_qc_periodic(; phases::AbstractVector{<:Real}, s
 
         # Lower band
         c = view(f[2], 1+s:2s)
-        for n in 1:s
-            for n′ in 1:s
-                x[n′, n] = sum(c[n′][j+1]' * c[n][j] for j = 1:2n_j) 
-            end
+        for n in 1:s, n′ in 1:s
+            x[n′, n] = sum(c[n′][j+1]' * c[n][j] for j = 1:2n_j) 
         end
         _, d, pos_complex = schur(x)
         pos_real = angle.(pos_complex) .+ π
