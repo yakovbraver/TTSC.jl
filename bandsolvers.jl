@@ -17,8 +17,8 @@ function compute_qc_bands(; n_bands::Integer, phases::AbstractVector{<:Real}, s:
     
     # Hamiltonian matrix
     H = BM.BandedMatrix{ComplexF64}(undef, (2n_j + 1, 2n_j + 1), (2, 2))
-    H[BM.band(-2)] .= λₛAₛ * cis(χₛ)
-    H[BM.band(2)]  .= λₛAₛ * cis(-χₛ)
+    H[BM.band(-2)] .= λₛAₛ * cis(-χₛ)
+    H[BM.band(+2)] .= λₛAₛ * cis(+χₛ)
     
     bands = Matrix{Float64}(undef, 2n_bands, length(phases))
     for k in [0, s÷2] # iterate over the centre of BZ and then the boundary
@@ -27,8 +27,8 @@ function compute_qc_bands(; n_bands::Integer, phases::AbstractVector{<:Real}, s:
         a = (k > 0)*n_bands + 1 
         b = a+n_bands - 1
         for (i, ϕ) in enumerate(phases)
-            H[BM.band(-1)] .= λₗAₗ * cis( χₗ - ϕ)
-            H[BM.band(1)]  .= λₗAₗ * cis(-χₗ + ϕ)
+            H[BM.band(-1)] .= λₗAₗ * cis(-χₗ - ϕ)
+            H[BM.band(+1)] .= λₗAₗ * cis(+χₗ + ϕ)
             vals, _, _ = eigsolve(H, n_bands, :LR; krylovdim=n_bands+10)
             bands[a:b, i] .= vals[1:n_bands]
         end
@@ -38,7 +38,7 @@ end
 
 """
 Calculate `n_levels` of energy levels of Hamiltonian (S32):
-    𝐻 = 𝑝²/2𝑀 + 𝜆ₗ𝐴ₗcos(𝑠𝑥 + 𝜒ₗ - φₜ) + 𝜆ₛ𝐴ₛcos(2𝑠𝑥 + 𝜒ₛ)
+    𝐻 = 𝑝²/2𝑀 + 𝜆ₗ𝐴ₗcos(𝑠𝑥 - 𝜒ₗ - φₜ) + 𝜆ₛ𝐴ₛcos(2𝑠𝑥 - 𝜒ₛ)
 on 𝑥 ∈ [0; 2π) sweeping over the adiabatic `phases` φₜ. Boundary conditions are periodic, hence the basis exp(i𝑗𝑥) / √2π is used.
 In the returned matrix of levels, columns enumerate the adiabatic phases, while rows enumerate eigenvalues.
 The eigenvectors are returned as a triple array: `eigvecs[p][n]` holds an eigenvector of `n`th eigenvalue at `p`th phase.
@@ -48,14 +48,14 @@ function compute_qc_bands_pbc(; n_levels::Integer, phases::AbstractVector{<:Real
     # # Hamiltonian matrix
     H = BM.BandedMatrix(BM.Zeros{ComplexF64}(2n_j + 1, 2n_j + 1), (2s, 2s))
     H[BM.band(0)] .= [j^2 / M for j = -n_j:n_j]
-    H[BM.band(-2s)] .= λₛAₛ * cis(χₛ)
-    H[BM.band(2s)]  .= λₛAₛ * cis(-χₛ)
+    H[BM.band(-2s)] .= λₛAₛ * cis(-χₛ)
+    H[BM.band(+2s)] .= λₛAₛ * cis(+χₛ)
 
     levels = Matrix{Float64}(undef, n_levels, length(phases))
     eigvecs = [[Vector{ComplexF64}(undef, 2n_j+1) for _ in 1:n_levels] for _ in 1:length(phases)]
     for (i, ϕ) in enumerate(phases)
-        H[BM.band(-s)] .= λₗAₗ * cis( χₗ - ϕ)
-        H[BM.band(s)]  .= λₗAₗ * cis(-χₗ + ϕ)
+        H[BM.band(-s)] .= λₗAₗ * cis(-χₗ - ϕ)
+        H[BM.band(s)]  .= λₗAₗ * cis(+χₗ + ϕ)
         vals, vecs,  _ = eigsolve(H, n_levels, :LR; krylovdim=2n_levels)
         levels[:, i] = vals[1:n_levels]
         eigvecs[i] .= vecs[1:n_levels]
@@ -65,7 +65,7 @@ end
 
 """
 Calculate `n_levels` of energy levels of Hamiltonian (S32):
-    𝐻 = 𝑝²/2𝑀 + 𝜆ₗ𝐴ₗcos(𝑠𝑥 + 𝜒ₗ - φₜ) + 𝜆ₛ𝐴ₛcos(2𝑠𝑥 + 𝜒ₛ)
+    𝐻 = 𝑝²/2𝑀 + 𝜆ₗ𝐴ₗcos(𝑠𝑥 - 𝜒ₗ - φₜ) + 𝜆ₛ𝐴ₛcos(2𝑠𝑥 - 𝜒ₛ)
 on 𝑥 ∈ [0; 2π) sweeping over the adiabatic `phases` φₜ. Boundary conditions are open, hence the basis sin(𝑗𝑥/𝑛) / √(𝑛π/2) is used.
 Parameter `n` is the number of cells in the lattice; 𝑗 runs from 0 to `5n_bands`.
 Return a tuple (`bands`, `states`): `bands[:, p]` stores eigenenergies at `p`th phase, while `states[p][:, m]` stores `m`th eigenvector at `p`th phase.
@@ -86,19 +86,19 @@ function compute_qc_bands_obc(; n_levels::Integer, phases::AbstractVector{<:Real
             for j′ in j:n_j
                 val = 0.0
                 if isodd(j′ + j)
-                    val += λₗAₗ*X(j′, j, s)*sin(χₗ - ϕ) + λₛAₛ*X(j′, j, 2s)*sin(χₛ)
+                    val += -λₗAₗ*X(j′, j, s)*sin(χₗ + ϕ) - λₛAₛ*X(j′, j, 2s)*sin(χₛ)
                 else
                     # check diagonals "\"
                     if j′ == j
                         val += j^2 / 8M
                     elseif j′ == j - 2s || j′ == j + 2s
-                        val += λₗAₗ * cos(χₗ - ϕ) / 2
+                        val += λₗAₗ * cos(χₗ + ϕ) / 2
                     elseif j′ == j - 4s || j′ == j + 4s
                         val += λₛAₛ * cos(χₛ) / 2
                     end
                     # check anti-diagonals "/"
                     if j′ == -j + 2s
-                        val += -λₗAₗ * cos(χₗ - ϕ) / 2
+                        val += -λₗAₗ * cos(χₗ + ϕ) / 2
                     elseif j′ == -j + 4s
                         val += -λₛAₛ * cos(χₛ) / 2
                     end
@@ -949,19 +949,19 @@ function compute_wannier_centres_qc(; n_levels::Integer, phases::AbstractVector{
             for j′ in j:n_j
                 val = 0.0
                 if isodd(j′ + j)
-                    val += λₗAₗ*X(j′, j, s)*sin(χₗ - ϕ) + λₛAₛ*X(j′, j, 2s)*sin(χₛ)
+                    val += -λₗAₗ*X(j′, j, s)*sin(χₗ + ϕ) - λₛAₛ*X(j′, j, 2s)*sin(χₛ)
                 else
                     # check diagonals "\"
                     if j′ == j
                         val += j^2 / 8M
                     elseif j′ == j - 2s || j′ == j + 2s
-                        val += λₗAₗ * cos(χₗ - ϕ) / 2
+                        val += λₗAₗ * cos(χₗ + ϕ) / 2
                     elseif j′ == j - 4s || j′ == j + 4s
                         val += λₛAₛ * cos(χₛ) / 2
                     end
                     # check anti-diagonals "/"
                     if j′ == -j + 2s
-                        val += -λₗAₗ * cos(χₗ - ϕ) / 2
+                        val += -λₗAₗ * cos(χₗ + ϕ) / 2
                     elseif j′ == -j + 4s
                         val += -λₛAₛ * cos(χₛ) / 2
                     end
@@ -1011,8 +1011,8 @@ function compute_wannier_centres_qc_periodic(; phases::AbstractVector{<:Real}, s
 
     h = BM.BandedMatrix(BM.Zeros{ComplexF64}(2n_j + 1, 2n_j + 1), (2s, 2s))
     h[BM.band(0)] .= [j^2 / M for j = -n_j:n_j]
-    h[BM.band(-2s)] .= λₛAₛ * cis(χₛ)
-    h[BM.band(2s)]  .= λₛAₛ * cis(-χₛ)
+    h[BM.band(-2s)] .= λₛAₛ * cis(-χₛ)
+    h[BM.band(+2s)] .= λₛAₛ * cis(+χₛ)
 
     energies = Matrix{Float64}(undef, 2s, length(phases))
 
@@ -1029,8 +1029,8 @@ function compute_wannier_centres_qc_periodic(; phases::AbstractVector{<:Real}, s
     pos_complex = Vector{Float64}(undef, s) # eigenvalues of the position operator; we will be taking their angles
     
     for (z, ϕ) in enumerate(phases)
-        h[BM.band(-s)] .= λₗAₗ * cis( χₗ - ϕ)
-        h[BM.band(s)]  .= λₗAₗ * cis(-χₗ + ϕ)
+        h[BM.band(-s)] .= λₗAₗ * cis(-χₗ - ϕ)
+        h[BM.band(+s)] .= λₗAₗ * cis(+χₗ + ϕ)
         f = eigsolve(h, 2s, :LR; krylovdim=n_j)
         energies[:, z] = f[1][1:2s] ./ 2 # restore the overal factor 1/2 of the Hamiltonian
         
