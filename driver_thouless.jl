@@ -50,7 +50,7 @@ function plot_actions(H::SpacetimeHamiltonian)
     plot(figs..., layout=lay)
 end
 
-plot(range(0, 2pi, 200), H.𝑈, xlabel=L"x", ylabel=L"U(x)=-7640cos^{2}(2x)-2000\cos^{2}(x)", legend=false)
+plot(range(0, 2pi, 200), H.𝑈, xlabel=L"x/pi", ylabel=L"U(x)=-7640cos^{2}(2x)-2000\cos^{2}(x)", legend=false)
 savefig("U.pdf")
 plot_actions(H)
 savefig("h_0-parameters.pdf")
@@ -97,12 +97,13 @@ savefig(fig, "exact-isoenergies.pdf")
 phases = range(0, 2π, length=61) # values of the adiabatic phase in (S32)
 n_bands = 4
 bands = compute_qc_bands(; n_bands, phases, s, M, λₗAₗ=λₗ*Aₗ, λₛAₛ=λₛ*Aₛ, χₗ, χₛ) .+ H.𝐸(Iₛ) .- ω/s*Iₛ
-levels, states = compute_qc_bands_pbc(; n_levels=4, phases, s, M, λₗAₗ=λₗ*Aₗ, λₛAₛ=λₛ*Aₛ, χₗ, χₛ)
-
 fig2 = plot();
 for i in 1:n_bands
     plot!(phases, bands[i, :], fillrange=bands[n_bands+i, :], fillalpha=0.35, label="band $i");
 end
+
+fig2 = plot();
+levels, states = compute_qc_bands_pbc(; n_levels=2s, phases, s, M, λₗAₗ=λₗ*Aₗ, λₛAₛ=λₛ*Aₛ, χₗ, χₛ)
 for lvl in eachrow(levels)
     plot!(phases, lvl .+ H.𝐸(Iₛ) .- ω/s*Iₛ, label=false);
 end
@@ -110,6 +111,24 @@ xlabel!(L"\varphi_t"*", rad"); ylabel!("Energy of quantised secular "*L"H")
 title!(L"\omega = %$ω, M = %$(round(M, sigdigits=2)), \lambda_L = %$λₗ, A_L = %$(round(Aₗ, sigdigits=2)),"*
        L"\lambda_S = %$λₛ, A_S = %$(round(Aₛ, sigdigits=2))")
 savefig("semiclassical-bands.pdf")
+using LinearAlgebra
+function chern(states)
+    Q = 0.0
+    n_ϕ = length(states)
+    n_k = 2
+    P(x) = kron(x, x') # projector
+    for i = 1:n_ϕ
+        i1 = i
+        i2 = (i1 + 1) > n_ϕ ? 1 : i1 + 1
+        for j = 1:2
+            j1 = j
+            j2 = (j1 + 1) > n_k ? 1 : j1 + 1
+            Q -= P(states[i1][j1]) * P(states[i2][j1]) * P(states[i2][j2]) * P(states[i1][j2]) |> diag |> sum |> angle
+        end
+    end
+    Q / 2π
+end
+chern(states)
 
 ### Extract tight-binding parameters
 
@@ -138,7 +157,7 @@ eₖ, Eₖ = compute_floquet_bands(;n_min, n_max, phases, s, l, gₗ, Vₗ, λ�
 permute_floquet_bands!(Eₖ, eₖ, n_min, ω, s)
 fig1 = plot();
 for i in 1:2n_bands
-    plot!(phases, Eₖ[i, :], fillrange=Eₖ[2n_bands+i, :], fillalpha=0.3, label="m = $(i+2n_min-2)", legend=:outerright)
+    plot!(phases, eₖ[i, :], fillrange=eₖ[2n_bands+i, :], fillalpha=0.3, label="m = $(i+2n_min-2)", legend=:outerright)
 end
 title!(L"V_L = 2, \lambda_S = 40, \lambda_L = 40, \omega = 410")
 savefig("2-40-40-410_periodic.pdf")
@@ -605,3 +624,23 @@ end
 heatmap(ωts, 2phases, (-wf_hi[i_x, 1, :, :] .+ wf_hi[i_x, 2, :, :])', c=:coolwarm, xlabel=L"\omega t/s", ylabel=L"\varphi_t", cbar=false)
 title!("Floquet Wannier functions; blue: "*L"|w_{\alpha=1}^{\rm higher}(x_0,t)|^2"*", red: "*L"|w_{\alpha=2}^{\rm higher}(x_0,t)|^2")
 savefig("floq-map.pdf")
+
+####
+Vₗ = -100
+# H = SpacetimeHamiltonian(𝐻₀, 𝐻, params, s, (0.8, 1.1), (1.2, 1.8), 0.001)
+N = 1
+n_max = 30
+n_target = 25
+coords = range(0, N*pi, length=500N) # x's for wavefunctions
+
+pyplot()
+@gif for p in range(0, pi, length=61)
+    phases = [p]
+    e, wf = compute_eigenfunctions_periodic(;N, n_max, n_target, phases, gₗ, Vₗ, coords)
+
+    fig1 = plot(range(0, pi, 2000), x->gₗ*cos(2x)^(2params[2]) + Vₗ*cos(x+phases[1])^2, xlabel=L"x/pi", ylabel=L"U(x)=-7640cos^{2}(2x)-100\cos^{2}(x)", title="$(round(phases[1]/pi, sigdigits=3))"*L"\pi", laabel=false)
+    for i in 1:2N
+        plot!(coords, abs2.(wf[:, i, 1]) .+ e[i], label="m = $(i)")
+    end
+    ylims!(-660, -584)
+end

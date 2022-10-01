@@ -44,7 +44,7 @@ In the returned matrix of levels, columns enumerate the adiabatic phases, while 
 The eigenvectors are returned as a triple array: `eigvecs[p][n]` holds an eigenvector of `n`th eigenvalue at `p`th phase.
 """
 function compute_qc_bands_pbc(; n_levels::Integer, phases::AbstractVector{<:Real}, s::Integer, M::Real, λₗAₗ::Real, λₛAₛ::Real, χₛ::Real, χₗ::Real)
-    n_j = 2n_levels # number of indices 𝑗 to use for constructing the Hamiltonian (its size will be (2n_j+1)×(2n_j+1))
+    n_j = 4n_levels # number of indices 𝑗 to use for constructing the Hamiltonian (its size will be (2n_j+1)×(2n_j+1))
     # # Hamiltonian matrix
     H = BM.BandedMatrix(BM.Zeros{ComplexF64}(2n_j + 1, 2n_j + 1), (2s, 2s))
     H[BM.band(0)] .= [j^2 / M for j = -n_j:n_j]
@@ -614,6 +614,9 @@ function compute_floquet_wannier_centres(; N::Integer, n_min::Integer=1, n_targe
         append!(window_lo, n_target_min+(2i+1)*N:n_target_min+(2i+1)*N + N - 1)
     end
 
+    u_lo = Array{Float64,4}(undef, length(coords), n_w, length(ωts), length(phases)) # Wannier states of the lower spatial levels
+    u_hi = Array{Float64,4}(undef, length(coords), n_w, length(ωts), length(phases)) # Wannier states of the higher spatial levels
+
     n_min = (n_min-1) * 2N + 1 # convert `n_min` to actual level number
     n_max = n_max * 2N # convert `n_max` to actual level number
     Δn = n_max - n_min + 1 # number of levels of spatial Hamiltonian to use for constructing Floquet Hamiltonian
@@ -717,6 +720,11 @@ function compute_floquet_wannier_centres(; N::Integer, n_min::Integer=1, n_targe
                 wf_hi[:, X, t, z] = abs2.(sum(cis(-ν(m)*ωt) * ψ[:, m] * sum(d[l, X] * b[m, l] for l = 1:n_w) for m in 1:Δn))
             end
         end
+        # for (t, ωt) in enumerate(ωts)
+        #     for l in 1:n_w
+        #         u_hi[:, l, t, z] = abs2.(sum(cis(-ν(m)*ωt) * ψ[:, m] * b[m, l] for m in 1:Δn))
+        #     end
+        # end
 
         # Lower band
         b .= f.vectors[:, window_lo]
@@ -735,7 +743,7 @@ function compute_floquet_wannier_centres(; N::Integer, n_min::Integer=1, n_targe
             end
         end
     end
-    return ϵ, E, pos_lo, pos_hi, ε_lo, ε_hi, wf_lo, wf_hi
+    return ϵ, E, pos_lo, pos_hi, ε_lo, ε_hi, wf_lo, wf_hi, u_lo, u_hi
 end
 
 ###
@@ -925,6 +933,37 @@ function compute_wannier_centres_periodic(; N::Integer, n_max::Integer, n_target
         end
     end
     return energies, pos_lo, pos_hi, ε_lo, ε_hi, wf_lo, wf_hi
+end
+
+"""
+
+"""
+function compute_eigenfunctions_periodic(; N::Integer, n_max::Integer, n_target::Integer, phases::AbstractVector{<:Real}, gₗ::Real, Vₗ::Real, coords)
+    n_target_min = (n_target-1) * 2N + 1
+    n_target_max = n_target_min + 2N - 1
+
+    n_j = n_max * 2N # number of indices 𝑗 to use for constructing the unperturbed Hamiltonian
+
+    h = zeros(ComplexF64, 2n_j + 1, 2n_j + 1)
+    h = diagm(0 => ComplexF64[(2j/N)^2 + (gₗ + Vₗ)/2 for j = -n_j:n_j])
+    h[diagind(h, -2N)] .= h[diagind(h, 2N)] .= gₗ/4
+
+    c = Matrix{ComplexF64}(undef, 2n_j+1, 2N) # eigenvectors of ℎ
+    wf = Array{ComplexF64,3}(undef, length(coords), 2N, length(phases))
+    energies = Matrix{Float64}(undef, 2N, length(phases))
+
+    for (z, ϕ) in enumerate(phases)
+        h[diagind(h, -N)] .= Vₗ/4 * cis(2ϕ)
+        h[diagind(h, N)]  .= Vₗ/4 * cis(-2ϕ)
+        f = eigen(h)
+
+        energies[:, z] = f.values[n_target_min:n_target_max]
+        c .= f.vectors[:, n_target_min:n_target_max]
+        for i in 1:2N
+            wf[:, i, z] = make_exp_state(coords, c[:, i]; n=N)
+        end
+    end
+    return energies, wf
 end
 
 """
