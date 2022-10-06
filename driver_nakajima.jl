@@ -1,8 +1,8 @@
-using Plots, LaTeXStrings
+using Plots, LaTeXStrings, ProgressMeter
 plotlyjs()
 theme(:dark, size=(800, 600))
 
-include("bandsolvers.jl")
+includet("bandsolvers.jl")
 
 # Energy spectrum
 
@@ -70,7 +70,7 @@ end
 ########## Periodic case
 
 phases = range(0, π, length=61)
-n_cells = 4
+n_cells = 3
 n_max = 4
 gₗ = -20; Vₗ = -30
 
@@ -89,13 +89,17 @@ savefig("nakajima-wannier-periodic.pdf")
 x = range(0, n_cells*π, length=50n_cells)
 ψ_lo = 4abs2.(Bandsolvers.make_wavefunction(h, 1:n_cells, 1:length(phases), x, :lo))
 ψ_hi = 4abs2.(Bandsolvers.make_wavefunction(h, 1:n_cells, 1:length(phases), x, :hi))
+
+pyplot()
+p = Progress(length(phases), 1)
 @gif for (i, ϕ) in enumerate(phases)
     U = @. gₗ*cos(2x)^2 + Vₗ*cos(x + ϕ)^2
     plot(x, U, label=false, ylims=(-50, 2))
-    scatter!(h.w.pos_lo[:, i], h.w.E_lo[:, i]; marker_z=h.w.E_lo[:, i], c=:coolwarm, label=false,  markerstrokewidth=0, clims=(-41, -22))
+    scatter!(h.w.pos_lo[:, i], h.w.E_lo[:, i]; marker_z=h.w.E_lo[:, i], c=:coolwarm, label=false, markerstrokewidth=0, clims=(-41, -22))
     scatter!(h.w.pos_hi[:, i], h.w.E_hi[:, i]; marker_z=h.w.E_hi[:, i], c=:coolwarm, label=false, markerstrokewidth=0)
     for j in 1:n_cells
         plot!(x, ψ_lo[:, j, i] .+ h.w.E_lo[j, i], label=false)
         plot!(x, ψ_hi[:, j, i] .+ h.w.E_hi[j, i], label=false)
     end
+    next!(p)
 end

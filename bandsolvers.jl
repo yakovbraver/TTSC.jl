@@ -298,7 +298,7 @@ function UnperturbedHamiltonian(n_cells::Integer; s::Integer, gₗ::Real, Vₗ::
     end
 
     E = Matrix{Float64}(undef, maxlevel, length(phases))
-    c = Array{Float64,3}(undef, maxlevel, 2maxlevel+1, length(phases))
+    c = Array{Float64,3}(undef, 2maxlevel+1, maxlevel, length(phases))
 
     E_lo = Matrix{Float64}(undef, n_cells, length(phases))
     E_hi = Matrix{Float64}(undef, n_cells, length(phases))
@@ -324,7 +324,7 @@ function diagonalise!(uh::UnperturbedHamiltonian)
             h[diagind(h, +N)] .= Vₗ/4 * cis(-2ϕ)
             f = eigen(h)
             uh.E[:, i] = f.values[1:maxlevel]
-            uh.c[:, :, i] = f.vectors[1:maxlevel, :]
+            uh.c[:, :, i] = f.vectors[:, 1:maxlevel]
         end
     else
         X(j′, j) = 16N*j*j′ / (π*((j-j′)^2-(2N)^2)*((j+j′)^2-(2N)^2))
@@ -357,7 +357,7 @@ function diagonalise!(uh::UnperturbedHamiltonian)
             end
             f = eigen(h)
             uh.E[:, i] = f.values[1:maxlevel]
-            uh.c[:, :, i] = f.vectors[1:maxlevel, :]
+            uh.c[:, :, i] = f.vectors[:, 1:maxlevel]
         end
     end
 end
@@ -476,12 +476,10 @@ function compute_wanniers!(uh::UnperturbedHamiltonian; targetband::Integer)
                 X[n′, n] = sum(uh.c[j+1, n_target_min+n′-1, i]' * uh.c[j, n_target_min+n-1, i] for j = 1:size(uh.c, 1)-1)
             end
         end
+        # `eigen` does not guarantee orthogonality of eigenvectors in case of degeneracies for `X` unitary, so use `schur` (although a degeneracy is unlikely here)
         _, uh.w.d_lo[:, :, i], pos_complex = schur(X)
-        uh.w.pos_lo[:, i] = sort(@. (angle(pos_complex) + π) / 2π * N*π)
+        uh.w.pos_lo[:, i] = sort(@. mod2pi(angle(pos_complex)) / 2π * N*π) # `mod2pi` converts the angle from [-π, π) to [0, 2π)
         uh.w.E_lo[:, i] = [abs2.(dˣ) ⋅ uh.E[n_target_min:n_target_min+N-1, i] for dˣ in eachcol(uh.w.d_lo[:, :, i])]
-        # for k in 1:N
-        #     wf_lo[:, k, i] = abs2.(sum(d[j, k] * make_exp_state(coords, c[:, j]; n=N) for j = 1:N))
-        # end
 
         # Higher band
         for n in 1:N
@@ -490,18 +488,15 @@ function compute_wanniers!(uh::UnperturbedHamiltonian; targetband::Integer)
             end
         end
         _, uh.w.d_hi[:, :, i], pos_complex = schur(X)
-        uh.w.pos_hi[:, i] = sort(@. (angle(pos_complex) + π) / 2π * N*π)
+        uh.w.pos_hi[:, i] = sort(@. mod2pi(angle(pos_complex)) / 2π * N*π)
         uh.w.E_hi[:, i] = [abs2.(dˣ) ⋅ uh.E[n_target_min+N:n_target_max, i] for dˣ in eachcol(uh.w.d_hi[:, :, i])]
-        # for k in 1:N
-        #     wf_hi[:, k, i] = abs2.(sum(d[j, k] * make_exp_state(coords, c[:, j]; n=N) for j = 1:N))
-        # end
     end
 end
 
 """
-Construct coordinate a wavefunction ψ at coordinates in `x` for each state number in `whichstates` at each phase number in `whichphases`.
+Construct a coordinate wavefunction `ψ` at coordinates in `x` for each state number in `whichstates` at each phase number in `whichphases`.
 To construct a Wannier function, set `whichwanniers` to `:lo` or `:hi`. To construct an energy eigenfunction, leave `whichwanniers` unset.
-Return ψ[:, i, j] = 𝑖th wavefunction at 𝑗th phase.
+Return `ψ[:, i, j]` = 𝑖th wavefunction at 𝑗th phase.
 """
 function make_wavefunction(uh::UnperturbedHamiltonian, whichstates::AbstractVector{<:Integer}, whichphases::AbstractVector{<:Integer}, x::AbstractVector{<:Real},
                            whichwanniers::Union{Symbol,Nothing}=nothing)
@@ -512,9 +507,9 @@ function make_wavefunction(uh::UnperturbedHamiltonian, whichstates::AbstractVect
             if whichwanniers === nothing
                 ψ[:, j, i] = make_state(x, uh.c[:, js, iϕ]; N=uh.N)
             elseif whichwanniers == :lo
-                ψ[:, j, i] = sum(uh.w.d_lo[k, j, iϕ] * make_state(x, uh.c[:, js, iϕ]; N=uh.N) for k = 1:uh.N)
+                ψ[:, j, i] = sum(uh.w.d_lo[k, j, iϕ] * make_state(x, uh.c[:, uh.w.n_target_min+k-1, iϕ]; N=uh.N) for k = 1:uh.N)
             elseif whichwanniers == :hi
-                ψ[:, j, i] = sum(uh.w.d_hi[k, j, iϕ] * make_state(x, uh.c[:, js, iϕ]; N=uh.N) for k = 1:uh.N)
+                ψ[:, j, i] = sum(uh.w.d_hi[k, j, iϕ] * make_state(x, uh.c[:, uh.w.n_target_min+uh.N+k-1, iϕ]; N=uh.N) for k = 1:uh.N)
             end
         end
     end
