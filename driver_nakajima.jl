@@ -15,7 +15,7 @@ gₗ = -20; Vₗ = -30
 
 h = Bandsolvers.UnperturbedHamiltonian(n_cells; gₗ, Vₗ, phases, maxband=2, isperiodic=true)
 Bandsolvers.diagonalise!(h)
-Bandsolvers.compute_wanniers!(h, targetband=1)
+Bandsolvers.compute_wanniers!(h, 1)
 
 # Energy spectrum
 fig = plot();

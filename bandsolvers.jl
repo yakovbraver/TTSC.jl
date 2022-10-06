@@ -261,7 +261,7 @@ using ProgressMeter
 
 "A type representing the spatial Wannier functions."
 mutable struct SpatialWanniers
-    n_target_min::Integer # number of the first energy level to use for constructing wanniers
+    n_target_min::Int # number of the first energy level to use for constructing wanniers
     E_lo::Matrix{Float64} # `E[i, j]` = mean energy of 𝑖th wannier at 𝑗th phase
     E_hi::Matrix{Float64} # `E[i, j]` = mean energy of 𝑖th wannier at 𝑗th phase
     pos_lo::Matrix{Float64} # `pos[i, j]` = position of 𝑖th wannier at 𝑗th phase
@@ -271,15 +271,15 @@ mutable struct SpatialWanniers
 end
 
 "A type representing the unperturbed Hamiltonian ℎ (2)."
-mutable struct UnperturbedHamiltonian
-    N::Integer # number of cells
-    l::Integer
-    gₗ::Real
-    Vₗ::Real
+mutable struct UnperturbedHamiltonian{T <: AbstractVector}
+    N::Int # number of cells
+    l::Int
+    gₗ::Float64
+    Vₗ::Float64
     isperiodic::Bool
-    phases::AbstractVector{<:Real} # values of the spatial adiabatic phases 𝜑ₓ
-    maxlevel::Integer # highest level number to consider
-    bandsizes::Tuple{Integer, Integer} # = (number of levels in the first band, number of levels in the second band)
+    phases::T # values of the spatial adiabatic phases 𝜑ₓ; parametrised to store e.g. a vector or a range
+    maxlevel::Int # highest level number to consider
+    bandsizes::Tuple{Int, Int} # = (number of levels in the first band, number of levels in the second band)
     E::Matrix{Float64} # `E[i, j]` = 𝑖th eigenvalue at 𝑗th phase, `i = 1:maxlevel`
     c::Array{ComplexF64, 3} # `c[:, i, j]` = 𝑖th eigenvector at 𝑗th phase, `i = 1:maxlevel; j = 1:2maxlevel+1`
     w::SpatialWanniers
@@ -300,7 +300,7 @@ function UnperturbedHamiltonian(n_cells::Integer; gₗ::Real, Vₗ::Real, maxban
     end
 
     E = Matrix{Float64}(undef, maxlevel, length(phases))
-    c = Array{Float64,3}(undef, 2maxlevel+1, maxlevel, length(phases))
+    c = Array{ComplexF64,3}(undef, 2maxlevel+1, maxlevel, length(phases))
 
     E_lo = Matrix{Float64}(undef, n_cells, length(phases))
     E_hi = Matrix{Float64}(undef, n_cells, length(phases))
@@ -310,7 +310,7 @@ function UnperturbedHamiltonian(n_cells::Integer; gₗ::Real, Vₗ::Real, maxban
     d_hi = Array{Float64, 3}(undef, n_cells, n_cells, length(phases))
     w = SpatialWanniers(0, E_lo, E_hi, pos_lo, pos_hi, d_lo, d_hi)
 
-    UnperturbedHamiltonian(n_cells, (l === nothing ? 1 : l), gₗ, Vₗ, isperiodic, phases, maxlevel, bandsizes, E, c, w)
+    UnperturbedHamiltonian(Int(n_cells), (l === nothing ? 1 : l), Float64(gₗ), Float64(Vₗ), isperiodic, phases, maxlevel, bandsizes, E, c, w)
 end
 
 "Diagonalise the unperturbed Hamiltonian at each phase."
@@ -318,7 +318,6 @@ function diagonalise!(uh::UnperturbedHamiltonian)
     N, gₗ, Vₗ, maxlevel = uh.N, uh.gₗ, uh.Vₗ, uh.maxlevel
     
     if uh.isperiodic # diagonalise according to (A5) (this actually assumes +𝑉ₛ and +𝑉ₗ in (2))
-        h = zeros(ComplexF64, 2maxlevel + 1, 2maxlevel + 1)
         h = diagm(0 => ComplexF64[(2j/N)^2 + (gₗ + Vₗ)/2 for j = -maxlevel:maxlevel])
         h[diagind(h, -2N)] .= h[diagind(h, 2N)] .= gₗ/4
         for (i, ϕ) in enumerate(uh.phases)
@@ -461,7 +460,7 @@ end
 """
 Calculate Wannier vectors for the unperturbed Hamiltonian.
 """
-function compute_wanniers!(uh::UnperturbedHamiltonian; targetband::Integer)
+function compute_wanniers!(uh::UnperturbedHamiltonian, targetband::Integer)
     N = uh.N
 
     n_target_min = (targetband-1) * 2N + 1
@@ -469,7 +468,7 @@ function compute_wanniers!(uh::UnperturbedHamiltonian; targetband::Integer)
     uh.w.n_target_min = n_target_min # save this because it's needed in `make_wavefunction` when constructing coordinate space Wannier functions
 
     X = Matrix{ComplexF64}(undef, N, N) # position operator
-    pos_complex = Vector{ComplexF64}(undef, N) # eigenvalues of the position operator; we will be taking their angles
+    pos_complex = Vector{ComplexF64}(undef, N) # allocate a vector for storing eigenvalues of the position operator; will be taking their angles
     
     for i in eachindex(uh.phases)
         # Lower band
@@ -479,7 +478,7 @@ function compute_wanniers!(uh::UnperturbedHamiltonian; targetband::Integer)
             end
         end
         # `eigen` does not guarantee orthogonality of eigenvectors in case of degeneracies for `X` unitary, so use `schur` (although a degeneracy is unlikely here)
-        _, uh.w.d_lo[:, :, i], pos_complex = schur(X)
+        _, uh.w.d_lo[:, :, i], pos_complex[:] = schur(X)
         uh.w.pos_lo[:, i] = sort(@. mod2pi(angle(pos_complex)) / 2π * N*π) # `mod2pi` converts the angle from [-π, π) to [0, 2π)
         uh.w.E_lo[:, i] = [abs2.(dˣ) ⋅ uh.E[n_target_min:n_target_min+N-1, i] for dˣ in eachcol(uh.w.d_lo[:, :, i])]
 
@@ -489,7 +488,7 @@ function compute_wanniers!(uh::UnperturbedHamiltonian; targetband::Integer)
                 X[n′, n] = sum(uh.c[j+1, n_target_min+N+n′-1, i]' * uh.c[j, n_target_min+N+n-1, i] for j = 1:size(uh.c, 1)-1)
             end
         end
-        _, uh.w.d_hi[:, :, i], pos_complex = schur(X)
+        _, uh.w.d_hi[:, :, i], pos_complex[:] = schur(X)
         uh.w.pos_hi[:, i] = sort(@. mod2pi(angle(pos_complex)) / 2π * N*π)
         uh.w.E_hi[:, i] = [abs2.(dˣ) ⋅ uh.E[n_target_min+N:n_target_max, i] for dˣ in eachcol(uh.w.d_hi[:, :, i])]
     end
