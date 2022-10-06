@@ -3,25 +3,67 @@ plotlyjs()
 theme(:dark, size=(800, 600))
 
 includet("bandsolvers.jl")
-
-# Energy spectrum
-
 import .Bandsolvers
 
-phases = range(0, π, length=61)
-n_cells = 5
-n_min = 1
-n_max = 5
-gₗ = -20; Vₗ = -30
-h = Bandsolvers.UnperturbedHamiltonian(n_cells; s=2, gₗ, Vₗ, phases, maxband=2, isperiodic=false)
-Bandsolvers.diagonalise!(h)
+########## Periodic case
 
+phases = [range(0, pi/4-0.1, length=10); range(pi/4-0.01, pi/4+0.01, length=10);
+          range(pi/4+0.1, 3pi/4-0.1, length=20); range(3pi/4-0.01, 3pi/4+0.01, length=10);
+          range(3pi/4+0.1, pi, length=10)]
+n_cells = 3
+gₗ = -20; Vₗ = -30
+
+h = Bandsolvers.UnperturbedHamiltonian(n_cells; gₗ, Vₗ, phases, maxband=2, isperiodic=true)
+Bandsolvers.diagonalise!(h)
+Bandsolvers.compute_wanniers!(h, targetband=1)
+
+# Energy spectrum
 fig = plot();
 for r in eachrow(h.E)
     plot!(phases, r, label=false)
 end
-plot!(xlabel=L"\phi", ylabel="Energy", title=L"(V_S, V_L) = (20, 30)")
-ylims!(-Inf, 0)
+plot!(xlabel=L"\phi", ylabel="Energy", title=L"(V_S, V_L) = (%$(-gₗ), %$(-Vₗ))", ylims=(-Inf, 0))
+
+# Wannier centres
+fig = plot();
+for (i, ϕ) in enumerate(phases)
+    scatter!(h.w.pos_lo[:, i], fill(ϕ, n_cells); marker_z=h.w.E_lo[:, i], c=:coolwarm, label=false, markerstrokewidth=0)
+    scatter!(h.w.pos_hi[:, i], fill(ϕ, n_cells); marker_z=h.w.E_hi[:, i], c=:coolwarm, label=false, markerstrokewidth=0)
+end
+plot!(minorgrid=true, xlabel=L"z", ylabel=L"\phi", cbtitle="Energy", title=L"(V_S, V_L) = (20, 30)"*"; periodic")
+savefig("nakajima-wannier-periodic.pdf")
+
+# Wannier functions
+x = range(0, n_cells*π, length=50n_cells)
+ψ_lo = 4abs2.(Bandsolvers.make_wavefunction(h, 1:n_cells, 1:length(phases), x, :lo))
+ψ_hi = 4abs2.(Bandsolvers.make_wavefunction(h, 1:n_cells, 1:length(phases), x, :hi))
+p = Progress(length(phases), 1)
+@gif for (i, ϕ) in enumerate(phases)
+    U = @. gₗ*cos(2x)^2 + Vₗ*cos(x + ϕ)^2
+    plot(x, U, label=false, ylims=(-50, 2))
+    scatter!(h.w.pos_lo[:, i], h.w.E_lo[:, i]; marker_z=h.w.E_lo[:, i], c=:coolwarm, label=false, markerstrokewidth=0, clims=(-41, -22))
+    scatter!(h.w.pos_hi[:, i], h.w.E_hi[:, i]; marker_z=h.w.E_hi[:, i], c=:coolwarm, label=false, markerstrokewidth=0)
+    for j in 1:n_cells
+        plot!(x, ψ_lo[:, j, i] .+ h.w.E_lo[j, i], label=false)
+        plot!(x, ψ_hi[:, j, i] .+ h.w.E_hi[j, i], label=false)
+    end
+    next!(p)
+end
+
+########## Non-periodic case
+
+phases = range(0, π, length=61)
+n_cells = 4
+gₗ = -20; Vₗ = -30
+h = Bandsolvers.UnperturbedHamiltonian(n_cells; gₗ, Vₗ, phases, maxband=2, isperiodic=false)
+Bandsolvers.diagonalise!(h)
+
+# Energy spectrum
+fig = plot();
+for r in eachrow(h.E)
+    plot!(phases, r, label=false)
+end
+plot!(xlabel=L"\phi", ylabel="Energy", title=L"(V_S, V_L) = (%$(-gₗ), %$(-Vₗ))", ylims=(-Inf, 0))
 savefig("nakajima-spectrum.pdf")
 
 # Wavefunctions
@@ -40,10 +82,10 @@ savefig("wf-phi-3pi4.pdf")
 # Wannier centres
 
 phases = [range(0, 0.005, length=10); range(0.006, 3.11, length=101); range(3.14, pi, length=10)]  # values of the adiabatic phase in (S32)
-h = Bandsolvers.UnperturbedHamiltonian(n_cells; s=2, gₗ, Vₗ, phases, maxband=2, isperiodic=true)
+h = Bandsolvers.UnperturbedHamiltonian(n_cells; gₗ, Vₗ, phases, maxband=2, isperiodic=true)
 Bandsolvers.diagonalise!(h)
 Bandsolvers.compute_wanniers!(h, targetband=1)
-pyplot()
+
 fig = plot();
 for (i, ϕ) in enumerate(phases)
     scatter!(h.w.pos_lo[:, i], fill(ϕ, length(h.w.pos_lo[:, i])); marker_z=h.w.E_lo[:, i], c=:coolwarm, label=false, markerstrokewidth=0)
@@ -65,41 +107,4 @@ x = range(0, n_cells*π, length=50n_cells)
     for j in 1:length(h.w.pos_hi[:, i])
         plot!(x, 4wf_higher[i][:, j] .+ h.w.E_hi[:, i][j], label=false)
     end
-end
-
-########## Periodic case
-
-phases = range(0, π, length=61)
-n_cells = 3
-n_max = 4
-gₗ = -20; Vₗ = -30
-
-h = Bandsolvers.UnperturbedHamiltonian(n_cells; s=2, gₗ, Vₗ, phases, maxband=2, isperiodic=true)
-Bandsolvers.diagonalise!(h)
-Bandsolvers.compute_wanniers!(h, targetband=1)
-
-fig = plot();
-for (i, ϕ) in enumerate(phases)
-    scatter!(h.w.pos_lo[:, i], fill(ϕ, n_cells); marker_z=h.w.E_lo[:, i], c=:coolwarm, label=false, markerstrokewidth=0)
-    scatter!(h.w.pos_hi[:, i], fill(ϕ, n_cells); marker_z=h.w.E_hi[:, i], c=:coolwarm, label=false, markerstrokewidth=0)
-end
-plot!(minorgrid=true, xlabel=L"z", ylabel=L"\phi", cbtitle="Energy", title=L"(V_S, V_L) = (20, 30)"*"; periodic")
-savefig("nakajima-wannier-periodic.pdf")
-
-x = range(0, n_cells*π, length=50n_cells)
-ψ_lo = 4abs2.(Bandsolvers.make_wavefunction(h, 1:n_cells, 1:length(phases), x, :lo))
-ψ_hi = 4abs2.(Bandsolvers.make_wavefunction(h, 1:n_cells, 1:length(phases), x, :hi))
-
-pyplot()
-p = Progress(length(phases), 1)
-@gif for (i, ϕ) in enumerate(phases)
-    U = @. gₗ*cos(2x)^2 + Vₗ*cos(x + ϕ)^2
-    plot(x, U, label=false, ylims=(-50, 2))
-    scatter!(h.w.pos_lo[:, i], h.w.E_lo[:, i]; marker_z=h.w.E_lo[:, i], c=:coolwarm, label=false, markerstrokewidth=0, clims=(-41, -22))
-    scatter!(h.w.pos_hi[:, i], h.w.E_hi[:, i]; marker_z=h.w.E_hi[:, i], c=:coolwarm, label=false, markerstrokewidth=0)
-    for j in 1:n_cells
-        plot!(x, ψ_lo[:, j, i] .+ h.w.E_lo[j, i], label=false)
-        plot!(x, ψ_hi[:, j, i] .+ h.w.E_hi[j, i], label=false)
-    end
-    next!(p)
 end

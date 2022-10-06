@@ -273,7 +273,6 @@ end
 "A type representing the unperturbed Hamiltonian ℎ (2)."
 mutable struct UnperturbedHamiltonian
     N::Integer # number of cells
-    s::Integer
     l::Integer
     gₗ::Real
     Vₗ::Real
@@ -286,8 +285,11 @@ mutable struct UnperturbedHamiltonian
     w::SpatialWanniers
 end
 
-"Construct an `UnperturbedHamiltonian` object."
-function UnperturbedHamiltonian(n_cells::Integer; s::Integer, gₗ::Real, Vₗ::Real, maxband::Integer, isperiodic::Bool, phases::AbstractVector{<:Real}, l::Union{Nothing, Integer}=nothing)
+"""
+Construct an `UnperturbedHamiltonian` object. `maxband` is the highest energy band number to consider.
+Each band is assumed to contain 2 subbands, each containing `n_cells` levels.
+"""
+function UnperturbedHamiltonian(n_cells::Integer; gₗ::Real, Vₗ::Real, maxband::Integer, isperiodic::Bool, phases::AbstractVector{<:Real}, l::Union{Nothing, Integer}=nothing)
     bandsizes = (2n_cells - 1, 2n_cells + 1)
     # n_min = (n_min-1) ÷ 2 * 4n + (isodd(n_min) ? 1 : gs1 + 1)
     # convert max band number to level number
@@ -308,7 +310,7 @@ function UnperturbedHamiltonian(n_cells::Integer; s::Integer, gₗ::Real, Vₗ::
     d_hi = Array{Float64, 3}(undef, n_cells, n_cells, length(phases))
     w = SpatialWanniers(0, E_lo, E_hi, pos_lo, pos_hi, d_lo, d_hi)
 
-    UnperturbedHamiltonian(n_cells, s, (l === nothing ? 1 : l), gₗ, Vₗ, isperiodic, phases, maxlevel, bandsizes, E, c, w)
+    UnperturbedHamiltonian(n_cells, (l === nothing ? 1 : l), gₗ, Vₗ, isperiodic, phases, maxlevel, bandsizes, E, c, w)
 end
 
 "Diagonalise the unperturbed Hamiltonian at each phase."
@@ -464,7 +466,7 @@ function compute_wanniers!(uh::UnperturbedHamiltonian; targetband::Integer)
 
     n_target_min = (targetband-1) * 2N + 1
     n_target_max = n_target_min + 2N - 1
-    uh.w.n_target_min = n_target_min
+    uh.w.n_target_min = n_target_min # save this because it's needed in `make_wavefunction` when constructing coordinate space Wannier functions
 
     X = Matrix{ComplexF64}(undef, N, N) # position operator
     pos_complex = Vector{ComplexF64}(undef, N) # eigenvalues of the position operator; we will be taking their angles
