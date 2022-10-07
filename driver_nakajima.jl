@@ -15,7 +15,6 @@ gₗ = -20; Vₗ = -30
 
 h = Bandsolvers.UnperturbedHamiltonian(n_cells; gₗ, Vₗ, phases, maxband=2, isperiodic=true)
 Bandsolvers.diagonalise!(h)
-Bandsolvers.compute_wanniers!(h, targetband=1)
 
 # Energy spectrum
 fig = plot();
@@ -26,6 +25,7 @@ plot!(xlabel=L"\phi", ylabel="Energy", title=L"(V_S, V_L) = (%$(-gₗ), %$(-Vₗ
 
 # Wannier centres
 pyplot()
+Bandsolvers.compute_wanniers!(h, targetband=1)
 fig = plot();
 for (i, ϕ) in enumerate(phases)
     scatter!(h.w.pos_lo[i], fill(ϕ, n_cells); marker_z=h.w.E_lo[i], c=:coolwarm, label=false, markerstrokewidth=0)
@@ -80,10 +80,12 @@ plot!(x ./ π, ψ[:, 1, 1], label=false, title=ϕ_str, xlabel="z", ylabel="Energ
 savefig("wf-phi-3pi4.pdf")
 
 # Wannier centres
+n_cells = 3
+gₗ = -20; Vₗ = -30
 phases = [range(0, 0.005, length=10); range(0.006, 3.11, length=40); range(3.14, pi, length=10)]
 h = Bandsolvers.UnperturbedHamiltonian(n_cells; gₗ, Vₗ, phases, maxband=2, isperiodic=false)
 Bandsolvers.diagonalise!(h)
-@code_warntype Bandsolvers.compute_wanniers!(h, 1)
+Bandsolvers.compute_wanniers!(h; targetband=1)
 
 fig = plot();
 for (i, ϕ) in enumerate(phases)

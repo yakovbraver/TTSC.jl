@@ -261,33 +261,33 @@ using ProgressMeter
 
 "A type representing the spatial Wannier functions."
 mutable struct SpatialWanniers
-    n_target_min::Int # number of the first energy level to use for constructing wanniers
-    E_lo::Vector{Vector{Float64}} # `E[i, j]` = mean energy of 𝑖th wannier at 𝑗th phase
-    E_hi::Vector{Vector{Float64}} # `E[i, j]` = mean energy of 𝑖th wannier at 𝑗th phase
-    pos_lo::Vector{Vector{Float64}} # `pos[i, j]` = position of 𝑖th wannier at 𝑗th phase
-    pos_hi::Vector{Vector{Float64}} # `pos[i, j]` = position of 𝑖th wannier at 𝑗th phase
-    d_lo::Vector{Matrix{ComplexF64}} # `d[:, i, j]` = 𝑖th position eigenvector at 𝑗th phase
-    d_hi::Vector{Matrix{ComplexF64}} # `d[:, i, j]` = 𝑖th position eigenvector at 𝑗th phase
+    minlevel::Int # number of the first energy level to use for constructing wanniers
+    E_lo::Vector{Vector{Float64}} # `E[j][i]` = mean energy of 𝑖th wannier at 𝑗th phase
+    E_hi::Vector{Vector{Float64}} # `E[j][i]` = mean energy of 𝑖th wannier at 𝑗th phase
+    pos_lo::Vector{Vector{Float64}} # `pos[j][i]` = position eigenvalue of 𝑖th wannier at 𝑗th phase
+    pos_hi::Vector{Vector{Float64}} # `pos[j][i]` = position eigenvalue of 𝑖th wannier at 𝑗th phase
+    d_lo::Vector{Matrix{ComplexF64}} # `d[j][:, i]` = 𝑖th wannier vector at 𝑗th phase
+    d_hi::Vector{Matrix{ComplexF64}} # `d[j][:, i]` = 𝑖th wannier vector at 𝑗th phase
 end
 
 "A type representing the unperturbed Hamiltonian ℎ (2)."
 mutable struct UnperturbedHamiltonian{T <: AbstractVector}
-    N::Int # number of cells
+    N::Int # number of lattice cells
     l::Int
     gₗ::Float64
     Vₗ::Float64
     isperiodic::Bool
-    phases::T # values of the spatial adiabatic phases 𝜑ₓ; parametrised to store e.g. a vector or a range
+    phases::T     # values of the spatial adiabatic phases 𝜑ₓ; parameterised to store e.g. a vector or a range
     maxlevel::Int # highest level number to consider
     bandsizes::Tuple{Int, Int} # = (number of levels in the first band, number of levels in the second band)
-    E::Matrix{Float64} # `E[i, j]` = 𝑖th eigenvalue at 𝑗th phase, `i = 1:maxlevel`
+    E::Matrix{Float64}      # `E[i, j]` = 𝑖th eigenvalue at 𝑗th phase, `i = 1:maxlevel`
     c::Array{ComplexF64, 3} # `c[:, i, j]` = 𝑖th eigenvector at 𝑗th phase, `i = 1:maxlevel; j = 1:2maxlevel+1`
     w::SpatialWanniers
 end
 
 """
 Construct an `UnperturbedHamiltonian` object. `maxband` is the highest energy band number to consider.
-Each band is assumed to contain 2 subbands, each containing `n_cells` levels.
+Each band is assumed to contain 2 subbands, containing `2n_cells` levels in total.
 """
 function UnperturbedHamiltonian(n_cells::Integer; gₗ::Real, Vₗ::Real, maxband::Integer, isperiodic::Bool, phases::AbstractVector{<:Real}, l::Union{Nothing, Integer}=nothing)
     bandsizes = (2n_cells - 1, 2n_cells + 1)
@@ -364,13 +364,13 @@ function diagonalise!(uh::UnperturbedHamiltonian)
 end
 
 """
-Calculate Wannier vectors for the unperturbed Hamiltonian.
+Calculate Wannier vectors for the unperturbed Hamiltonian using the energy eigenstates in the band number `targetband`.
 """
-function compute_wanniers!(uh::UnperturbedHamiltonian, targetband::Integer)
+function compute_wanniers!(uh::UnperturbedHamiltonian; targetband::Integer)
     N = uh.N
 
-    n_target_min = (targetband-1) * 2N + 1
-    uh.w.n_target_min = n_target_min # save this because it's needed in `make_wavefunction` when constructing coordinate space Wannier functions
+    minlevel = (targetband-1) * 2N + 1
+    uh.w.minlevel = minlevel # save this because it's needed in `make_wavefunction` when constructing coordinate space Wannier functions
 
     if uh.isperiodic
         X = Matrix{ComplexF64}(undef, N, N) # position operator
@@ -380,24 +380,24 @@ function compute_wanniers!(uh::UnperturbedHamiltonian, targetband::Integer)
             # Lower band
             for n in 1:N
                 for n′ in 1:N
-                    X[n′, n] = sum(uh.c[j+1, n_target_min+n′-1, i]' * uh.c[j, n_target_min+n-1, i] for j = 1:size(uh.c, 1)-1)
+                    X[n′, n] = sum(uh.c[j+1, minlevel+n′-1, i]' * uh.c[j, minlevel+n-1, i] for j = 1:size(uh.c, 1)-1)
                 end
             end
             # `eigen` does not guarantee orthogonality of eigenvectors in case of degeneracies for `X` unitary, so use `schur`
             # (although a degeneracy of coordinates eigenvalues is unlikely here)
             _, uh.w.d_lo[i], pos_complex[:] = schur(X)
             uh.w.pos_lo[i] = sort(@. mod2pi(angle(pos_complex)) / 2π * N*π) # `mod2pi` converts the angle from [-π, π) to [0, 2π)
-            uh.w.E_lo[i] = [abs2.(dˣ) ⋅ uh.E[n_target_min:n_target_min+N-1, i] for dˣ in eachcol(uh.w.d_lo[i])]
+            uh.w.E_lo[i] = [abs2.(dˣ) ⋅ uh.E[minlevel:minlevel+N-1, i] for dˣ in eachcol(uh.w.d_lo[i])]
 
             # Higher band
             for n in 1:N
                 for n′ in 1:N
-                    X[n′, n] = sum(uh.c[j+1, n_target_min+N+n′-1, i]' * uh.c[j, n_target_min+N+n-1, i] for j = 1:size(uh.c, 1)-1)
+                    X[n′, n] = sum(uh.c[j+1, minlevel+N+n′-1, i]' * uh.c[j, minlevel+N+n-1, i] for j = 1:size(uh.c, 1)-1)
                 end
             end
             _, uh.w.d_hi[i], pos_complex[:] = schur(X)
             uh.w.pos_hi[i] = sort(@. mod2pi(angle(pos_complex)) / 2π * N*π)
-            uh.w.E_hi[i] = [abs2.(dˣ) ⋅ uh.E[n_target_min+N:n_target_min+2N-1, i] for dˣ in eachcol(uh.w.d_hi[i])]
+            uh.w.E_hi[i] = [abs2.(dˣ) ⋅ uh.E[minlevel+N:minlevel+2N-1, i] for dˣ in eachcol(uh.w.d_hi[i])]
         end
     else
         n_w = isodd(targetband) ? 2N-1 : 2N+1 # total number of wanniers to construct; this is the number of levels in the target band
@@ -407,31 +407,31 @@ function compute_wanniers!(uh::UnperturbedHamiltonian, targetband::Integer)
         n_j = size(uh.c, 1)
 
         for i in eachindex(uh.phases)
-            up = uh.E[n_target_min+n_w÷2, i] > (uh.E[n_target_min+n_w÷2-1, i] + uh.E[n_target_min+n_w÷2+1, i])/2 # true if the edge state branch is above the mean value
+            up = uh.E[minlevel+n_w÷2, i] > (uh.E[minlevel+n_w÷2-1, i] + uh.E[minlevel+n_w÷2+1, i])/2 # true if the edge state branch is above the mean value
             
             # Lower band
             X = up ? X_less : X_more # bind the position operator to a matrix of the appropriate size
             n_lo = n_w÷2 + !up # number of levels in the lower subband
             for n in 1:n_lo
                 for n′ in n:n_lo
-                    X[n′, n] = X[n, n′] = N*sum(uh.c[j, n_target_min+n-1, i] * (π/2 * uh.c[j, n_target_min+n′-1, i] - 8/π * sum(uh.c[j′, n_target_min+n′-1, i]*j*j′/(j^2-j′^2)^2
-                                                                                for j′ = (iseven(j) ? 1 : 2):2:n_j)) for j = 1:n_j)
+                    X[n′, n] = X[n, n′] = N*sum(uh.c[j, minlevel+n-1, i] * (π/2 * uh.c[j, minlevel+n′-1, i] - 8/π * sum(uh.c[j′, minlevel+n′-1, i]*j*j′/(j^2-j′^2)^2
+                                                                            for j′ = (iseven(j) ? 1 : 2):2:n_j)) for j = 1:n_j)
                 end
             end
             uh.w.pos_lo[i], uh.w.d_lo[i] = eigen(X)
-            uh.w.E_lo[i] = [dˣ.^2 ⋅ uh.E[n_target_min:n_target_min+n_lo-1, i] for dˣ in eachcol(uh.w.d_lo[i])]
+            uh.w.E_lo[i] = [dˣ.^2 ⋅ uh.E[minlevel:minlevel+n_lo-1, i] for dˣ in eachcol(uh.w.d_lo[i])]
 
             # Higher band
             X = up ? X_more : X_less
             n_hi = n_w - n_lo
             for n in 1:n_hi
                 for n′ in n:n_hi
-                    X[n′, n] = X[n, n′] = N*sum(uh.c[j, n_target_min+n_lo+n-1, i] * (π/2 * uh.c[j, n_target_min+n_lo+n′-1, i] - 8/π * sum(uh.c[j′, n_target_min+n_lo+n′-1, i]*j*j′/(j^2-j′^2)^2
-                                                                                     for j′ = (iseven(j) ? 1 : 2):2:n_j)) for j = 1:n_j)
+                    X[n′, n] = X[n, n′] = N*sum(uh.c[j, minlevel+n_lo+n-1, i] * (π/2 * uh.c[j, minlevel+n_lo+n′-1, i] - 8/π * sum(uh.c[j′, minlevel+n_lo+n′-1, i]*j*j′/(j^2-j′^2)^2
+                                                                                 for j′ = (iseven(j) ? 1 : 2):2:n_j)) for j = 1:n_j)
                 end
             end
             uh.w.pos_hi[i], uh.w.d_hi[i] = eigen(X)
-            uh.w.E_hi[i] = [dˣ.^2 ⋅ uh.E[n_target_min+n_lo:n_target_min+n_w-1, i] for dˣ in eachcol(uh.w.d_hi[i])]
+            uh.w.E_hi[i] = [dˣ.^2 ⋅ uh.E[minlevel+n_lo:minlevel+n_w-1, i] for dˣ in eachcol(uh.w.d_hi[i])]
         end
     end
 end
@@ -463,12 +463,12 @@ function make_wannierfunctions(uh::UnperturbedHamiltonian, x::AbstractVector{<:R
         n_lo = size(uh.w.d_lo[iϕ], 1)
         w_lo[i] = [Vector{ComplexF64}(undef, length(x)) for _ in 1:n_lo]
         for j in 1:n_lo
-            w_lo[i][j] = sum(uh.w.d_lo[iϕ][k, j] * make_state(x, uh.c[:, uh.w.n_target_min+k-1, iϕ]; N=uh.N) for k = 1:n_lo)
+            w_lo[i][j] = sum(uh.w.d_lo[iϕ][k, j] * make_state(x, uh.c[:, uh.w.minlevel+k-1, iϕ]; N=uh.N) for k = 1:n_lo)
         end
         n_hi = size(uh.w.d_hi[iϕ], 1)
         w_hi[i] = [Vector{ComplexF64}(undef, length(x)) for _ in 1:n_hi]
         for j in 1:n_hi
-            w_hi[i][j] = sum(uh.w.d_hi[iϕ][k, j] * make_state(x, uh.c[:, uh.w.n_target_min+n_lo+k-1, iϕ]; N=uh.N) for k = 1:n_hi)
+            w_hi[i][j] = sum(uh.w.d_hi[iϕ][k, j] * make_state(x, uh.c[:, uh.w.minlevel+n_lo+k-1, iϕ]; N=uh.N) for k = 1:n_hi)
         end
     end
     return w_lo, w_hi
