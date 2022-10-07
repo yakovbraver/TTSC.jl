@@ -15,7 +15,7 @@ gₗ = -20; Vₗ = -30
 
 h = Bandsolvers.UnperturbedHamiltonian(n_cells; gₗ, Vₗ, phases, maxband=2, isperiodic=true)
 Bandsolvers.diagonalise!(h)
-Bandsolvers.compute_wanniers!(h, 1)
+Bandsolvers.compute_wanniers!(h, targetband=1)
 
 # Energy spectrum
 fig = plot();
@@ -25,27 +25,27 @@ end
 plot!(xlabel=L"\phi", ylabel="Energy", title=L"(V_S, V_L) = (%$(-gₗ), %$(-Vₗ))", ylims=(-Inf, 0))
 
 # Wannier centres
+pyplot()
 fig = plot();
 for (i, ϕ) in enumerate(phases)
-    scatter!(h.w.pos_lo[:, i], fill(ϕ, n_cells); marker_z=h.w.E_lo[:, i], c=:coolwarm, label=false, markerstrokewidth=0)
-    scatter!(h.w.pos_hi[:, i], fill(ϕ, n_cells); marker_z=h.w.E_hi[:, i], c=:coolwarm, label=false, markerstrokewidth=0)
+    scatter!(h.w.pos_lo[i], fill(ϕ, n_cells); marker_z=h.w.E_lo[i], c=:coolwarm, label=false, markerstrokewidth=0)
+    scatter!(h.w.pos_hi[i], fill(ϕ, n_cells); marker_z=h.w.E_hi[i], c=:coolwarm, label=false, markerstrokewidth=0)
 end
 plot!(minorgrid=true, xlabel=L"z", ylabel=L"\phi", cbtitle="Energy", title=L"(V_S, V_L) = (20, 30)"*"; periodic")
 savefig("nakajima-wannier-periodic.pdf")
 
 # Wannier functions
 x = range(0, n_cells*π, length=50n_cells)
-ψ_lo = 4abs2.(Bandsolvers.make_wavefunction(h, 1:n_cells, 1:length(phases), x, :lo))
-ψ_hi = 4abs2.(Bandsolvers.make_wavefunction(h, 1:n_cells, 1:length(phases), x, :hi))
+ψ_lo, ψ_hi = Bandsolvers.make_wannierfunctions(h, x, 1:length(phases))
 p = Progress(length(phases), 1)
 @gif for (i, ϕ) in enumerate(phases)
     U = @. gₗ*cos(2x)^2 + Vₗ*cos(x + ϕ)^2
     plot(x, U, label=false, ylims=(-50, 2))
-    scatter!(h.w.pos_lo[:, i], h.w.E_lo[:, i]; marker_z=h.w.E_lo[:, i], c=:coolwarm, label=false, markerstrokewidth=0, clims=(-41, -22))
-    scatter!(h.w.pos_hi[:, i], h.w.E_hi[:, i]; marker_z=h.w.E_hi[:, i], c=:coolwarm, label=false, markerstrokewidth=0)
+    scatter!(h.w.pos_lo[i], h.w.E_lo[i]; marker_z=h.w.E_lo[i], c=:coolwarm, label=false, markerstrokewidth=0, clims=(-41, -22))
+    scatter!(h.w.pos_hi[i], h.w.E_hi[i]; marker_z=h.w.E_hi[i], c=:coolwarm, label=false, markerstrokewidth=0)
     for j in 1:n_cells
-        plot!(x, ψ_lo[:, j, i] .+ h.w.E_lo[j, i], label=false)
-        plot!(x, ψ_hi[:, j, i] .+ h.w.E_hi[j, i], label=false)
+        plot!(x, 4abs2.(ψ_lo[i][j]) .+ h.w.E_lo[i][j], label=false)
+        plot!(x, 4abs2.(ψ_hi[i][j]) .+ h.w.E_hi[i][j], label=false)
     end
     next!(p)
 end
@@ -74,7 +74,7 @@ U = @. gₗ*cos(2x)^2 + Vₗ*cos(x + phases[iϕ])^2
 fig = plot(x ./ π, U, label=false, c=:white, lw=1)
 
 i = 5 # state number
-ψ = 4abs2.(Bandsolvers.make_wavefunction(h, [i], [iϕ], x)) .+ h.E[i, iϕ]
+ψ = 4abs2.(Bandsolvers.make_eigenfunctions(h, x, [i], [iϕ])) .+ h.E[i, iϕ]
 hline!([h.E[i, iϕ]], c=:white, ls=:dot, lw=0.5, label=false)
 plot!(x ./ π, ψ[:, 1, 1], label=false, title=ϕ_str, xlabel="z", ylabel="Energy")
 savefig("wf-phi-3pi4.pdf")
