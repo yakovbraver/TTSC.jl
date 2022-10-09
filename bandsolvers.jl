@@ -3,7 +3,7 @@ module Bandsolvers
 import BandedMatrices as BM
 using SparseArrays: sparse
 using KrylovKit: eigsolve
-using LinearAlgebra: eigen, eigvals, schur, ⋅, diagm, diagind, ishermitian
+using LinearAlgebra: eigen, eigvals, schur, ⋅, diagm, diagind
 
 "A type representing the spatial Wannier functions."
 mutable struct SpatialWanniers
@@ -30,14 +30,14 @@ mutable struct UnperturbedHamiltonian{T <: AbstractVector}
     phases::T     # values of the spatial adiabatic phases 𝜑ₓ; parameterised to store e.g. a vector or a range
     maxlevel::Int # highest level number to consider
     bandsizes::Tuple{Int, Int} # = (number of levels in the first band, number of levels in the second band)
-    E::Matrix{Float64}      # `E[i, j]` = 𝑖th eigenvalue at 𝑗th phase, `i = 1:maxlevel`
-    c::Array{ComplexF64, 3} # `c[:, i, j]` = 𝑖th eigenvector at 𝑗th phase, `i = 1:maxlevel; j = 1:2maxlevel+1`
+    E::Matrix{Float64}      # `E[i, j]` = `i`th eigenvalue at `j`th phase, `i = 1:maxlevel`
+    c::Array{ComplexF64, 3} # `c[:, i, j]` = `i`th eigenvector at `j`th phase, `i = 1:maxlevel; j = 1:2maxlevel+1`
     w::SpatialWanniers
 end
 
 """
 Construct an `UnperturbedHamiltonian` object. `maxband` is the highest energy band number to consider.
-Each band is assumed to contain 2 subbands, containing `2n_cells` levels in total.
+Each band is assumed to consist of 2 subbands containing `2n_cells` levels in total.
 """
 function UnperturbedHamiltonian(n_cells::Integer; M::Real, gₗ::Real, Vₗ::Real, maxband::Integer, isperiodic::Bool, phases::AbstractVector{<:Real},
                                 l::Union{Nothing, Integer}=nothing)
@@ -118,7 +118,7 @@ end
 Calculate Wannier vectors for the unperturbed Hamiltonian using the energy eigenstates in the band number `targetband`.
 Note that if mass is negative (`uh.M < 0`), then `uh.w.E_lo`, `uh.w.pos_lo`, and `uh.w.pos_lo` will refer to the band whose energy is higher.
 """
-function compute_wanniers!(uh::UnperturbedHamiltonian; targetband::Integer)
+function compute_wanniers!(uh::UnperturbedHamiltonian, targetband::Integer)
     N = uh.N
 
     minlevel = (targetband-1) * 2N + 1
@@ -126,8 +126,6 @@ function compute_wanniers!(uh::UnperturbedHamiltonian; targetband::Integer)
 
     if uh.isperiodic
         X = Matrix{ComplexF64}(undef, N, N) # position operator
-        pos_complex = Vector{ComplexF64}(undef, N) # allocate a vector for storing eigenvalues of the position operator; will be taking their angles
-        pos_real = Vector{Float64}(undef, N)
         
         for i in eachindex(uh.phases)
             # Lower band
@@ -138,8 +136,8 @@ function compute_wanniers!(uh::UnperturbedHamiltonian; targetband::Integer)
             end
             # `eigen` does not guarantee orthogonality of eigenvectors in case of degeneracies for `X` unitary, so use `schur`
             # (although a degeneracy of coordinates eigenvalues is unlikely here)
-            _, uh.w.d_lo[i], pos_complex[:] = schur(X)
-            @. pos_real = mod2pi(angle(pos_complex)) / 2π * N*π # `mod2pi` converts the angle from [-π, π) to [0, 2π)
+            _, uh.w.d_lo[i], pos_complex = schur(X)
+            pos_real = @. mod2pi(angle(pos_complex)) / 2 * N # `mod2pi` converts the angle from [-π, π) to [0, 2π)
             sp = sortperm(pos_real)                 # sort the eigenvalues
             uh.w.pos_lo[i] = pos_real[sp]
             Base.permutecols!!(uh.w.d_lo[i], sp)    # sort the eigenvectors in the same way
@@ -151,8 +149,8 @@ function compute_wanniers!(uh::UnperturbedHamiltonian; targetband::Integer)
                     X[n′, n] = sum(uh.c[j+1, minlevel+N+n′-1, i]' * uh.c[j, minlevel+N+n-1, i] for j = 1:size(uh.c, 1)-1)
                 end
             end
-            _, uh.w.d_hi[i], pos_complex[:] = schur(X)
-            @. pos_real = mod2pi(angle(pos_complex)) / 2π * N*π # `mod2pi` converts the angle from [-π, π) to [0, 2π)
+            _, uh.w.d_hi[i], pos_complex = schur(X)
+            pos_real = @. mod2pi(angle(pos_complex)) / 2 * N # `mod2pi` converts the angle from [-π, π) to [0, 2π)
             sp = sortperm(pos_real)                 # sort the eigenvalues
             uh.w.pos_hi[i] = pos_real[sp]
             Base.permutecols!!(uh.w.d_hi[i], sp)    # sort the eigenvectors in the same way
@@ -245,7 +243,7 @@ function make_wanniermap(w::Vector{Vector{Vector{T}}}, n::Integer) where T <: Nu
     return w_map
 end
 
-"Reconstruct the coordinate-space wavefunction 𝜓(𝑥) = ∑ⱼ𝑐ⱼexp(2i𝑗𝑥/𝑁) / √(𝑁π)"
+"Construct the coordinate-space wavefunction 𝜓(𝑥) = ∑ⱼ𝑐ⱼexp(2i𝑗𝑥/𝑁) / √(𝑁π)"
 function make_exp_state(x::AbstractVector{<:Real}, c::AbstractVector{<:Number}; N)
     ψ = zeros(eltype(c), length(x))
     n_j = (length(c) - 1) ÷ 2
@@ -255,7 +253,7 @@ function make_exp_state(x::AbstractVector{<:Real}, c::AbstractVector{<:Number}; 
     return ψ ./ sqrt(N*π)
 end
 
-"Reconstruct the coordinate-space wavefunction 𝜓(𝑥) = ∑ⱼ𝑐ⱼsin(𝑗𝑥/𝑁) / √(𝑁π/2)"
+"Construct the coordinate-space wavefunction 𝜓(𝑥) = ∑ⱼ𝑐ⱼsin(𝑗𝑥/𝑁) / √(𝑁π/2)"
 function make_sin_state(x::AbstractVector{<:Real}, c::AbstractVector{<:Number}; N)
     ψ = zeros(eltype(c), length(x))
     for (j, c) in enumerate(c)
