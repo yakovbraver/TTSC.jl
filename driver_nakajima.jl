@@ -13,7 +13,7 @@ phases = [range(0, pi/4-0.1, length=10); range(pi/4-0.01, pi/4+0.01, length=10);
 n_cells = 3
 gₗ = -20; Vₗ = -30
 
-h = Bandsolvers.UnperturbedHamiltonian(n_cells; gₗ, Vₗ, phases, maxband=2, isperiodic=true)
+h = Bandsolvers.UnperturbedHamiltonian(n_cells; M=1/2, gₗ, Vₗ, phases, maxband=2, isperiodic=true)
 Bandsolvers.diagonalise!(h)
 
 # Energy spectrum
@@ -55,7 +55,7 @@ end
 phases = range(0, π, length=61)
 n_cells = 3
 gₗ = -20; Vₗ = -30
-h = Bandsolvers.UnperturbedHamiltonian(n_cells; gₗ, Vₗ, phases, maxband=2, isperiodic=false)
+h = Bandsolvers.UnperturbedHamiltonian(n_cells; M=1/2, gₗ, Vₗ, phases, maxband=2, isperiodic=false)
 Bandsolvers.diagonalise!(h)
 
 # Energy spectrum

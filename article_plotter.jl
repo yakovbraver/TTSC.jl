@@ -322,53 +322,58 @@ set_defaults(width=2*8.6, height=8.6)
 
 ### Quasiclassical energy spectrum
 
-phases = range(0, 2π, length=61)
-n_levels = 4
-levels, states = compute_qc_bands_pbc(; n_levels, phases, s, M, λₗAₗ, λₛAₛ, χₗ, χₛ)
-levels .+= H.𝐸(Iₛ) - ω/s*Iₛ
-# e1f2fe
+φₜ = range(0, 2π, length=61)
+n_cells = s
+gₗ = -2λₛ*Aₛ
+Vₗ = 2λₗ*Aₗ
+
+h = Bandsolvers.UnperturbedHamiltonian(n_cells; M, gₗ, Vₗ, phases=-φₜ/2, maxband=1, isperiodic=true)
+Bandsolvers.diagonalise!(h)
+h.E .+= -(gₗ + Vₗ)/2 + H.𝐸(Iₛ) - ω/s*Iₛ
+
 fig1 = plot();
-for i in 1:n_levels
+for i in 1:2n_cells
     label, ls, c = (i == 1 ? (L"\beta=1", :solid, BROWN) : i == 2 ? (L"\beta=2", :dash, BROWN) : ("", :solid, GREY))
-    plot!(phases ./ π, levels[i, :]; label, c, ls, lw=0.8)
+    plot!(φₜ ./ π, h.E[i, :]; label, c, ls, lw=0.8)
 end
 plot!(xlabel=L"\varphi_t/\pi", ylabel=L"E_{\rm eff}"*" (recoil units)", legend=(0.02, 0.59))
-# annotate!((-0.2, -5590, ("(a)", 9, :left)))
+
 
 ### Quasiclassical Wannier functions
 
-e, pos_lo, pos_hi, ε_lo, ε_hi, wf_lo, wf_hi = compute_wannier_centres_qc_periodic(; phases, M, λₗAₗ, λₛAₛ, χₗ, χₛ, s)
-ε_lo .+= H.𝐸(Iₛ) .- ω/s*Iₛ
-ε_hi .+= H.𝐸(Iₛ) .- ω/s*Iₛ
+Bandsolvers.compute_wanniers!(h, targetband=1)
+θ = range(0, s*π, length=40s)
+w_lo, _ = Bandsolvers.make_wannierfunctions(h, θ, 1:length(φₜ))
 
 # swap the Wanniers 1 and 2 at the first phase
-old1 = wf_hi[:, 1, 1]
-wf_hi[:, 1, 1] = wf_hi[:, 2, 1]
-wf_hi[:, 2, 1] = old1
+old1 = w_lo[1][1]
+w_lo[1][1] = w_lo[1][2]
+w_lo[1][2] = old1
 
-θ = range(0, 2π, length=40s)
-𝑈(i_ϕ) = @. λₗ*Aₗ*cos(s*θ - χₗ - phases[i_ϕ]) + λₛ*Aₛ*cos(2s*θ - χₛ) + H.𝐸(Iₛ) - ω/s*Iₛ
+𝑈(i_ϕ) = @. -λₛ*Aₛ*cos(2s*θ) + λₗ*Aₗ*cos(s*θ - φₜ[i_ϕ]) + H.𝐸(Iₛ) - ω/s*Iₛ
 
 i_ϕ = 1
 fig2 = plot(θ ./ π, 𝑈(i_ϕ), label=false, c=GREY, lw=2)
-plot!(θ ./ π, 4wf_hi[:, 2, i_ϕ] .+ ε_hi[1, i_ϕ], c=YELLOW, label=L"|w_1|^2")
-plot!(θ ./ π, 4wf_hi[:, 1, i_ϕ] .+ ε_hi[2, i_ϕ], c=RED, label=L"|w_2|^2", ylims=(-5610, -5575))
+plot!(θ ./ π, 4abs2.(w_lo[i_ϕ][2]) .+ h.w.E_lo[i_ϕ][2], c=YELLOW, label=L"|w_1|^2")
+plot!(θ ./ π, 4abs2.(w_lo[i_ϕ][1]) .+ h.w.E_lo[i_ϕ][1], c=RED, label=L"|w_2|^2", ylims=(-5610, -5575))
 plot!(xformatter=_->"", ylabel=L"E_{\rm eff}"*" (recoil units)", title=L"\varphi_t=0", legend=(0.01, 0.001), bgcolorlegend=RGBA(1, 1, 1, 0.3), fgcolorlegend=RGBA(0, 0, 0, 0.3))
 
 i_ϕ = 16
 fig3 = plot(θ ./ π, 𝑈(i_ϕ), label=false, c=GREY, lw=2)
-plot!(θ ./ π, 4wf_hi[:, 2, i_ϕ] .+ ε_hi[1, i_ϕ], c=YELLOW, label=L"|w_1|^2")
-plot!(θ ./ π, 4wf_hi[:, 1, i_ϕ] .+ ε_hi[2, i_ϕ], c=RED, label=L"|w_2|^2", ylims=(-5610, -5575))
+plot!(θ ./ π, 4abs2.(w_lo[i_ϕ][2]) .+ h.w.E_lo[i_ϕ][2], c=YELLOW, label=L"|w_1|^2")
+plot!(θ ./ π, 4abs2.(w_lo[i_ϕ][1]) .+ h.w.E_lo[i_ϕ][1], c=RED, label=L"|w_2|^2", ylims=(-5610, -5575))
 plot!(xlabel=L"\Theta/\pi", ylabel=L"E_{\rm eff}"*" (recoil units)", title=L"\varphi_t=\pi/2", legend=(0.01, 0.001), bgcolorlegend=RGBA(1, 1, 1, 0.3), fgcolorlegend=RGBA(0, 0, 0, 0.3))
 
 fig23 = plot(fig2, fig3, layout=(2,1), link=:x)
 
 ### Maps of quasiclassical Wannier functions
 
-fig4 = heatmap(θ ./ π, phases ./ π, wf_hi[:, 2, :]', xformatter=_->"", ylabel=L"\varphi_t/\pi", title="x", cbartitle=L"|w_1(\Theta)|^2", c=CMAP, rightmargin=-10mm)
+w_map = Bandsolvers.make_wanniermap(w_lo, 2) .|> abs2
+fig4 = heatmap(θ ./ π, φₜ ./ π, w_map', xformatter=_->"", ylabel=L"\varphi_t/\pi", title="x", cbartitle=L"|w_1(\Theta)|^2", c=CMAP, rightmargin=-10mm)
 vspan!([0, 0.5, 1.5, 2], c=GREEN, label=L"\gamma=1", alpha=0.3)
 vspan!([0.5, 1.5], xformatter=_->"", c=BLUE, label=L"\gamma=2", alpha=0.3, widen=false, xlims=(0, 2), legend=(0.4, 0.2))
-fig5 = heatmap(θ ./ π, phases ./ π, wf_hi[:, 1, :]', xlabel=L"\Theta/\pi", ylabel=L"\varphi_t/\pi", cbartitle=L"|w_2(\Theta)|^2", c=CMAP, rightmargin=-10mm)
+w_map = Bandsolvers.make_wanniermap(w_lo, 1) .|> abs2
+fig5 = heatmap(θ ./ π, φₜ ./ π, w_map', xlabel=L"\Theta/\pi", ylabel=L"\varphi_t/\pi", cbartitle=L"|w_2(\Theta)|^2", c=CMAP, rightmargin=-10mm)
 vspan!([0, 0.5, 1.5, 2], c=GREEN, label=false, alpha=0.3)
 vspan!([0.5, 1.5], c=BLUE, label=false, alpha=0.3, widen=false, xlims=(0, 2))
 fig45 = plot(fig4, fig5, layout=(2,1), link=:x)

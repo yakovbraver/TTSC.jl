@@ -230,7 +230,7 @@ function compute_wannier_centres_qc_periodic(; phases::AbstractVector{<:Real}, s
         Base.permutecols!!(d, sp)       # sort the eigenvalues in the same way
         ε_hi[:, z] = [abs2.(dˣ) ⋅ energies[1:s, z] for dˣ in eachcol(d)]
         for i in 1:s
-            wf_hi[:, i, z] = abs2.(sum(d[j, i] * make_exp_state(θ, c[j]; n=2) for j = 1:s))
+            wf_hi[:, i, z] = abs2.(sum(d[j, i] * Bandsolvers.make_exp_state(θ, c[j]; N=2) for j = 1:s))
         end
 
         # Lower band
@@ -245,7 +245,7 @@ function compute_wannier_centres_qc_periodic(; phases::AbstractVector{<:Real}, s
         Base.permutecols!!(d, sp)       # sort the eigenvalues in the same way
         ε_lo[:, z] = [abs2.(dˣ) ⋅ energies[s+1:2s, z] for dˣ in eachcol(d)]
         for i in 1:s
-            wf_lo[:, i, z] = abs2.(sum(d[j, i] * make_exp_state(θ, c[j]; n=2) for j = 1:s))
+            wf_lo[:, i, z] = abs2.(sum(d[j, i] * Bandsolvers.make_exp_state(θ, c[j]; N=2) for j = 1:s))
         end
     end
     return energies, pos_lo, pos_hi, ε_lo, ε_hi, wf_lo, wf_hi
@@ -270,9 +270,13 @@ mutable struct SpatialWanniers
     d_hi::Vector{Matrix{ComplexF64}} # `d[j][:, i]` = 𝑖th wannier vector at 𝑗th phase
 end
 
-"A type representing the unperturbed Hamiltonian ℎ (2)."
+"""
+A type representing the unperturbed Hamiltonian
+    ℎ = 𝑝/2𝑀 + 𝑔ₗcos²(2𝑥) + 𝑉ₗcos²(𝑥 + 𝜑ₓ).
+"""
 mutable struct UnperturbedHamiltonian{T <: AbstractVector}
     N::Int # number of lattice cells
+    M::Float64
     l::Int
     gₗ::Float64
     Vₗ::Float64
@@ -289,7 +293,8 @@ end
 Construct an `UnperturbedHamiltonian` object. `maxband` is the highest energy band number to consider.
 Each band is assumed to contain 2 subbands, containing `2n_cells` levels in total.
 """
-function UnperturbedHamiltonian(n_cells::Integer; gₗ::Real, Vₗ::Real, maxband::Integer, isperiodic::Bool, phases::AbstractVector{<:Real}, l::Union{Nothing, Integer}=nothing)
+function UnperturbedHamiltonian(n_cells::Integer; M::Real, gₗ::Real, Vₗ::Real, maxband::Integer, isperiodic::Bool, phases::AbstractVector{<:Real},
+                                l::Union{Nothing, Integer}=nothing)
     bandsizes = (2n_cells - 1, 2n_cells + 1)
     # n_min = (n_min-1) ÷ 2 * 4n + (isodd(n_min) ? 1 : gs1 + 1)
     # convert max band number to level number
@@ -310,20 +315,20 @@ function UnperturbedHamiltonian(n_cells::Integer; gₗ::Real, Vₗ::Real, maxban
     d_hi = [ComplexF64[;;] for _ in eachindex(phases)]
     w = SpatialWanniers(0, E_lo, E_hi, pos_lo, pos_hi, d_lo, d_hi)
 
-    UnperturbedHamiltonian(Int(n_cells), (l === nothing ? 1 : l), Float64(gₗ), Float64(Vₗ), isperiodic, phases, maxlevel, bandsizes, E, c, w)
+    UnperturbedHamiltonian(Int(n_cells), Float64(M), (l === nothing ? 1 : l), Float64(gₗ), Float64(Vₗ), isperiodic, phases, maxlevel, bandsizes, E, c, w)
 end
 
 "Diagonalise the unperturbed Hamiltonian at each phase."
 function diagonalise!(uh::UnperturbedHamiltonian)
-    N, gₗ, Vₗ, maxlevel = uh.N, uh.gₗ, uh.Vₗ, uh.maxlevel
-    
-    if uh.isperiodic # diagonalise according to (A5) (this actually assumes +𝑉ₛ and +𝑉ₗ in (2))
-        h = diagm(0 => ComplexF64[(2j/N)^2 + (gₗ + Vₗ)/2 for j = -maxlevel:maxlevel])
+    N, M, gₗ, Vₗ, maxlevel = uh.N, uh.M, uh.gₗ, uh.Vₗ, uh.maxlevel
+    sortby = M > 0 ? (+) : (-) # eigenvalue sorting; for 𝑀 < 0 we use descending sorting
+    if uh.isperiodic
+        h = diagm(0 => ComplexF64[(2j/N)^2 / 2M + (gₗ + Vₗ)/2 for j = -maxlevel:maxlevel])
         h[diagind(h, -2N)] .= h[diagind(h, 2N)] .= gₗ/4
         for (i, ϕ) in enumerate(uh.phases)
             h[diagind(h, -N)] .= Vₗ/4 * cis(+2ϕ)
             h[diagind(h, +N)] .= Vₗ/4 * cis(-2ϕ)
-            f = eigen(h)
+            f = eigen(h; sortby)
             uh.E[:, i] = f.values[1:maxlevel]
             uh.c[:, :, i] = f.vectors[:, 1:maxlevel]
         end
@@ -340,23 +345,23 @@ function diagonalise!(uh::UnperturbedHamiltonian)
                     else
                         # check diagonals "\"
                         if j′ == j
-                            val += (gₗ + Vₗ)/2 + (j / N)^2
+                            val += (gₗ + Vₗ)/2 + (j / N)^2 / 2M
                         elseif j′ == j - 2N || j′ == j + 2N
-                            val += Vₗ/2 * cos(2ϕ) / 2
+                            val += Vₗ * cos(2ϕ) / 4
                         elseif j′ == j - 4N || j′ == j + 4N
-                            val += gₗ/2 / 2
+                            val += gₗ/4
                         end
                         # check anti-diagonals "/"
                         if j′ == -j - 2N || j′ == -j + 2N
-                            val += -Vₗ/2 * cos(2ϕ) / 2
+                            val += -Vₗ * cos(2ϕ) / 4
                         elseif j′ == -j - 4N || j′ == -j + 4N
-                            val += -gₗ/2 / 2
+                            val += -gₗ/4
                         end
                     end
                     h[j′, j] = h[j, j′] = val # push the element to the conjugate positions
                 end
             end
-            f = eigen(h)
+            f = eigen(h; sortby)
             uh.E[:, i] = f.values[1:maxlevel]
             uh.c[:, :, i] = f.vectors[:, 1:maxlevel]
         end
@@ -365,6 +370,7 @@ end
 
 """
 Calculate Wannier vectors for the unperturbed Hamiltonian using the energy eigenstates in the band number `targetband`.
+Note that if mass is negative (`uh.M < 0`), then `uh.w.E_lo`, `uh.w.pos_lo`, and `uh.w.pos_lo` will refer to the band whose energy is higher.
 """
 function compute_wanniers!(uh::UnperturbedHamiltonian; targetband::Integer)
     N = uh.N
@@ -472,6 +478,18 @@ function make_wannierfunctions(uh::UnperturbedHamiltonian, x::AbstractVector{<:R
         end
     end
     return w_lo, w_hi
+end
+
+"""
+Reshape the Wannier function `w` returned by [`make_wannierfunctions`](@ref) into a matrix for a fixed Wannier state number `n`.
+Return `w_map[:, i]` = `n`th Wannier function at `i`th phase.
+"""
+function make_wanniermap(w::Vector{Vector{Vector{T}}}, n::Integer) where T <: Number
+    w_map = Matrix{T}(undef, length(w[1][1]), length(w))
+    for i in eachindex(w)
+        w_map[:, i] = w[i][n]
+    end
+    return w_map
 end
 
 "Reconstruct the coordinate-space wavefunction 𝜓(𝑥) = ∑ⱼ𝑐ⱼexp(2i𝑗𝑥/𝑁) / √(𝑁π)"
