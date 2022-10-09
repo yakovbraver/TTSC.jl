@@ -1,263 +1,9 @@
-import BandedMatrices as BM
-using SparseArrays: sparse
-using KrylovKit: eigsolve
-using LinearAlgebra: eigen, eigvals, schur, ⋅, diagm, diagind
-using ProgressMeter
-
-"""
-Calculate `n_bands` of energy bands of Hamiltonian (S32) assuming infinite crystal with a quasimomentum 𝑞,
-    𝐻 = (𝑝 + 𝑞)²/2𝑀 + 𝜆ₗ𝐴ₗcos(𝑠𝑥 - 𝜒ₗ - φₜ) + 𝜆ₛ𝐴ₛcos(2𝑠𝑥 - 𝜒ₛ)
-on 𝑥 ∈ (0; π) sweeping over the adiabatic `phases` φₜ. Boundary conditions are periodic, hence the basis exp(i𝑗𝑥) / √2π is used.
-In the returned matrix of bands, columns enumerate the adiabatic phases, while rows enumerate eigenvalues.
-Rows `1:n_bands` store the eigenvalues corresponding to the centre of BZ, 𝑘 = 0.
-Rows `n_bands:end` store the eigenvalues corresponding to the boundary of BZ, in our case λₗAₗcos(sϑ+φₜ) leads to 𝑘 = s/2.
-"""
-function compute_qc_bands(; n_bands::Integer, phases::AbstractVector{<:Real}, s::Integer, M::Real, λₗAₗ::Real, λₛAₛ::Real, χₛ::Real, χₗ::Real)
-    n_j = 2n_bands # number of indices 𝑗 to use for constructing the Hamiltonian (its size will be (2n_j+1)×(2n_j+1))
-    
-    # Hamiltonian matrix
-    H = BM.BandedMatrix{ComplexF64}(undef, (2n_j + 1, 2n_j + 1), (2, 2))
-    H[BM.band(-2)] .= λₛAₛ * cis(-χₛ)
-    H[BM.band(+2)] .= λₛAₛ * cis(+χₛ)
-    
-    bands = Matrix{Float64}(undef, 2n_bands, length(phases))
-    for k in [0, s÷2] # iterate over the centre of BZ and then the boundary
-        H[BM.band(0)] .= [(2j + k)^2 / M for j = -n_j:n_j]
-        # `a` and `b` control where to place the eigenvalues depedning on `k`; see function docstring
-        a = (k > 0)*n_bands + 1 
-        b = a+n_bands - 1
-        for (i, ϕ) in enumerate(phases)
-            H[BM.band(-1)] .= λₗAₗ * cis(-χₗ - ϕ)
-            H[BM.band(+1)] .= λₗAₗ * cis(+χₗ + ϕ)
-            vals, _, _ = eigsolve(H, n_bands, :LR; krylovdim=n_bands+10)
-            bands[a:b, i] .= vals[1:n_bands]
-        end
-    end
-    return bands / 2 # restore the omitted factor
-end
-
-"""
-Calculate `n_levels` of energy levels of Hamiltonian (S32):
-    𝐻 = 𝑝²/2𝑀 + 𝜆ₗ𝐴ₗcos(𝑠𝑥 - 𝜒ₗ - φₜ) + 𝜆ₛ𝐴ₛcos(2𝑠𝑥 - 𝜒ₛ)
-on 𝑥 ∈ [0; 2π) sweeping over the adiabatic `phases` φₜ. Boundary conditions are periodic, hence the basis exp(i𝑗𝑥) / √2π is used.
-In the returned matrix of levels, columns enumerate the adiabatic phases, while rows enumerate eigenvalues.
-The eigenvectors are returned as a triple array: `eigvecs[p][n]` holds an eigenvector of `n`th eigenvalue at `p`th phase.
-"""
-function compute_qc_bands_pbc(; n_levels::Integer, phases::AbstractVector{<:Real}, s::Integer, M::Real, λₗAₗ::Real, λₛAₛ::Real, χₛ::Real, χₗ::Real)
-    n_j = 4n_levels # number of indices 𝑗 to use for constructing the Hamiltonian (its size will be (2n_j+1)×(2n_j+1))
-    # # Hamiltonian matrix
-    H = BM.BandedMatrix(BM.Zeros{ComplexF64}(2n_j + 1, 2n_j + 1), (2s, 2s))
-    H[BM.band(0)] .= [j^2 / M for j = -n_j:n_j]
-    H[BM.band(-2s)] .= λₛAₛ * cis(-χₛ)
-    H[BM.band(+2s)] .= λₛAₛ * cis(+χₛ)
-
-    levels = Matrix{Float64}(undef, n_levels, length(phases))
-    eigvecs = [[Vector{ComplexF64}(undef, 2n_j+1) for _ in 1:n_levels] for _ in 1:length(phases)]
-    for (i, ϕ) in enumerate(phases)
-        H[BM.band(-s)] .= λₗAₗ * cis(-χₗ - ϕ)
-        H[BM.band(s)]  .= λₗAₗ * cis(+χₗ + ϕ)
-        vals, vecs,  _ = eigsolve(H, n_levels, :LR; krylovdim=2n_levels)
-        levels[:, i] = vals[1:n_levels]
-        eigvecs[i] .= vecs[1:n_levels]
-    end
-    return levels / 2, eigvecs
-end
-
-"""
-Calculate `n_levels` of energy levels of Hamiltonian (S32):
-    𝐻 = 𝑝²/2𝑀 + 𝜆ₗ𝐴ₗcos(𝑠𝑥 - 𝜒ₗ - φₜ) + 𝜆ₛ𝐴ₛcos(2𝑠𝑥 - 𝜒ₛ)
-on 𝑥 ∈ [0; 2π) sweeping over the adiabatic `phases` φₜ. Boundary conditions are open, hence the basis sin(𝑗𝑥/𝑛) / √(𝑛π/2) is used.
-Parameter `n` is the number of cells in the lattice; 𝑗 runs from 0 to `5n_bands`.
-Return a tuple (`bands`, `states`): `bands[:, p]` stores eigenenergies at `p`th phase, while `states[p][:, m]` stores `m`th eigenvector at `p`th phase.
-Bands and states are sorted in energy-descending order so that for `M` negative, the bands of interest will be the first ones.
-`n_bands` is the number of bands of interest, but a larger Hamiltonian matrix is constructed (of size `5n_bands` × `5n_bands`)
-so that the bands of interest are calculated correctly. All `5n_bands` energy levels and eigenstates are returned.
-"""
-function compute_qc_bands_obc(; n_levels::Integer, phases::AbstractVector{<:Real}, s::Integer, M::Real, λₗAₗ::Real, λₛAₛ::Real, χₗ::Real, χₛ::Real)
-    X(j′, j, s) = 16s*j*j′ / (π*((j-j′)^2-4s^2)*((j+j′)^2-4s^2))
-    
-    n_j = 5n_levels # number of indices 𝑗 to use for constructing the Hamiltonian
-    H = zeros(n_j, n_j)
-    # for storing eigenstates and eigenvectors, see function docstring for format
-    bands = Matrix{Float64}(undef, n_j, length(phases))
-    states = [Matrix{Float64}(undef, n_j, n_j) for _ in 1:length(phases)]
-    for (i, ϕ) in enumerate(phases)
-        for j in 1:n_j
-            for j′ in j:n_j
-                val = 0.0
-                if isodd(j′ + j)
-                    val += -λₗAₗ*X(j′, j, s)*sin(χₗ + ϕ) - λₛAₛ*X(j′, j, 2s)*sin(χₛ)
-                else
-                    # check diagonals "\"
-                    if j′ == j
-                        val += j^2 / 8M
-                    elseif j′ == j - 2s || j′ == j + 2s
-                        val += λₗAₗ * cos(χₗ + ϕ) / 2
-                    elseif j′ == j - 4s || j′ == j + 4s
-                        val += λₛAₛ * cos(χₛ) / 2
-                    end
-                    # check anti-diagonals "/"
-                    if j′ == -j + 2s
-                        val += -λₗAₗ * cos(χₗ + ϕ) / 2
-                    elseif j′ == -j + 4s
-                        val += -λₛAₛ * cos(χₛ) / 2
-                    end
-                end
-                H[j′, j] = H[j, j′] = val # push the element to the conjugate positions
-            end
-        end
-        bands[:, i], states[i] = eigen(H, sortby=-) # sort in descending order
-    end
-    return bands, states
-end
-
-"""
-
-"""
-function compute_wannier_centres_qc(; n_levels::Integer, phases::AbstractVector{<:Real}, s::Integer, M::Real, λₗAₗ::Real, λₛAₛ::Real, χₗ::Real, χₛ::Real)
-    X(j′, j, s) = 16s*j*j′ / (π*((j-j′)^2-4s^2)*((j+j′)^2-4s^2))
-    
-    n_j = 5n_levels # number of indices 𝑗 to use for constructing the Hamiltonian
-    H = zeros(n_j, n_j)
-
-    n_w = 2s - 1 # number of Wannier levels
-    pos_lo = [Float64[] for _ in 1:length(phases)]
-    pos_hi = [Float64[] for _ in 1:length(phases)]
-    ε_lo = [Float64[] for _ in 1:length(phases)]
-    ε_hi = [Float64[] for _ in 1:length(phases)]
-
-    x = zeros(n_w÷2 + 1, n_w÷2 + 1)
-    
-    for (z, ϕ) in enumerate(phases)
-        for j in 1:n_j
-            for j′ in j:n_j
-                val = 0.0
-                if isodd(j′ + j)
-                    val += -λₗAₗ*X(j′, j, s)*sin(χₗ + ϕ) - λₛAₛ*X(j′, j, 2s)*sin(χₛ)
-                else
-                    # check diagonals "\"
-                    if j′ == j
-                        val += j^2 / 8M
-                    elseif j′ == j - 2s || j′ == j + 2s
-                        val += λₗAₗ * cos(χₗ + ϕ) / 2
-                    elseif j′ == j - 4s || j′ == j + 4s
-                        val += λₛAₛ * cos(χₛ) / 2
-                    end
-                    # check anti-diagonals "/"
-                    if j′ == -j + 2s
-                        val += -λₗAₗ * cos(χₗ + ϕ) / 2
-                    elseif j′ == -j + 4s
-                        val += -λₛAₛ * cos(χₛ) / 2
-                    end
-                end
-                H[j′, j] = H[j, j′] = val # push the element to the conjugate positions
-            end
-        end
-
-        f = eigen(H, sortby=-) # sort in descending order
-        # save only target states
-        energies = f.values[1:n_w]
-        
-        q = energies[n_w÷2+1] < (energies[n_w÷2] + energies[n_w÷2+2])/2 # true if the edge state branch is below the mean value
-
-        # Lower band
-        c = f.vectors[:, 1:(n_w÷2 + !q)]
-        n_levels = size(c, 2)
-        x = Matrix{Float64}(undef, n_levels, n_levels)
-        for n in 1:n_levels
-            for n′ in n:n_levels
-                x[n′, n] = x[n, n′] = 2*sum(c[j, n] * (π/2 * c[j, n′] - 8/π * sum(c[j′, n′]*j*j′/(j^2-j′^2)^2 for j′ = (iseven(j) ? 1 : 2):2:n_j)) for j = 1:n_j)
-            end
-        end
-        pos_lo[z], d = eigen(x)
-        ε_lo[z] = [dˣ.^2 ⋅ energies[1:(n_w÷2 + !q)] for dˣ in eachcol(d)]
-
-        # Higher band
-        c = f.vectors[:, (n_w÷2 + !q + 1):n_w]
-        n_levels = size(c, 2)
-        x = Matrix{Float64}(undef, n_levels, n_levels)
-        for n in 1:n_levels
-            for n′ in n:n_levels
-                x[n′, n] = x[n, n′] = 2*sum(c[j, n] * (π/2 * c[j, n′] - 8/π * sum(c[j′, n′]*j*j′/(j^2-j′^2)^2 for j′ = (iseven(j) ? 1 : 2):2:n_j)) for j = 1:n_j)
-            end
-        end
-        pos_hi[z], d = eigen(x)
-        ε_hi[z] = [dˣ.^2 ⋅ energies[(n_w÷2 + !q + 1):end] for dˣ in eachcol(d)]
-    end
-    return pos_lo, pos_hi, ε_lo, ε_hi
-end
-
-"""
-
-"""
-function compute_wannier_centres_qc_periodic(; phases::AbstractVector{<:Real}, s::Integer, M::Real, λₗAₗ::Real, λₛAₛ::Real, χₛ::Real, χₗ::Real)
-    n_j = 4s
-
-    h = BM.BandedMatrix(BM.Zeros{ComplexF64}(2n_j + 1, 2n_j + 1), (2s, 2s))
-    h[BM.band(0)] .= [j^2 / M for j = -n_j:n_j]
-    h[BM.band(-2s)] .= λₛAₛ * cis(-χₛ)
-    h[BM.band(+2s)] .= λₛAₛ * cis(+χₛ)
-
-    energies = Matrix{Float64}(undef, 2s, length(phases))
-
-    θ = range(0, 2π, length=40s) # x's for wavefunctions
-    pos_lo = Matrix{Float64}(undef, s, length(phases))
-    pos_hi = Matrix{Float64}(undef, s, length(phases))
-    ε_lo = Matrix{Float64}(undef, s, length(phases))
-    ε_hi = Matrix{Float64}(undef, s, length(phases))
-    wf_lo = Array{Float64,3}(undef, length(θ), s, length(phases))
-    wf_hi = Array{Float64,3}(undef, length(θ), s, length(phases))
-
-    x = Matrix{ComplexF64}(undef, s, s) # position operator
-    d = Matrix{ComplexF64}(undef, s, s) # matrix of eigenvectors of the position operator
-    pos_complex = Vector{Float64}(undef, s) # eigenvalues of the position operator; we will be taking their angles
-    
-    for (z, ϕ) in enumerate(phases)
-        h[BM.band(-s)] .= λₗAₗ * cis(-χₗ - ϕ)
-        h[BM.band(+s)] .= λₗAₗ * cis(+χₗ + ϕ)
-        f = eigsolve(h, 2s, :LR; krylovdim=n_j)
-        energies[:, z] = f[1][1:2s] ./ 2 # restore the overal factor 1/2 of the Hamiltonian
-        
-        # Higher band
-        c = view(f[2], 1:s)
-        for n in 1:s, n′ in 1:s
-            x[n′, n] = sum(c[n′][j+1]' * c[n][j] for j = 1:2n_j) 
-        end
-        _, d, pos_complex = schur(x)
-        pos_real = angle.(pos_complex) .+ π
-        sp = sortperm(pos_real)
-        pos_hi[:, z] = pos_real[sp]
-        Base.permutecols!!(d, sp)       # sort the eigenvalues in the same way
-        ε_hi[:, z] = [abs2.(dˣ) ⋅ energies[1:s, z] for dˣ in eachcol(d)]
-        for i in 1:s
-            wf_hi[:, i, z] = abs2.(sum(d[j, i] * Bandsolvers.make_exp_state(θ, c[j]; N=2) for j = 1:s))
-        end
-
-        # Lower band
-        c = view(f[2], 1+s:2s)
-        for n in 1:s, n′ in 1:s
-            x[n′, n] = sum(c[n′][j+1]' * c[n][j] for j = 1:2n_j) 
-        end
-        _, d, pos_complex = schur(x)
-        pos_real = angle.(pos_complex) .+ π
-        sp = sortperm(pos_real)
-        pos_lo[:, z] = pos_real[sp]
-        Base.permutecols!!(d, sp)       # sort the eigenvalues in the same way
-        ε_lo[:, z] = [abs2.(dˣ) ⋅ energies[s+1:2s, z] for dˣ in eachcol(d)]
-        for i in 1:s
-            wf_lo[:, i, z] = abs2.(sum(d[j, i] * Bandsolvers.make_exp_state(θ, c[j]; N=2) for j = 1:s))
-        end
-    end
-    return energies, pos_lo, pos_hi, ε_lo, ε_hi, wf_lo, wf_hi
-end
-
 module Bandsolvers
 
 import BandedMatrices as BM
 using SparseArrays: sparse
 using KrylovKit: eigsolve
 using LinearAlgebra: eigen, eigvals, schur, ⋅, diagm, diagind, ishermitian
-using ProgressMeter
 
 "A type representing the spatial Wannier functions."
 mutable struct SpatialWanniers
@@ -381,6 +127,7 @@ function compute_wanniers!(uh::UnperturbedHamiltonian; targetband::Integer)
     if uh.isperiodic
         X = Matrix{ComplexF64}(undef, N, N) # position operator
         pos_complex = Vector{ComplexF64}(undef, N) # allocate a vector for storing eigenvalues of the position operator; will be taking their angles
+        pos_real = Vector{Float64}(undef, N)
         
         for i in eachindex(uh.phases)
             # Lower band
@@ -392,7 +139,10 @@ function compute_wanniers!(uh::UnperturbedHamiltonian; targetband::Integer)
             # `eigen` does not guarantee orthogonality of eigenvectors in case of degeneracies for `X` unitary, so use `schur`
             # (although a degeneracy of coordinates eigenvalues is unlikely here)
             _, uh.w.d_lo[i], pos_complex[:] = schur(X)
-            uh.w.pos_lo[i] = sort(@. mod2pi(angle(pos_complex)) / 2π * N*π) # `mod2pi` converts the angle from [-π, π) to [0, 2π)
+            @. pos_real = mod2pi(angle(pos_complex)) / 2π * N*π # `mod2pi` converts the angle from [-π, π) to [0, 2π)
+            sp = sortperm(pos_real)                 # sort the eigenvalues
+            uh.w.pos_lo[i] = pos_real[sp]
+            Base.permutecols!!(uh.w.d_lo[i], sp)    # sort the eigenvectors in the same way
             uh.w.E_lo[i] = [abs2.(dˣ) ⋅ uh.E[minlevel:minlevel+N-1, i] for dˣ in eachcol(uh.w.d_lo[i])]
 
             # Higher band
@@ -402,7 +152,10 @@ function compute_wanniers!(uh::UnperturbedHamiltonian; targetband::Integer)
                 end
             end
             _, uh.w.d_hi[i], pos_complex[:] = schur(X)
-            uh.w.pos_hi[i] = sort(@. mod2pi(angle(pos_complex)) / 2π * N*π)
+            @. pos_real = mod2pi(angle(pos_complex)) / 2π * N*π # `mod2pi` converts the angle from [-π, π) to [0, 2π)
+            sp = sortperm(pos_real)                 # sort the eigenvalues
+            uh.w.pos_hi[i] = pos_real[sp]
+            Base.permutecols!!(uh.w.d_hi[i], sp)    # sort the eigenvectors in the same way
             uh.w.E_hi[i] = [abs2.(dˣ) ⋅ uh.E[minlevel+N:minlevel+2N-1, i] for dˣ in eachcol(uh.w.d_hi[i])]
         end
     else
@@ -444,7 +197,7 @@ end
 
 """
 Construct energy eigenfunctions `ψ` at coordinates in `x` for each eigenstate number in `whichstates` at each phase number in `whichphases`.
-Return `ψ`, where `ψ[:, j, i]` = 𝑗th wavefunction at 𝑖th phase.
+Return `ψ`, where `ψ[:, j, i]` = `j`th wavefunction at `i`th phase.
 """
 function make_eigenfunctions(uh::UnperturbedHamiltonian, x::AbstractVector{<:Real}, whichphases::AbstractVector{<:Integer}, whichstates::AbstractVector{<:Integer})
     ψ = Array{ComplexF64,3}(undef, length(x), length(whichstates), length(whichphases))
@@ -459,7 +212,7 @@ end
 
 """
 Construct Wannier functions `w_lo` and `w_hi` at coordinates in `x` at each phase number in `whichphases`. All Wannier functions contained in `uh` are constructed.
-Return `(w_lo, w_hi)`, where `w_xx[i][j]` = 𝑗th Wannier function at 𝑖th phase.
+Return `(w_lo, w_hi)`, where `w_xx[i][j]` = `j`th Wannier function at `i`th phase.
 """
 function make_wannierfunctions(uh::UnperturbedHamiltonian, x::AbstractVector{<:Real}, whichphases::AbstractVector{<:Integer})
     w_lo = [Vector{Vector{ComplexF64}}() for _ in eachindex(whichphases)]
@@ -482,7 +235,7 @@ end
 
 """
 Reshape the Wannier function `w` returned by [`make_wannierfunctions`](@ref) into a matrix for a fixed Wannier state number `n`.
-Return `w_map[:, i]` = `n`th Wannier function at `i`th phase.
+Return `w_map`, where `w_map[:, i]` = `n`th Wannier function at `i`th phase.
 """
 function make_wanniermap(w::Vector{Vector{Vector{T}}}, n::Integer) where T <: Number
     w_map = Matrix{T}(undef, length(w[1][1]), length(w))
