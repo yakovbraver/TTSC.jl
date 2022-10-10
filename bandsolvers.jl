@@ -118,7 +118,7 @@ end
 Calculate Wannier vectors for the unperturbed Hamiltonian using the energy eigenstates in the band number `targetband`.
 Note that if mass is negative (`uh.M < 0`), then `uh.w.E_lo`, `uh.w.pos_lo`, and `uh.w.pos_lo` will refer to the band whose energy is higher.
 """
-function compute_wanniers!(uh::UnperturbedHamiltonian, targetband::Integer)
+function compute_wanniers!(uh::UnperturbedHamiltonian; targetband::Integer)
     N = uh.N
 
     minlevel = (targetband-1) * 2N + 1
