@@ -11,7 +11,7 @@ phases = [range(0, pi/4-0.1, length=10); range(pi/4-0.01, pi/4+0.01, length=10);
           range(pi/4+0.1, 3pi/4-0.1, length=20); range(3pi/4-0.01, 3pi/4+0.01, length=10);
           range(3pi/4+0.1, pi, length=10)]
 n_cells = 3
-gₗ = -20; Vₗ = -30
+gₗ = -20; Vₗ = -30  # gₗ = -20; Vₗ = -30 corresponds exactly to the system in Nakajima et al. (https://www.nature.com/articles/nphys3622)
 
 h = Bandsolvers.UnperturbedHamiltonian(n_cells; M=1/2, gₗ, Vₗ, phases, maxband=2, isperiodic=true)
 Bandsolvers.diagonalise!(h)
@@ -32,7 +32,6 @@ for (i, ϕ) in enumerate(phases)
     scatter!(h.w.pos_hi[i], fill(ϕ, n_cells); marker_z=h.w.E_hi[i], c=:coolwarm, label=false, markerstrokewidth=0)
 end
 plot!(minorgrid=true, xlabel=L"z", ylabel=L"\phi", cbtitle="Energy", title=L"(V_S, V_L) = (%$(-gₗ), %$(-Vₗ))"*"; periodic")
-savefig("nakajima-wannier-periodic.pdf")
 
 # Wannier functions
 x = range(0, n_cells*π, length=50n_cells)
@@ -64,7 +63,6 @@ for r in eachrow(h.E)
     plot!(phases, r, label=false)
 end
 plot!(xlabel=L"\phi", ylabel="Energy", title=L"(V_S, V_L) = (%$(-gₗ), %$(-Vₗ))", ylims=(-Inf, 0))
-savefig("nakajima-spectrum.pdf")
 
 # Wavefunctions
 iϕ = 46; ϕ_str = L"\phi = 3\pi/4"
@@ -77,7 +75,6 @@ i = 3 # state number
 ψ = 4abs2.(Bandsolvers.make_eigenfunctions(h, x, [iϕ], [i])) .+ h.E[i, iϕ]
 hline!([h.E[i, iϕ]], c=:white, ls=:dot, lw=0.5, label=false)
 plot!(x ./ π, ψ[:, 1, 1], label=false, title=ϕ_str, xlabel="z", ylabel="Energy")
-savefig("wf-phi-3pi4.pdf")
 
 # Wannier centres
 n_cells = 3
@@ -93,7 +90,6 @@ for (i, ϕ) in enumerate(phases)
     scatter!(h.w.pos_hi[i], fill(ϕ, length(h.w.pos_hi[i])); marker_z=h.w.E_hi[i], c=:coolwarm, label=false, markerstrokewidth=0)
 end
 plot!(minorgrid=true, xlabel=L"z", ylabel=L"\phi", cbtitle="Energy", title=L"(V_S, V_L) = (%$(-gₗ), %$(-Vₗ))"*"; non-periodic")
-savefig("nakajima-wannier.pdf")
 
 x = range(0, n_cells*π, length=50n_cells)
 w_lo, w_hi = Bandsolvers.make_wannierfunctions(h, x, 1:length(phases))
