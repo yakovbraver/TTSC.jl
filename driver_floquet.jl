@@ -54,7 +54,6 @@ for r in eachrow(h.E)
 end
 plot!(xlabel=L"\phi_x", ylabel="Energy")
 
-
 H = Bandsolvers.FloquetHamiltonian(h; s, λₛ, λₗ, ω, pumptype=:space, minband=1)
 Bandsolvers.diagonalise!(H)
 
@@ -65,9 +64,19 @@ for r in eachrow(H.E)
 end
 plot!(xlabel=L"\phi_x", ylabel="Quasienergy")
 
+# Ordered quasienergy spectrum
+E_ordered = Bandsolvers.order_floquet_levels(H)
+fig = plot();
+for (i, r) in enumerate(eachrow(E_ordered))
+    n = i + H.minlevel - 1
+    b = (n - 1) ÷ 2n_cells + 1
+    plot!(phases, r, label="band $b, level $n", c=b)
+end
+plot!(xlabel=L"\phi_x", ylabel="Quasienergy")
+
 # Maps of Floquet modes
-x = range(0, n_cells*pi, length=50n_cells) # x's for wavefunctions
-Ωt = range(0, 2π, length=40s) # time moments for wavefunctions: 𝛺𝑡 ∈ [0; 2π]
+x = range(0, n_cells*pi, length=50n_cells)
+Ωt = range(0, 2π, length=40s)
 iϕ = 1
 whichstates = 1:4
 u = Bandsolvers.make_eigenfunctions(H, x, Ωt, [iϕ], whichstates) .|> abs2
