@@ -63,8 +63,19 @@ fig = plot();
 for r in eachrow(H.E)
     plot!(phases, r, label=false)
 end
-plot!(xlabel=L"\phi_x", ylabel="Quyasienergy")
+plot!(xlabel=L"\phi_x", ylabel="Quasienergy")
 
+# Maps of Floquet modes
+x = range(0, n_cells*pi, length=50n_cells) # x's for wavefunctions
+Ωt = range(0, 2π, length=40s) # time moments for wavefunctions: 𝛺𝑡 ∈ [0; 2π]
+iϕ = 1
+whichstates = 1:4
+u = Bandsolvers.make_eigenfunctions(H, x, Ωt, [iϕ], whichstates) .|> abs2
+figs = [plot() for _ in eachindex(whichstates)]
+for (f, n) in enumerate(whichstates)
+    figs[f] = heatmap(x, Ωt, u[:, :, n, iϕ]', xlabel=L"x", ylabel=L"\Omega t", c=:viridis, title="Mode $n")
+end
+plot(figs...)
 
 # # Wannier centres
 # pyplot()

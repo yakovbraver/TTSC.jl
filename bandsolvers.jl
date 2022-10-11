@@ -397,7 +397,7 @@ function diagonalise!(fh::FloquetHamiltonian)
                 m′ = 2N*(s + ν(m) - 1) + g
                 e′ = m′ - fh.minlevel + 1
                 e′ > n_levels && break
-                if pumptype != :time || i == 1 # If pumping is time-only, this may be calculated only once
+                if pumptype != :time || i == 1 # if pumping is time-only, this may be calculated only once, at `i` = 1
                     j_sum = sum( (                 2c[j, m′, i] + c[j+2N, m′, i])' * c[j, m, i] for j = 1:2N ) +
                             sum( (c[j-2N, m′, i] + 2c[j, m′, i] + c[j+2N, m′, i])' * c[j, m, i] for j = 2N+1:n_j-2N ) + 
                             sum( (c[j-2N, m′, i] + 2c[j, m′, i]                 )' * c[j, m, i] for j = n_j-2N+1:n_j )
@@ -414,7 +414,7 @@ function diagonalise!(fh::FloquetHamiltonian)
                 m′ = 2N*(2s + ν(m) - 1) + g
                 e′ = m′ - fh.minlevel + 1
                 e′ > n_levels && break
-                if pumptype != :time || i == 1 # If pumping is time-only, this may be calculated only once
+                if pumptype != :time || i == 1 # if pumping is time-only, this may be calculated only once, at `i` = 1
                     j_sum = sum( (                  2c[j, m′, i] - c[j+2N, m′, i])' * c[j, m, i] for j = 1:2N ) +
                             sum( (-c[j-2N, m′, i] + 2c[j, m′, i] - c[j+2N, m′, i])' * c[j, m, i] for j = 2N+1:n_j-2N ) + 
                             sum( (-c[j-2N, m′, i] + 2c[j, m′, i]                 )' * c[j, m, i] for j = n_j-2N+1:n_j )
@@ -473,6 +473,30 @@ function diagonalise!(fh::FloquetHamiltonian)
         #     end
         # end
     end
+end
+
+"""
+Construct Floquet modes at coordinates in `x` and time moments in `Ωt` for each tate number in `whichstates` at each phase number in `whichphases`.
+Return `u`, where `u[ix, it, j, i]` = `j`th wavefunction at `i`th phase at `ix`th coordinate at `it`th time moment.
+"""
+function make_eigenfunctions(fh::FloquetHamiltonian, x::AbstractVector{<:Real}, Ωt::AbstractVector{<:Real}, whichphases::AbstractVector{<:Integer},
+                             whichstates::AbstractVector{<:Integer})
+    u = Array{ComplexF64,4}(undef, length(x), length(Ωt), length(whichstates), length(whichphases))
+    n_levels = size(fh.E, 1) # number of Floquet levels; equivalently, number of levels of ℎ used for constructing ℋ
+    ψ = Array{ComplexF64,2}(undef, length(x), n_levels) # for storing eigenfunctions of ℎ, which are mixed during construction of `u`
+    ν(m) = ceil(Int, m/2fh.uh.N)
+    make_state = fh.uh.isperiodic ? make_exp_state : make_sin_state
+    for (i, iϕ) in enumerate(whichphases)
+        for m in 1:n_levels
+            ψ[:, m] = make_state(x, fh.uh.c[:, fh.minlevel+m-1, iϕ]; N=fh.uh.N)
+        end
+        for (j, js) in enumerate(whichstates)
+            for (it, t) in enumerate(Ωt)
+                u[:, it, j, i] = sum(cis(-ν(m)*t) * ψ[:, m] * fh.b[m, js, iϕ] for m in 1:n_levels)
+            end
+        end
+    end
+    return u
 end
 
 end
