@@ -4,31 +4,30 @@ import BandedMatrices as BM
 using SparseArrays: sparse
 using KrylovKit: eigsolve
 using LinearAlgebra: eigen, eigvals, schur, ⋅, diagm, diagind
-using UnPack
 
 "A type representing the spatial Wannier functions."
 mutable struct SpatialWanniers
     minlevel::Int # number of the first energy level to use for constructing wanniers
-    E_lo::Vector{Vector{Float64}} # `E[j][i]` = mean energy of 𝑖th wannier at 𝑗th phase
-    E_hi::Vector{Vector{Float64}} # `E[j][i]` = mean energy of 𝑖th wannier at 𝑗th phase
-    pos_lo::Vector{Vector{Float64}} # `pos[j][i]` = position eigenvalue of 𝑖th wannier at 𝑗th phase
-    pos_hi::Vector{Vector{Float64}} # `pos[j][i]` = position eigenvalue of 𝑖th wannier at 𝑗th phase
-    d_lo::Vector{Matrix{ComplexF64}} # `d[j][:, i]` = 𝑖th wannier vector at 𝑗th phase
-    d_hi::Vector{Matrix{ComplexF64}} # `d[j][:, i]` = 𝑖th wannier vector at 𝑗th phase
+    E_lo::Vector{Vector{Float64}} # `E[j][i]` = mean energy of `i`th wannier at `j`th phase; use nested arrays because in non-periodic case
+    E_hi::Vector{Vector{Float64}} #               the number of wanniers in each subband varies depending on the edge state branch position
+    pos_lo::Vector{Vector{Float64}} # `pos[j][i]` = position eigenvalue of `i`th wannier at `j`th phase
+    pos_hi::Vector{Vector{Float64}}
+    d_lo::Vector{Matrix{ComplexF64}} # `d[j][:, i]` = 𝑖th wannier vector at `j`th phase
+    d_hi::Vector{Matrix{ComplexF64}}
 end
 
 """
 A type representing the unperturbed Hamiltonian
     ℎ = 𝑝/2𝑀 + 𝑔ₗcos²(2𝑥) + 𝑉ₗcos²(𝑥 + 𝜑ₓ).
 """
-mutable struct UnperturbedHamiltonian{T <: AbstractVector}
+mutable struct UnperturbedHamiltonian
     N::Int # number of lattice cells
     M::Float64
     l::Int
     gₗ::Float64
     Vₗ::Float64
     isperiodic::Bool
-    phases::T     # values of the spatial adiabatic phases 𝜑ₓ; parameterised to store e.g. a vector or a range
+    phases::Vector{Float64}   # values of the spatial adiabatic phases 𝜑ₓ
     maxlevel::Int # highest level number to consider
     bandsizes::Tuple{Int, Int} # = (number of levels in the first band, number of levels in the second band)
     E::Matrix{Float64}      # `E[i, j]` = `i`th eigenvalue at `j`th phase, `i = 1:maxlevel`
@@ -43,7 +42,7 @@ Each band is assumed to consist of 2 subbands containing `2n_cells` levels in to
 function UnperturbedHamiltonian(n_cells::Integer; M::Real, gₗ::Real, Vₗ::Real, maxband::Integer, isperiodic::Bool, phases::AbstractVector{<:Real},
                                 l::Union{Nothing, Integer}=nothing)
     bandsizes = (2n_cells - 1, 2n_cells + 1)
-    # n_min = (n_min-1) ÷ 2 * 4n + (isodd(n_min) ? 1 : gs1 + 1)
+
     # convert max band number to level number
     if isperiodic
         maxlevel = maxband * 2n_cells
@@ -62,12 +61,13 @@ function UnperturbedHamiltonian(n_cells::Integer; M::Real, gₗ::Real, Vₗ::Rea
     d_hi = [ComplexF64[;;] for _ in eachindex(phases)]
     w = SpatialWanniers(0, E_lo, E_hi, pos_lo, pos_hi, d_lo, d_hi)
 
-    UnperturbedHamiltonian(Int(n_cells), Float64(M), (l === nothing ? 1 : l), Float64(gₗ), Float64(Vₗ), isperiodic, phases, maxlevel, bandsizes, E, c, w)
+    UnperturbedHamiltonian(Int(n_cells), Float64(M), (l === nothing ? 1 : l), Float64(gₗ), Float64(Vₗ), isperiodic,
+                           collect(Float64, phases), maxlevel, bandsizes, E, c, w)
 end
 
 "Diagonalise the unperturbed Hamiltonian at each phase."
 function diagonalise!(uh::UnperturbedHamiltonian)
-    N, M, gₗ, Vₗ, maxlevel = uh.N, uh.M, uh.gₗ, uh.Vₗ, uh.maxlevel
+    (;N, M, gₗ, Vₗ, maxlevel) = uh
     sortby = M > 0 ? (+) : (-) # eigenvalue sorting; for 𝑀 < 0 we use descending sorting
     if uh.isperiodic
         h = diagm(0 => ComplexF64[(2j/N)^2 / 2M + (gₗ + Vₗ)/2 for j = -maxlevel:maxlevel])
@@ -369,7 +369,7 @@ function diagonalise!(fh::FloquetHamiltonian)
 
     H = zeros(ComplexF64, n_levels, n_levels) # Floquet Hamiltonian matrix
 
-    for (z, ϕ) in enumerate(fh.uh.phases)
+    for (i, ϕ) in enumerate(fh.uh.phases)
             # # construct coordinate representation of eigenfunctions and compute products of `c`'s that will be needed multiple times
             # for m in 1:n_levels
             #     ψ[:, m] = make_exp_state(coords, c[:, m]; n=N)
@@ -389,20 +389,20 @@ function diagonalise!(fh::FloquetHamiltonian)
             e = m - fh.minlevel + 1
 
             # for time-only pumping, always take the eigenenergies at the first phase, corresponding to 𝜑ₓ = 0
-            p = pumptype == :time ? 1 : z
+            p = (pumptype == :time ? 1 : i)
             H[e, e] = E[m, p] - ν(m)*ω/s
 
             # place the elements of the long lattice
-            for i in 1:2N
-                m′ = 2N*(s + ν(m) - 1) + i
+            for g in 1:2N
+                m′ = 2N*(s + ν(m) - 1) + g
                 e′ = m′ - fh.minlevel + 1
                 e′ > n_levels && break
-                if pumptype != :time || z == 1 # If pumping is time-only, this may be calculated only once
-                    j_sum = sum( (                 2c[j, m′, z] + c[j+2N, m′, z])' * c[j, m, z] for j = 1:2N ) +
-                            sum( (c[j-2N, m′, z] + 2c[j, m′, z] + c[j+2N, m′, z])' * c[j, m, z] for j = 2N+1:n_j-2N ) + 
-                            sum( (c[j-2N, m′, z] + 2c[j, m′, z]                 )' * c[j, m, z] for j = n_j-2N+1:n_j )
-                    # if pumping is space-time, then multiply by cis(-𝜑ₜ). Here, `ϕ` runs over the spatial phases 𝜑ₓ,
-                    H[e′, e] = λₗ/8 * j_sum * (pumptype == :space ? 1 : cis(-2ϕ))  # and we assume the pumping protocol 𝜑ₜ = 2𝜑ₓ
+                if pumptype != :time || i == 1 # If pumping is time-only, this may be calculated only once
+                    j_sum = sum( (                 2c[j, m′, i] + c[j+2N, m′, i])' * c[j, m, i] for j = 1:2N ) +
+                            sum( (c[j-2N, m′, i] + 2c[j, m′, i] + c[j+2N, m′, i])' * c[j, m, i] for j = 2N+1:n_j-2N ) + 
+                            sum( (c[j-2N, m′, i] + 2c[j, m′, i]                 )' * c[j, m, i] for j = n_j-2N+1:n_j )
+                    # if pumping is space-time, then also multiply by cis(-𝜑ₜ). `ϕ` runs over the spatial phases 𝜑ₓ,
+                    H[e′, e] = (pumptype == :space ? λₗ/8 * j_sum : λₗ/8 * j_sum * cis(-2ϕ)) # and we assume the pumping protocol 𝜑ₜ = 2𝜑ₓ
                 elseif pumptype == :time 
                     H[e′, e] *= cis(-2(phases[2]-phases[1]))
                 end
@@ -410,22 +410,20 @@ function diagonalise!(fh::FloquetHamiltonian)
             end
             
             # place the elements of the short lattice
-            for i in 1:2N
-                m′ = 2N*(2s + ν(m) - 1) + i
+            for g in 1:2N
+                m′ = 2N*(2s + ν(m) - 1) + g
                 e′ = m′ - fh.minlevel + 1
                 e′ > n_levels && break
-                if pumptype != :time || z == 1 # If pumping is time-only, this may be calculated only once
-                    j_sum = sum( (                  2c[j, m′, z] - c[j+2N, m′, z])' * c[j, m, z] for j = 1:2N ) +
-                            sum( (-c[j-2N, m′, z] + 2c[j, m′, z] - c[j+2N, m′, z])' * c[j, m, z] for j = 2N+1:n_j-2N ) + 
-                            sum( (-c[j-2N, m′, z] + 2c[j, m′, z]                 )' * c[j, m, z] for j = n_j-2N+1:n_j )
+                if pumptype != :time || i == 1 # If pumping is time-only, this may be calculated only once
+                    j_sum = sum( (                  2c[j, m′, i] - c[j+2N, m′, i])' * c[j, m, i] for j = 1:2N ) +
+                            sum( (-c[j-2N, m′, i] + 2c[j, m′, i] - c[j+2N, m′, i])' * c[j, m, i] for j = 2N+1:n_j-2N ) + 
+                            sum( (-c[j-2N, m′, i] + 2c[j, m′, i]                 )' * c[j, m, i] for j = n_j-2N+1:n_j )
                     H[e′, e] = λₛ/8 * j_sum
                 end
                 H[e, e′] = H[e′, e]'
             end
         end
-        # f = eigen(H, sortby=x->-real(x))
-        # E[:, z] .= real.(f.values[1:n_levels]) # save all Floquet quasienergies for plotting the spectrum
-        fh.E[:, z], fh.b[:, :, z] = eigen(H, sortby=-)
+        fh.E[:, i], fh.b[:, :, i] = eigen(H, sortby=-)
 
         # ### Wannier centres
         
