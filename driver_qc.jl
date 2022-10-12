@@ -58,26 +58,23 @@ plot!(xlabel=L"\phi_t", ylabel="Energy")
 
 # Wannier centres
 pyplot()
-Bandsolvers.compute_wanniers!(h, targetband=1)
+Bandsolvers.compute_wanniers!(h; targetband=1)
 fig = plot();
 for (i, ϕ) in enumerate(φₜ)
-    scatter!(h.w.pos_lo[i], fill(ϕ, n_cells); marker_z=h.w.E_lo[i], c=:coolwarm, label=false, markerstrokewidth=0)
-    scatter!(h.w.pos_hi[i], fill(ϕ, n_cells); marker_z=h.w.E_hi[i], c=:coolwarm, label=false, markerstrokewidth=0)
+    scatter!(h.w.pos[:, i], fill(ϕ, 2n_cells); marker_z=h.w.E[:, i], c=:coolwarm, label=false, markerstrokewidth=0)
 end
 plot!(minorgrid=true, xlabel=L"x", ylabel=L"\phi_t", cbtitle="Energy")
 
 # Wannier functions
 x = range(0, n_cells*π, length=50n_cells)
-w_lo, w_hi = Bandsolvers.make_wannierfunctions(h, x, 1:length(φₜ))
+_, w = Bandsolvers.make_wannierfunctions(h, x, 1:length(φₜ))
 p = Progress(length(φₜ), 1)
 @gif for (i, ϕ) in enumerate(φₜ)
     U = @. -λₛ*Aₛ*cos(4x) + λₗ*Aₗ*cos(2x - ϕ) + H.𝐸(Iₛ) - ω/s*Iₛ
     plot(x, U, label=false, ylims=(-5610, -5575))
-    scatter!(h.w.pos_lo[i], h.w.E_lo[i]; marker_z=h.w.E_lo[i], c=:coolwarm, label=false, markerstrokewidth=0, clims=(-5610, -5575))
-    scatter!(h.w.pos_hi[i], h.w.E_hi[i]; marker_z=h.w.E_hi[i], c=:coolwarm, label=false, markerstrokewidth=0)
-    for j in 1:n_cells
-        plot!(x, 4abs2.(w_lo[i][j]) .+ h.w.E_lo[i][j], label=false)
-        plot!(x, 4abs2.(w_hi[i][j]) .+ h.w.E_hi[i][j], label=false)
+    scatter!(h.w.pos[:, i], h.w.E[:, i]; marker_z=h.w.E[:, i], c=:coolwarm, label=false, markerstrokewidth=0, clims=(-5610, -5575))
+    for j in 1:size(w, 2)
+        plot!(x, 4abs2.(w[:, j, i]) .+ h.w.E[j, i], label=false)
     end
     next!(p)
 end
@@ -91,7 +88,7 @@ h.E .+= -(gₗ + Vₗ)/2 + H.𝐸(Iₛ) - ω/s*Iₛ
 # Energy spectrum
 fig = plot();
 for r in eachrow(h.E)
-    plot!(phases, r, label=false)
+    plot!(φₜ, r, label=false)
 end
 plot!(xlabel=L"\phi_t", ylabel="Energy")
 
@@ -100,24 +97,19 @@ Bandsolvers.compute_wanniers!(h; targetband=1)
 
 fig = plot();
 for (i, ϕ) in enumerate(φₜ)
-    scatter!(h.w.pos_lo[i], fill(ϕ, length(h.w.pos_lo[i])); marker_z=h.w.E_lo[i], c=:coolwarm, label=false, markerstrokewidth=0)
-    scatter!(h.w.pos_hi[i], fill(ϕ, length(h.w.pos_hi[i])); marker_z=h.w.E_hi[i], c=:coolwarm, label=false, markerstrokewidth=0)
+    scatter!(h.w.pos[:, i], fill(ϕ, size(h.w.pos, 1)); marker_z=h.w.E[:, i], c=:coolwarm, label=false, markerstrokewidth=0)
 end
 plot!(minorgrid=true, xlabel=L"z", ylabel=L"\phi_t", cbtitle="Energy")
 
 x = range(0, n_cells*π, length=50n_cells)
-w_lo, w_hi = Bandsolvers.make_wannierfunctions(h, x, 1:length(φₜ))
+_, w = Bandsolvers.make_wannierfunctions(h, x, 1:length(φₜ))
 p = Progress(length(φₜ), 1)
 @gif for (i, ϕ) in enumerate(φₜ)
     U = @. -λₛ*Aₛ*cos(4x) + λₗ*Aₗ*cos(2x - ϕ) + H.𝐸(Iₛ) - ω/s*Iₛ
     plot(x, U, label=false, ylims=(-5610, -5575))
-    scatter!(h.w.pos_lo[i], h.w.E_lo[i]; marker_z=h.w.E_lo[i], c=:coolwarm, label=false, markerstrokewidth=0, clims=(-5610, -5575))
-    scatter!(h.w.pos_hi[i], h.w.E_hi[i]; marker_z=h.w.E_hi[i], c=:coolwarm, label=false, markerstrokewidth=0)
-    for j in eachindex(w_lo[i])
-        plot!(x, 4abs2.(w_lo[i][j]) .+ h.w.E_lo[i][j], label=false)
-    end
-    for j in eachindex(w_hi[i])
-        plot!(x, 4abs2.(w_hi[i][j]) .+ h.w.E_hi[i][j], label=false)
+    scatter!(h.w.pos[:, i], h.w.E[:, i]; marker_z=h.w.E[:, i], c=:coolwarm, label=false, markerstrokewidth=0, clims=(-5610, -5575))
+    for j in 1:size(w, 2)
+        plot!(x, 4abs2.(w[:, j, i]) .+ h.w.E[j, i], label=false)
     end
     next!(p)
 end

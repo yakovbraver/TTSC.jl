@@ -1,21 +1,20 @@
 module Bandsolvers
 
-import BandedMatrices as BM
-using SparseArrays: sparse
-using KrylovKit: eigsolve
 using LinearAlgebra: eigen, eigvals, schur, ⋅, diagm, diagind
 
-"A type representing the spatial Wannier functions."
-mutable struct SpatialWanniers
+"A type for storing the Wannier functions."
+mutable struct Wanniers
     minlevel::Int # number of the first energy level of ℎ to use for constructing wanniers (this is used in the unperturbed case)
-    targetlevels_lo::Vector{Int} # numbers of quasienergy levels that will be mixed to construct wanniers (this is used in the Floquet case)
-    targetlevels_hi::Vector{Int}
-    E_lo::Vector{Vector{Float64}} # `E[j][i]` = mean energy of `i`th wannier at `j`th phase; use nested arrays because in non-periodic case
-    E_hi::Vector{Vector{Float64}} #               the number of wanniers in each subband varies depending on the edge state branch position
-    pos_lo::Vector{Vector{Float64}} # `pos[j][i]` = position eigenvalue of `i`th wannier at `j`th phase
-    pos_hi::Vector{Vector{Float64}}
-    d_lo::Vector{Matrix{ComplexF64}} # `d[j][:, i]` = `i`th wannier vector at `j`th phase
-    d_hi::Vector{Matrix{ComplexF64}}
+    targetlevels::Vector{Int} # numbers of quasienergy levels to use for constructing wanniers (this is used in the Floquet case)
+    n_lo::Vector{Int} # number of levels in the lower subband at each phase; in non-periodic case this depends on the edge state branch position 
+    E::Matrix{Float64} # `E[j, i]` = mean energy of `j`th wannier at `i`th phase; use nested arrays because in non-periodic case
+    pos::Matrix{Float64} # `pos[j, i]` = position eigenvalue of `j`th wannier at `i`th phase
+    d::Array{ComplexF64, 3} # `d[:, :, i]` = position eigenvectors at `i`th phase; see methods of `compute_wanniers!` for details
+end
+
+"Default-construct an empty `Wanniers` object."
+function Wanniers()
+    Wanniers(0, Int[], Int[], Float64[;;], Float64[;;], ComplexF64[;;;])
 end
 
 """
@@ -34,7 +33,7 @@ mutable struct UnperturbedHamiltonian
     bandsizes::Tuple{Int, Int} # = (number of levels in the first band, number of levels in the second band)
     E::Matrix{Float64}      # `E[i, j]` = `i`th eigenvalue at `j`th phase, `i = 1:maxlevel`
     c::Array{ComplexF64, 3} # `c[:, i, j]` = `i`th eigenvector at `j`th phase, `i = 1:maxlevel; j = 1:2maxlevel+1`
-    w::SpatialWanniers
+    w::Wanniers
 end
 
 """
@@ -55,16 +54,8 @@ function UnperturbedHamiltonian(n_cells::Integer; M::Real, gₗ::Real, Vₗ::Rea
     E = Matrix{Float64}(undef, maxlevel, length(phases))
     c = Array{ComplexF64,3}(undef, 2maxlevel+1, maxlevel, length(phases))
 
-    E_lo = [Float64[] for _ in eachindex(phases)]
-    E_hi = [Float64[] for _ in eachindex(phases)]
-    pos_lo = [Float64[] for _ in eachindex(phases)]
-    pos_hi = [Float64[] for _ in eachindex(phases)]
-    d_lo = [ComplexF64[;;] for _ in eachindex(phases)]
-    d_hi = [ComplexF64[;;] for _ in eachindex(phases)]
-    w = SpatialWanniers(0, Int[], Int[], E_lo, E_hi, pos_lo, pos_hi, d_lo, d_hi)
-
     UnperturbedHamiltonian(Int(n_cells), Float64(M), (l === nothing ? 1 : l), Float64(gₗ), Float64(Vₗ), isperiodic,
-                           collect(Float64, phases), maxlevel, bandsizes, E, c, w)
+                           collect(Float64, phases), maxlevel, bandsizes, E, c, Wanniers())
 end
 
 "Diagonalise the unperturbed Hamiltonian `uh` at each phase."
@@ -117,10 +108,7 @@ function diagonalise!(uh::UnperturbedHamiltonian)
     end
 end
 
-"""
-Calculate Wannier vectors for the unperturbed Hamiltonian using the energy eigenstates in the band number `targetband`.
-Note that if mass is negative (`uh.M < 0`), then `uh.w.E_lo`, `uh.w.pos_lo`, and `uh.w.pos_lo` will refer to the band whose energy is higher.
-"""
+"Calculate Wannier vectors for the unperturbed Hamiltonian using the energy eigenstates in the band number `targetband`."
 function compute_wanniers!(uh::UnperturbedHamiltonian; targetband::Integer)
     N = uh.N
 
@@ -128,39 +116,41 @@ function compute_wanniers!(uh::UnperturbedHamiltonian; targetband::Integer)
     uh.w.minlevel = minlevel # save this because it's needed in `make_wavefunction` when constructing coordinate space Wannier functions
 
     if uh.isperiodic
+        E = Matrix{Float64}(undef, 2N, length(uh.phases))
+        pos = Matrix{Float64}(undef, 2N, length(uh.phases))
+        # `d` fill format: `d[1:N, 1:N, i]` = eigenvectors of the lower subband, `d[1:N, N+1:2N, i]` = eigenvectors of the higher subband
+        d = Array{ComplexF64, 3}(undef, N, 2N, length(uh.phases))
+        uh.w = Wanniers(minlevel, Int[], fill(N, length(uh.phases)), E, pos, d)
+
         X = Matrix{ComplexF64}(undef, N, N) # position operator
         
         for i in eachindex(uh.phases)
-            # Lower band
-            for n in 1:N
-                for n′ in 1:N
-                    X[n′, n] = sum(uh.c[j+1, minlevel+n′-1, i]' * uh.c[j, minlevel+n-1, i] for j = 1:size(uh.c, 1)-1)
+            for o in (0, N)
+                window = 1+o:N+o
+                for n in 1:N
+                    for n′ in 1:N
+                        X[n′, n] = sum(uh.c[j+1, minlevel+o+n′-1, i]' * uh.c[j, minlevel+o+n-1, i] for j = 1:size(uh.c, 1)-1)
+                    end
                 end
+                # `eigen` does not guarantee orthogonality of eigenvectors in case of degeneracies for `X` unitary, so use `schur`
+                # (although a degeneracy of coordinates eigenvalues is unlikely here)
+                _, d[:, window, i], pos_complex = schur(X)
+                pos_real = @. mod2pi(angle(pos_complex)) / 2 * N # `mod2pi` converts the angle from [-π, π) to [0, 2π)
+                sp = sortperm(pos_real)                 # sort the eigenvalues
+                pos[window, i] = pos_real[sp]
+                @views Base.permutecols!!(d[:, window, i], sp)    # sort the eigenvectors in the same way
+                E[window, i] = [abs2.(dˣ) ⋅ uh.E[minlevel+o:minlevel+N+o-1, i] for dˣ in eachcol(d[:, window, i])]
             end
-            # `eigen` does not guarantee orthogonality of eigenvectors in case of degeneracies for `X` unitary, so use `schur`
-            # (although a degeneracy of coordinates eigenvalues is unlikely here)
-            _, uh.w.d_lo[i], pos_complex = schur(X)
-            pos_real = @. mod2pi(angle(pos_complex)) / 2 * N # `mod2pi` converts the angle from [-π, π) to [0, 2π)
-            sp = sortperm(pos_real)                 # sort the eigenvalues
-            uh.w.pos_lo[i] = pos_real[sp]
-            Base.permutecols!!(uh.w.d_lo[i], sp)    # sort the eigenvectors in the same way
-            uh.w.E_lo[i] = [abs2.(dˣ) ⋅ uh.E[minlevel:minlevel+N-1, i] for dˣ in eachcol(uh.w.d_lo[i])]
-
-            # Higher band
-            for n in 1:N
-                for n′ in 1:N
-                    X[n′, n] = sum(uh.c[j+1, minlevel+N+n′-1, i]' * uh.c[j, minlevel+N+n-1, i] for j = 1:size(uh.c, 1)-1)
-                end
-            end
-            _, uh.w.d_hi[i], pos_complex = schur(X)
-            pos_real = @. mod2pi(angle(pos_complex)) / 2 * N # `mod2pi` converts the angle from [-π, π) to [0, 2π)
-            sp = sortperm(pos_real)                 # sort the eigenvalues
-            uh.w.pos_hi[i] = pos_real[sp]
-            Base.permutecols!!(uh.w.d_hi[i], sp)    # sort the eigenvectors in the same way
-            uh.w.E_hi[i] = [abs2.(dˣ) ⋅ uh.E[minlevel+N:minlevel+2N-1, i] for dˣ in eachcol(uh.w.d_hi[i])]
         end
     else
         n_w = isodd(targetband) ? 2N-1 : 2N+1 # total number of wanniers to construct; this is the number of levels in the target band
+        E = Matrix{Float64}(undef, n_w, length(uh.phases))
+        pos = Matrix{Float64}(undef, n_w, length(uh.phases))
+        # `d` fill format: `d[1:n_lo[i], 1:n_lo[i], i]` = eigenvectors of the lower subband,
+        #                  `d[1:n_w-n_lo[i], n_lo[i]+1:n_w, i]` = eigenvectors of the higher subband
+        d = Array{ComplexF64, 3}(undef, n_w÷2+1, n_w, length(uh.phases))
+        uh.w = Wanniers(minlevel, Int[], Vector{Int}(undef, length(uh.phases)), E, pos, d)
+
         X_less = zeros(n_w÷2, n_w÷2) # position operator for a subband which does not contain the edge state branch
         X_more = zeros(n_w÷2+1, n_w÷2+1) # position operator for a subband which contains the edge state branch
         
@@ -172,14 +162,15 @@ function compute_wanniers!(uh::UnperturbedHamiltonian; targetband::Integer)
             # Lower band
             X = up ? X_less : X_more # bind the position operator to a matrix of the appropriate size
             n_lo = n_w÷2 + !up # number of levels in the lower subband
+            uh.w.n_lo[i] = n_lo
             for n in 1:n_lo
                 for n′ in n:n_lo
                     X[n′, n] = X[n, n′] = N*sum(uh.c[j, minlevel+n-1, i] * (π/2 * uh.c[j, minlevel+n′-1, i] - 8/π * sum(uh.c[j′, minlevel+n′-1, i]*j*j′/(j^2-j′^2)^2
                                                                             for j′ = (iseven(j) ? 1 : 2):2:n_j)) for j = 1:n_j)
                 end
             end
-            uh.w.pos_lo[i], uh.w.d_lo[i] = eigen(X)
-            uh.w.E_lo[i] = [dˣ.^2 ⋅ uh.E[minlevel:minlevel+n_lo-1, i] for dˣ in eachcol(uh.w.d_lo[i])]
+            uh.w.pos[1:n_lo, i], uh.w.d[1:n_lo, 1:n_lo, i] = eigen(X)
+            uh.w.E[1:n_lo, i] = [dˣ.^2 ⋅ uh.E[minlevel:minlevel+n_lo-1, i] for dˣ in eachcol(uh.w.d[1:n_lo, 1:n_lo, i])]
 
             # Higher band
             X = up ? X_more : X_less
@@ -190,15 +181,15 @@ function compute_wanniers!(uh::UnperturbedHamiltonian; targetband::Integer)
                                                                                  for j′ = (iseven(j) ? 1 : 2):2:n_j)) for j = 1:n_j)
                 end
             end
-            uh.w.pos_hi[i], uh.w.d_hi[i] = eigen(X)
-            uh.w.E_hi[i] = [dˣ.^2 ⋅ uh.E[minlevel+n_lo:minlevel+n_w-1, i] for dˣ in eachcol(uh.w.d_hi[i])]
+            uh.w.pos[n_lo+1:n_w, i], uh.w.d[1:n_hi, n_lo+1:n_w, i] = eigen(X)
+            uh.w.E[n_lo+1:n_w, i] = [dˣ.^2 ⋅ uh.E[minlevel+n_lo:minlevel+n_w-1, i] for dˣ in eachcol(uh.w.d[1:n_hi, n_lo+1:n_w, i])]
         end
     end
 end
 
 """
-Construct energy eigenfunctions `ψ` at coordinates in `x` for each eigenstate number in `whichstates` at each phase number in `whichphases`.
-Return `ψ`, where `ψ[:, j, i]` = `j`th wavefunction at `i`th phase.
+Construct energy eigenfunctions at coordinates in `x` for each eigenstate number in `whichstates` at each phase number in `whichphases`.
+Return `ψ`, where `ψ[:, j, i]` = `j`th eigenfunction at `i`th phase.
 """
 function make_eigenfunctions(uh::UnperturbedHamiltonian, x::AbstractVector{<:Real}, whichphases::AbstractVector{<:Integer}, whichstates::AbstractVector{<:Integer})
     ψ = Array{ComplexF64,3}(undef, length(x), length(whichstates), length(whichphases))
@@ -212,38 +203,23 @@ function make_eigenfunctions(uh::UnperturbedHamiltonian, x::AbstractVector{<:Rea
 end
 
 """
-Construct Wannier functions `w_lo` and `w_hi` at coordinates in `x` at each phase number in `whichphases`. All Wannier functions contained in `uh` are constructed.
-Return `(w_lo, w_hi)`, where `w_xx[i][j]` = `j`th Wannier function at `i`th phase.
+Construct Wannier functions at coordinates in `x` at each phase number in `whichphases`. All Wannier functions contained in `uh` are constructed.
+In the process, energy eigenfunctions are also constructed.
+Return `ψ, w`, where `ψ[:, j, i]` = `j`th eigenfunction at `i`th phase, and `w[:, j, i]` = `j`th Wannier function at `i`th phase.
 """
 function make_wannierfunctions(uh::UnperturbedHamiltonian, x::AbstractVector{<:Real}, whichphases::AbstractVector{<:Integer})
-    w_lo = [Vector{Vector{ComplexF64}}() for _ in eachindex(whichphases)]
-    w_hi = [Vector{Vector{ComplexF64}}() for _ in eachindex(whichphases)]
-    make_state = uh.isperiodic ? make_exp_state : make_sin_state
-    for (i, iϕ) in enumerate(whichphases)
-        n_lo = size(uh.w.d_lo[iϕ], 1)
-        w_lo[i] = [Vector{ComplexF64}(undef, length(x)) for _ in 1:n_lo]
-        for j in 1:n_lo
-            w_lo[i][j] = sum(uh.w.d_lo[iϕ][k, j] * make_state(x, uh.c[:, uh.w.minlevel+k-1, iϕ]; N=uh.N) for k = 1:n_lo)
+    n_w = size(uh.w.E, 1)
+    w = Array{ComplexF64, 3}(undef, length(x), n_w, length(uh.phases))
+    ψ = make_eigenfunctions(uh, x, whichphases, uh.w.minlevel:uh.w.minlevel+n_w) # construct energy eigenfunctions
+    for i in eachindex(whichphases)
+        for j in 1:uh.w.n_lo[i]
+            w[:, j, i] = sum(uh.w.d[k, j, i] * ψ[:, uh.w.minlevel+k-1, i] for k = 1:uh.w.n_lo[i])
         end
-        n_hi = size(uh.w.d_hi[iϕ], 1)
-        w_hi[i] = [Vector{ComplexF64}(undef, length(x)) for _ in 1:n_hi]
-        for j in 1:n_hi
-            w_hi[i][j] = sum(uh.w.d_hi[iϕ][k, j] * make_state(x, uh.c[:, uh.w.minlevel+n_lo+k-1, iϕ]; N=uh.N) for k = 1:n_hi)
+        for j in uh.w.n_lo[i]+1:n_w
+            w[:, j, i] = sum(uh.w.d[k, j, i] * ψ[:, uh.w.minlevel+uh.w.n_lo[i]+k-1, i] for k = 1:n_w-uh.w.n_lo[i])
         end
     end
-    return w_lo, w_hi
-end
-
-"""
-Reshape the Wannier function `w` returned by [`make_wannierfunctions`](@ref) into a matrix for a fixed Wannier state number `n`.
-Return `w_map`, where `w_map[:, i]` = `n`th Wannier function at `i`th phase.
-"""
-function make_wanniermap(w::Vector{Vector{Vector{T}}}, n::Integer) where T <: Number
-    w_map = Matrix{T}(undef, length(w[1][1]), length(w))
-    for i in eachindex(w)
-        w_map[:, i] = w[i][n]
-    end
-    return w_map
+    return ψ, w
 end
 
 "Construct the coordinate-space wavefunction 𝜓(𝑥) = ∑ⱼ𝑐ⱼexp(2i𝑗𝑥/𝑁) / √(𝑁π)"
@@ -583,28 +559,28 @@ function compute_wanniers!(fh::FloquetHamiltonian; targetlevels_lo::AbstractVect
     end
 end
 
-"""
-Construct Wannier functions at coordinates in `x` at each phase number in `whichphases`. All Wannier functions contained in `fh` are constructed.
-Return `(w_lo, w_hi)`, where `w_**[i][j][ix, it]` = `j`th Wannier function at `i`th phase at `ix`th coordinate at `it`th time moment.
-"""
-function make_wannierfunctions(fh::FloquetHamiltonian, x::AbstractVector{<:Real}, Ωt::AbstractVector{<:Real}, whichphases::AbstractVector{<:Integer})
-    u = make_eigenfunctions(fh, x, Ωt, whichphases, [fh.uh.w.targetlevels_lo; fh.uh.w.targetlevels_hi])
-    w_lo = [Vector{Matrix{ComplexF64}}() for _ in eachindex(whichphases)]
-    w_hi = [Vector{Matrix{ComplexF64}}() for _ in eachindex(whichphases)]
-    for (i, iϕ) in enumerate(whichphases)
-        n_lo = size(fh.uh.w.d_lo[iϕ], 1)
-        w_lo[i] = [Matrix{ComplexF64}(undef, length(x), length(Ωt)) for _ in 1:n_lo]
-        for j in 1:n_lo
-            w_lo[i][j] = sum(fh.uh.w.d_lo[iϕ][k, j] * u[:, :, k, iϕ] for k = 1:n_lo)
-        end
-        n_hi = size(fh.uh.w.d_hi[iϕ], 1)
-        w_hi[i] = [Matrix{ComplexF64}(undef, length(x), length(Ωt)) for _ in 1:n_hi]
-        for j in 1:n_hi
-            w_hi[i][j] = sum(fh.uh.w.d_lo[iϕ][k, j] * u[:, :, k+n_lo, iϕ] for k = 1:n_hi)
-        end
-    end
-    return w_lo, w_hi
-end
+# """
+# Construct Wannier functions at coordinates in `x` at each phase number in `whichphases`. All Wannier functions contained in `fh` are constructed.
+# Return `(w_lo, w_hi)`, where `w_**[i][j][ix, it]` = `j`th Wannier function at `i`th phase at `ix`th coordinate at `it`th time moment.
+# """
+# function make_wannierfunctions(fh::FloquetHamiltonian, x::AbstractVector{<:Real}, Ωt::AbstractVector{<:Real}, whichphases::AbstractVector{<:Integer})
+#     u = make_eigenfunctions(fh, x, Ωt, whichphases, [fh.uh.w.targetlevels_lo; fh.uh.w.targetlevels_hi])
+#     w_lo = [Vector{Matrix{ComplexF64}}() for _ in eachindex(whichphases)]
+#     w_hi = [Vector{Matrix{ComplexF64}}() for _ in eachindex(whichphases)]
+#     for (i, iϕ) in enumerate(whichphases)
+#         n_lo = size(fh.uh.w.d_lo[iϕ], 1)
+#         w_lo[i] = [Matrix{ComplexF64}(undef, length(x), length(Ωt)) for _ in 1:n_lo]
+#         for j in 1:n_lo
+#             w_lo[i][j] = sum(fh.uh.w.d_lo[iϕ][k, j] * u[:, :, k, iϕ] for k = 1:n_lo)
+#         end
+#         n_hi = size(fh.uh.w.d_hi[iϕ], 1)
+#         w_hi[i] = [Matrix{ComplexF64}(undef, length(x), length(Ωt)) for _ in 1:n_hi]
+#         for j in 1:n_hi
+#             w_hi[i][j] = sum(fh.uh.w.d_lo[iϕ][k, j] * u[:, :, k+n_lo, iϕ] for k = 1:n_hi)
+#         end
+#     end
+#     return w_lo, w_hi
+# end
 
 end
 
