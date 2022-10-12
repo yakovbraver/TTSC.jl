@@ -7,12 +7,14 @@ using LinearAlgebra: eigen, eigvals, schur, ⋅, diagm, diagind
 
 "A type representing the spatial Wannier functions."
 mutable struct SpatialWanniers
-    minlevel::Int # number of the first energy level to use for constructing wanniers
+    minlevel::Int # number of the first energy level of ℎ to use for constructing wanniers (this is used in the unperturbed case)
+    targetlevels_lo::Vector{Int} # numbers of quasienergy levels that will be mixed to construct wanniers (this is used in the Floquet case)
+    targetlevels_hi::Vector{Int}
     E_lo::Vector{Vector{Float64}} # `E[j][i]` = mean energy of `i`th wannier at `j`th phase; use nested arrays because in non-periodic case
     E_hi::Vector{Vector{Float64}} #               the number of wanniers in each subband varies depending on the edge state branch position
     pos_lo::Vector{Vector{Float64}} # `pos[j][i]` = position eigenvalue of `i`th wannier at `j`th phase
     pos_hi::Vector{Vector{Float64}}
-    d_lo::Vector{Matrix{ComplexF64}} # `d[j][:, i]` = 𝑖th wannier vector at `j`th phase
+    d_lo::Vector{Matrix{ComplexF64}} # `d[j][:, i]` = `i`th wannier vector at `j`th phase
     d_hi::Vector{Matrix{ComplexF64}}
 end
 
@@ -59,13 +61,13 @@ function UnperturbedHamiltonian(n_cells::Integer; M::Real, gₗ::Real, Vₗ::Rea
     pos_hi = [Float64[] for _ in eachindex(phases)]
     d_lo = [ComplexF64[;;] for _ in eachindex(phases)]
     d_hi = [ComplexF64[;;] for _ in eachindex(phases)]
-    w = SpatialWanniers(0, E_lo, E_hi, pos_lo, pos_hi, d_lo, d_hi)
+    w = SpatialWanniers(0, Int[], Int[], E_lo, E_hi, pos_lo, pos_hi, d_lo, d_hi)
 
     UnperturbedHamiltonian(Int(n_cells), Float64(M), (l === nothing ? 1 : l), Float64(gₗ), Float64(Vₗ), isperiodic,
                            collect(Float64, phases), maxlevel, bandsizes, E, c, w)
 end
 
-"Diagonalise the unperturbed Hamiltonian at each phase."
+"Diagonalise the unperturbed Hamiltonian `uh` at each phase."
 function diagonalise!(uh::UnperturbedHamiltonian)
     (;N, M, gₗ, Vₗ, maxlevel) = uh
     sortby = M > 0 ? (+) : (-) # eigenvalue sorting; for 𝑀 < 0 we use descending sorting
@@ -267,7 +269,6 @@ end
 A type representing the Floquet Hamiltonian
     ℋ = ℎ - i∂ₜ + λₛsin²(2𝑥)cos(2𝜔𝑡) + λₗcos²(2𝑥)cos(𝜔𝑡 + 𝜑ₜ),
 where ℎ is the unperturbed Hamiltonian represented by [`UnperturbedHamiltonian`](@ref).
-Type of pumping is controlled via `pumptype`: `:time` for temporal, `:space` for spatial, or anything else for simultaneous space-time pumping.
 """
 mutable struct FloquetHamiltonian
     uh::UnperturbedHamiltonian
@@ -281,6 +282,10 @@ mutable struct FloquetHamiltonian
     b::Array{ComplexF64, 3} # `b[:, i, j]` = `i`th eigenvector at `j`th phase, `i = 1:maxlevel; j = 1:2maxlevel+1`
 end
 
+"""
+Construct a `FloquetHamiltonian` object. `minband` is the first energy band of `uh` to use when constructing the Floquet Hamiltonian matrix.
+Type of pumping is controlled via `pumptype`: `:time` for temporal, `:space` for spatial, or anything else for simultaneous space-time pumping.
+"""
 function FloquetHamiltonian(uh::UnperturbedHamiltonian; s::Integer, λₛ::Real, λₗ::Real, ω::Real, pumptype::Symbol, minband::Integer)
     N = uh.N
 
@@ -318,41 +323,8 @@ function FloquetHamiltonian(uh::UnperturbedHamiltonian; s::Integer, λₛ::Real,
     FloquetHamiltonian(uh, Int(s), Float64(λₛ), Float64(λₗ), Float64(ω), pumptype, Int(minlevel), E, b)
 end
 
-"""
-Diagonalise Floquet Hamiltonian for a periodic system and calculate Wannier centres.
-    `n_min` - lowest band number of spatial Hamiltonian to use when constructing Floquet Hamiltonian
-    `n_max` - highest band number of spatial Hamiltonian to consider
-    `n_target` - number of Floquet band (counting from the highest) to use for Wannier calculations
-    `coords` - x's for wavefunctions
-    `ωts` - time moments for wavefunctions
-    `mix_time_cells` - if set to `false`, only the spatial levels of the highest temporal level will be used when constructing Wanniers
-"""
+"Diagonalise the Floquet Hamiltonian `fh` at each phase."
 function diagonalise!(fh::FloquetHamiltonian)
-    # n_target_min = (n_target-1) * 4N + 1
-
-    # n_j = n_max * 2N # number of indices 𝑗 to use for constructing the unperturbed Hamiltonian
-
-    # h = zeros(ComplexF64, 2n_j + 1, 2n_j + 1)
-    # h = diagm(0 => ComplexF64[(2j/N)^2 + (gₗ + Vₗ)/2 for j = -n_j:n_j])
-    # h[diagind(h, -2N)] .= h[diagind(h, 2N)] .= gₗ/4
-
-    # n_w = mix_time_cells ? s*N : N # number of Wannier functions to construct
-    # pos_lo = Matrix{Float64}(undef, n_w, length(phases)) # position eigenvalues (Wannier centres) of the lower spatial levels
-    # pos_hi = Matrix{Float64}(undef, n_w, length(phases)) # position eigenvalues (Wannier centres) of the higher spatial levels
-    # ε_lo = Matrix{Float64}(undef, n_w, length(phases)) # energies of Wannier states of the lower spatial levels
-    # ε_hi = Matrix{Float64}(undef, n_w, length(phases)) # energies of Wannier states of the higher spatial levels
-    # wf_lo = Array{Float64,4}(undef, length(coords), n_w, length(ωts), length(phases)) # Wannier states of the lower spatial levels
-    # wf_hi = Array{Float64,4}(undef, length(coords), n_w, length(ωts), length(phases)) # Wannier states of the higher spatial levels
-    # window_lo = Int[] # window of Floquet eigenstates which will be used to construct Wannier functions out of the lower spatial levels
-    # window_hi = Int[] # window of Floquet eigenstates which will be used to construct Wannier functions out of the higher spatial levels
-    # for i in 0:n_w÷N - 1
-    #     append!(window_hi, n_target_min+2i*N:n_target_min+2i*N + N - 1)
-    #     append!(window_lo, n_target_min+(2i+1)*N:n_target_min+(2i+1)*N + N - 1)
-    # end
-
-    # u_lo = Array{Float64,4}(undef, length(coords), n_w, length(ωts), length(phases)) # Wannier states of the lower spatial levels
-    # u_hi = Array{Float64,4}(undef, length(coords), n_w, length(ωts), length(phases)) # Wannier states of the higher spatial levels
-
     # make views
     (;N, phases, E, c) = fh.uh
     n_j = size(c, 1)
@@ -361,28 +333,9 @@ function diagonalise!(fh::FloquetHamiltonian)
     n_levels = fh.uh.maxlevel - fh.minlevel + 1 # number of levels of spatial Hamiltonian to use for constructing Floquet Hamiltonian
     ν(m) = ceil(Int, m/2N)
 
-    # ψ = Matrix{ComplexF64}(undef, length(coords), n_levels) # eigenvectors of ℎ in 𝑥-representation
-    # cc = Matrix{ComplexF64}(undef, n_levels, n_levels) # matrix of products of `c`'s that will be needed multiple times
-    # ccc = Matrix{ComplexF64}(undef, n_levels, n_levels) # products `cc`'s and cis
-    
-    # x = Matrix{ComplexF64}(undef, n_w, n_w) # position operator
-
     H = zeros(ComplexF64, n_levels, n_levels) # Floquet Hamiltonian matrix
 
     for (i, ϕ) in enumerate(fh.uh.phases)
-            # # construct coordinate representation of eigenfunctions and compute products of `c`'s that will be needed multiple times
-            # for m in 1:n_levels
-            #     ψ[:, m] = make_exp_state(coords, c[:, m]; n=N)
-            #     for m′ in 1:n_levels
-            #         cc[m′, m] = sum(c[j+1, m′]' * c[j, m] for j = 1:2n_j)
-            #     end
-            # end
-            # if pumptype == :time
-            #     for p in 2:length(phases) # copy the calculated first column of `ϵ` to all other columns for consistency
-            #         ϵ[:, p] = ϵ[:, 1]
-            #     end
-            # end
-
         # `m` and `m′` number the levels of the unperturbed Hamiltonian
         # `e` and `e′` number the elements of the FloquetHamiltonian
         for m in fh.minlevel:fh.uh.maxlevel
@@ -424,54 +377,6 @@ function diagonalise!(fh::FloquetHamiltonian)
             end
         end
         fh.E[:, i], fh.b[:, :, i] = eigen(H, sortby=-)
-
-        # ### Wannier centres
-        
-        # t = (pumptype == :space ? π/5 : π/5 - z/length(phases)*π/2) # time moment at which to diagonalise the coordinate operator
-        # for m in 1:n_levels, m′ in 1:n_levels
-        #     ccc[m′, m] = cc[m′, m] * cis((ν(m′)-ν(m))*t)
-        # end
-
-        # # Higher band
-        # # the loop below runs faster if we make a copy rather than a view of `f.vectors`; 
-        # # both approaches are ~6 times faster compared to iterating directly over `f.vectors`
-        # b .= f.vectors[:, window_hi]
-        # for n in 1:n_w, n′ in 1:n_w
-        #     x[n′, n] = sum(b[m, n] * sum(b[m′, n′]' * ccc[m′, m] for m′ in 1:n_levels) for m in 1:n_levels)
-        # end
-        # _, d, pos_complex = schur(x)
-        # pos_real = (angle.(pos_complex) .+ π) / 2π * N*π # take angle, convert from (-π, π) to (0, 2π), and map to the interval (0, Nπ)
-        # sp = sortperm(pos_real)
-        # pos_hi[:, z] = pos_real[sp]   # sort positions
-        # Base.permutecols!!(d, sp)     # sort eigenvectors in the same way
-        # ε_hi[:, z] = [abs2.(dˣ) ⋅ E[window_hi, z] for dˣ in eachcol(d)]
-        # for (t, ωt) in enumerate(ωts)
-        #     for X in 1:n_w
-        #         wf_hi[:, X, t, z] = abs2.(sum(cis(-ν(m)*ωt) * ψ[:, m] * sum(d[l, X] * b[m, l] for l = 1:n_w) for m in 1:n_levels))
-        #     end
-        # end
-        # # for (t, ωt) in enumerate(ωts)
-        # #     for l in 1:n_w
-        # #         u_hi[:, l, t, z] = abs2.(sum(cis(-ν(m)*ωt) * ψ[:, m] * b[m, l] for m in 1:n_levels))
-        # #     end
-        # # end
-
-        # # Lower band
-        # b .= f.vectors[:, window_lo]
-        # for n in 1:n_w, n′ in 1:n_w
-        #     x[n′, n] = sum(b[m, n] * sum(b[m′, n′]' * ccc[m′, m] for m′ in 1:n_levels) for m in 1:n_levels)
-        # end
-        # _, d, pos_complex = schur(x)
-        # pos_real = (angle.(pos_complex) .+ π) / 2π * N*π # take angle, convert from (-π, π) to (0, 2π), and map to the interval (0, Nπ)
-        # sp = sortperm(pos_real)
-        # pos_lo[:, z] = pos_real[sp]   # sort positions
-        # Base.permutecols!!(d, sp)     # sort eigenvectors in the same way
-        # ε_lo[:, z] = [abs2.(dˣ) ⋅ E[window_lo, z] for dˣ in eachcol(d)]
-        # for (t, ωt) in enumerate(ωts)
-        #     for X in 1:n_w
-        #         wf_lo[:, X, t, z] = abs2.(sum(cis(-ν(m)*ωt) * ψ[:, m] * sum(d[l, X] * b[m, l] for l = 1:n_w) for m in 1:n_levels))
-        #     end
-        # end
     end
 end
 
@@ -519,6 +424,163 @@ function order_floquet_levels(fh::FloquetHamiltonian)
         E[:, i] .= fh.E[invsort, i]
     end
     return E
+end
+
+# function compute_wanniers!(fh::FloquetHamiltonian; targetband::Integer)
+#     # n_target_min = (n_target-1) * 4N + 1
+
+#     # n_j = n_max * 2N # number of indices 𝑗 to use for constructing the unperturbed Hamiltonian
+
+#     # h = zeros(ComplexF64, 2n_j + 1, 2n_j + 1)
+#     # h = diagm(0 => ComplexF64[(2j/N)^2 + (gₗ + Vₗ)/2 for j = -n_j:n_j])
+#     # h[diagind(h, -2N)] .= h[diagind(h, 2N)] .= gₗ/4
+
+#     # n_w = mix_time_cells ? s*N : N # number of Wannier functions to construct
+#     # pos_lo = Matrix{Float64}(undef, n_w, length(phases)) # position eigenvalues (Wannier centres) of the lower spatial levels
+#     # pos_hi = Matrix{Float64}(undef, n_w, length(phases)) # position eigenvalues (Wannier centres) of the higher spatial levels
+#     # ε_lo = Matrix{Float64}(undef, n_w, length(phases)) # energies of Wannier states of the lower spatial levels
+#     # ε_hi = Matrix{Float64}(undef, n_w, length(phases)) # energies of Wannier states of the higher spatial levels
+#     # wf_lo = Array{Float64,4}(undef, length(coords), n_w, length(ωts), length(phases)) # Wannier states of the lower spatial levels
+#     # wf_hi = Array{Float64,4}(undef, length(coords), n_w, length(ωts), length(phases)) # Wannier states of the higher spatial levels
+#     # window_lo = Int[] # window of Floquet eigenstates which will be used to construct Wannier functions out of the lower spatial levels
+#     # window_hi = Int[] # window of Floquet eigenstates which will be used to construct Wannier functions out of the higher spatial levels
+#     # for i in 0:n_w÷N - 1
+#     #     append!(window_hi, n_target_min+2i*N:n_target_min+2i*N + N - 1)
+#     #     append!(window_lo, n_target_min+(2i+1)*N:n_target_min+(2i+1)*N + N - 1)
+#     # end
+
+#     # u_lo = Array{Float64,4}(undef, length(coords), n_w, length(ωts), length(phases)) # Wannier states of the lower spatial levels
+#     # u_hi = Array{Float64,4}(undef, length(coords), n_w, length(ωts), length(phases)) # Wannier states of the higher spatial levels
+
+#     # make views
+#     (;N, phases, E, c) = fh.uh
+#     n_j = size(c, 1)
+#     (;s, ω, λₛ, λₗ, pumptype) = fh
+
+#     n_levels = fh.uh.maxlevel - fh.minlevel + 1 # number of levels of spatial Hamiltonian to use for constructing Floquet Hamiltonian
+#     ν(m) = ceil(Int, m/2N)
+
+#     # ψ = Matrix{ComplexF64}(undef, length(coords), n_levels) # eigenvectors of ℎ in 𝑥-representation
+#     # cc = Matrix{ComplexF64}(undef, n_levels, n_levels) # matrix of products of `c`'s that will be needed multiple times
+#     # ccc = Matrix{ComplexF64}(undef, n_levels, n_levels) # products `cc`'s and cis
+    
+#     # x = Matrix{ComplexF64}(undef, n_w, n_w) # position operator
+
+#     H = zeros(ComplexF64, n_levels, n_levels) # Floquet Hamiltonian matrix
+
+#     for (i, ϕ) in enumerate(fh.uh.phases)
+#             # construct coordinate representation of eigenfunctions and compute products of `c`'s that will be needed multiple times
+#             for m in 1:n_levels
+#                 ψ[:, m] = make_exp_state(coords, c[:, m]; n=N)
+#                 for m′ in 1:n_levels
+#                     cc[m′, m] = sum(c[j+1, m′]' * c[j, m] for j = 1:2n_j)
+#                 end
+#             end
+
+#         t = (pumptype == :space ? π/5 : π/5 - z/length(phases)*π/2) # time moment at which to diagonalise the coordinate operator
+#         for m in 1:n_levels, m′ in 1:n_levels
+#             ccc[m′, m] = cc[m′, m] * cis((ν(m′)-ν(m))*t)
+#         end
+
+#         # Higher band
+#         # the loop below runs faster if we make a copy rather than a view of `f.vectors`; 
+#         # both approaches are ~6 times faster compared to iterating directly over `f.vectors`
+#         b .= f.vectors[:, window_hi]
+#         for n in 1:n_w, n′ in 1:n_w
+#             x[n′, n] = sum(b[m, n] * sum(b[m′, n′]' * ccc[m′, m] for m′ in 1:n_levels) for m in 1:n_levels)
+#         end
+#         _, d, pos_complex = schur(x)
+#         pos_real = (angle.(pos_complex) .+ π) / 2π * N*π # take angle, convert from (-π, π) to (0, 2π), and map to the interval (0, Nπ)
+#         sp = sortperm(pos_real)
+#         pos_hi[:, z] = pos_real[sp]   # sort positions
+#         Base.permutecols!!(d, sp)     # sort eigenvectors in the same way
+#         ε_hi[:, z] = [abs2.(dˣ) ⋅ E[window_hi, z] for dˣ in eachcol(d)]
+#         for (t, ωt) in enumerate(ωts)
+#             for X in 1:n_w
+#                 wf_hi[:, X, t, z] = abs2.(sum(cis(-ν(m)*ωt) * ψ[:, m] * sum(d[l, X] * b[m, l] for l = 1:n_w) for m in 1:n_levels))
+#             end
+#         end
+
+#         # Lower band
+#         b .= f.vectors[:, window_lo]
+#         for n in 1:n_w, n′ in 1:n_w
+#             x[n′, n] = sum(b[m, n] * sum(b[m′, n′]' * ccc[m′, m] for m′ in 1:n_levels) for m in 1:n_levels)
+#         end
+#         _, d, pos_complex = schur(x)
+#         pos_real = (angle.(pos_complex) .+ π) / 2π * N*π # take angle, convert from (-π, π) to (0, 2π), and map to the interval (0, Nπ)
+#         sp = sortperm(pos_real)
+#         pos_lo[:, z] = pos_real[sp]   # sort positions
+#         Base.permutecols!!(d, sp)     # sort eigenvectors in the same way
+#         ε_lo[:, z] = [abs2.(dˣ) ⋅ E[window_lo, z] for dˣ in eachcol(d)]
+#         for (t, ωt) in enumerate(ωts)
+#             for X in 1:n_w
+#                 wf_lo[:, X, t, z] = abs2.(sum(cis(-ν(m)*ωt) * ψ[:, m] * sum(d[l, X] * b[m, l] for l = 1:n_w) for m in 1:n_levels))
+#             end
+#         end
+#     end
+# end
+
+"""
+Calculate Wannier vectors for the FloquetHamiltonian Hamiltonian `fh` using the quasienergy levels `targetlevels_lo` and `targetlevels_hi`.
+"""
+function compute_wanniers!(fh::FloquetHamiltonian; targetlevels_lo::AbstractVector{<:Real}, targetlevels_hi::AbstractVector{<:Real})
+    (;N, phases, c) = fh.uh
+    (;pos_lo, pos_hi, E_lo, E_hi, d_lo, d_hi) = fh.uh.w
+    ν(m) = ceil(Int, m/2N)
+
+    fh.uh.w.targetlevels_lo = targetlevels_lo # save this because it's needed in `make_wavefunction` when constructing coordinate space Wannier functions
+    fh.uh.w.targetlevels_hi = targetlevels_hi
+
+    X = Matrix{ComplexF64}(undef, length(targetlevels_lo), length(targetlevels_lo)) # position operator
+    
+    n_levels = fh.uh.maxlevel - fh.minlevel + 1 # number of levels of spatial Hamiltonian to use for constructing Floquet Hamiltonian
+    ∑cc = Matrix{ComplexF64}(undef, n_levels, n_levels)
+    cis∑cc = Matrix{ComplexF64}(undef, n_levels, n_levels)
+    
+    for i in eachindex(phases)
+        for m in fh.minlevel:fh.minlevel+n_levels-1
+            for m′ in fh.minlevel:fh.minlevel+n_levels-1
+                ∑cc[m′-fh.minlevel+1, m-fh.minlevel+1] = sum(c[j+1, m′, i]' * c[j, m, i] for j = 1:size(c, 1)-1)
+            end
+        end
+
+        t = (fh.pumptype == :space ? π/5 : π/5 - i/length(phases)*π/2) # time moment at which to diagonalise the coordinate operator
+        if fh.pumptype == :space || i == 1 # if pumping is space-only, `cis∑cc` can be calculated only once, at `i == 1`, because `t` does not change
+            for m in 1:n_levels
+                for m′ in 1:n_levels
+                    cis∑cc[m′, m] = ∑cc[m′, m] * cis((ν(m′+fh.minlevel-1) - ν(m+fh.minlevel-1)) * t)
+                end
+            end
+        end
+
+        # Lower band
+        for (in, n) in enumerate(targetlevels_lo)
+            for (in′, n′) in enumerate(targetlevels_lo)
+                X[in′, in] = sum(fh.b[m, n, i] * sum(fh.b[m′, n′, i]' * cis∑cc[m′, m] for m′ in 1:n_levels) for m in 1:n_levels)
+            end
+        end
+        # `eigen` does not guarantee orthogonality of eigenvectors in case of degeneracies for `X` unitary, so use `schur`
+        # (although a degeneracy of coordinates eigenvalues is unlikely here)
+        _, d_lo[i], pos_complex = schur(X)
+        pos_real = @. mod2pi(angle(pos_complex)) / 2 * N # `mod2pi` converts the angle from [-π, π) to [0, 2π)
+        sp = sortperm(pos_real)         # sort the eigenvalues
+        pos_lo[i] = pos_real[sp]
+        Base.permutecols!!(d_lo[i], sp) # sort the eigenvectors in the same way
+        E_lo[i] = [abs2.(dˣ) ⋅ fh.E[targetlevels_lo, i] for dˣ in eachcol(d_lo[i])]
+
+        # Higher band
+        for (in, n) in enumerate(targetlevels_hi)
+            for (in′, n′) in enumerate(targetlevels_hi)
+                X[in′, in] = sum(fh.b[m, n, i] * sum(fh.b[m′, n′, i]' * cis∑cc[m′, m] for m′ in 1:n_levels) for m in 1:n_levels)
+            end
+        end
+        _, d_hi[i], pos_complex = schur(X)
+        pos_real = @. mod2pi(angle(pos_complex)) / 2 * N # `mod2pi` converts the angle from [-π, π) to [0, 2π)
+        sp = sortperm(pos_real)
+        pos_hi[i] = pos_real[sp]
+        Base.permutecols!!(d_hi[i], sp)
+        E_hi[i] = [abs2.(dˣ) ⋅ fh.E[targetlevels_hi, i] for dˣ in eachcol(d_hi[i])]
+    end
 end
 
 end
@@ -709,142 +771,3 @@ function compute_floquet_bands_with_boundary(; n::Integer, n_min::Integer, n_max
     end
     return ϵ, E
 end
-
-"""
-Calculate energy bands of the Floquet Hamiltonian (S20) with boundaries sweeping over the adiabatic `phases` φₓ. 
-The operation of this function follows that of [`compute_floquet_bands`](@ref).
-Parameter `n` is the number of cells in the lattice; the eigenfunctions will be calculated in the basis of functions sin(𝑗𝑥/𝑛) / √(𝑛π/2).
-"""
-function compute_floquet_bands_states(; n::Integer, n_min::Integer, n_max::Integer, phases::AbstractVector{<:Real}, s::Integer, gₗ::Real, Vₗ::Real, λₗ::Real, λₛ::Real, ω::Real, pumptype::Symbol)
-    X(j′, j) = 16n*j*j′ / (π*((j-j′)^2-(2n)^2)*((j+j′)^2-(2n)^2))
-    
-    gs1 = 2n - 1 # number of levels in the first band of spatial Hamiltonian (group size 1)
-    gs2 = 2n + 1 # number of levels in the second band of spatial Hamiltonian (group size 2)
-    # convert `n_min` and `n_max` to actual level numbers
-    n_min = (n_min-1) ÷ 2 * 4n + (isodd(n_min) ? 1 : gs1 + 1)
-    n_max = (n_max-1) ÷ 2 * 4n + (isodd(n_max) ? gs1 : gs1 + gs2)
-    if iseven(n_min) # swap `gs1` and `gs2` so that they correspond to actual group sizes
-        gs1, gs2 = gs2, gs1
-    end
-
-    n_j = 2n_max # number of indices 𝑗 to use for constructing the unperturbed Hamiltonian
-    h = zeros(n_j, n_j)
-
-    Δn = n_max - n_min + 1
-    ν = Vector{Int}(undef, Δn)
-    # FIll `ν`: [1 (`gs1` times), 2 (`gs2` times), 3 (`gs1` times), 4 (`gs2` times), ...]
-    number = 1
-    g = gs1 + gs2
-    for i in 0:Δn÷g-1
-        ν[g*i+1:g*i+gs1] .= number
-        number += 1
-        ν[g*i+gs1+1:g*i+g] .= number
-        number += 1
-    end
-    ν[Δn - Δn%g + 1:end] .= number
-
-    pattern = [fill(gs1, gs1); fill(gs2, gs2)]
-    G = repeat(pattern, Δn÷g) # a pattern which e.g. for `n == 2` looks like [3, 3, 3, 5, 5, 5, 5, 3, 3, 3, 5, 5, 5, 5, ...]
-    Δn % g != 0 && append!(G, fill(gs1, gs1))
-    
-    H_dim = Δn # dimension of the constructed 𝐻 matrix
-    # number of non-zero elements in 𝐻:
-    n_H_nonzeros = H_dim + 2*( # diagonal plus two times upper off-diagonal terms:
-                   (H_dim ÷ g - 1) * (gs1^2 + gs2^2) + # number of long  lattice blocks of size `g` × `g`, each having `(gs1^2 + gs2^2)` elements
-                   (H_dim ÷ g - 2) * (gs1^2 + gs2^2) + # number of short lattice blocks of size `g` × `g`, each having `(gs1^2 + gs2^2)` elements
-                   2(H_dim % g != 0 ? gs1^2 : 0) ) # if `H_dim % g != 0`, then one more block of size `gs1` is present, both for short and long lattice
-   
-    H_rows = zeros(Int, n_H_nonzeros)
-    H_cols = zeros(Int, n_H_nonzeros)
-    H_vals = zeros(ComplexF64, n_H_nonzeros)
-    
-    ϕ = phases[1]
-
-    for j in 1:n_j
-        for j′ in j:n_j
-            val = 0.0
-            if isodd(j′ + j)
-                val += Vₗ/2 * X(j′, j) * sin(2ϕ)
-            else
-                # check diagonals "\"
-                if j′ == j
-                    val += (gₗ + Vₗ)/2 + (j / n)^2
-                elseif j′ == j - 2n || j′ == j + 2n
-                    val += Vₗ/2 * cos(2ϕ) / 2
-                elseif j′ == j - 4n || j′ == j + 4n
-                    val += gₗ/2 / 2
-                end
-                # check anti-diagonals "/"
-                if j′ == -j - 2n || j′ == -j + 2n
-                    val += -Vₗ/2 * cos(2ϕ) / 2
-                elseif j′ == -j - 4n || j′ == -j + 4n
-                    val += -gₗ/2 / 2
-                end
-            end
-            h[j′, j] = h[j, j′] = val # push the element to the conjugate positions
-        end
-    end
-    f = eigen(h)
-    # save only energies and states for levels from `n_min` to `n_max`
-    ϵ = f.values[n_min:n_max]
-    c = f.vectors[:, n_min:n_max]
-
-    # Construct 𝐻
-    p = 1 # a counter for placing elements to the vectors `H_*`
-    for m in 1:H_dim
-        # place the diagonal element (S25)
-        H_rows[p] = H_cols[p] = m
-        H_vals[p] = ϵ[m] - ν[m]*ω/s
-        p += 1
-
-        # place the elements of the long lattice (S26)
-        for i in 1:G[m]
-            # skip `s` groups of `g`, then some more groups depending on `m`, then skip `G[1]` cells
-            m′ = g*(s÷2) + g*((ν[m]-1)÷2) + iseven(ν[m])*G[1] + i
-            m′ > H_dim && break
-            H_rows[p] = m′
-            H_cols[p] = m
-                j_sum = sum( (c[j+4n, m′]/4 + c[j-4n, m′]/4 + c[j, m′]/2) * c[j, m] for j = 4n+1:n_j-4n ) + 
-                        sum( (c[j+4n, m′]/4 - c[-j+4n, m′]/4 + c[j, m′]/2) * c[j, m] for j = 1:4n-1 ) +
-                        (c[4n+4n, m′]/4 + c[4n, m′]/2) * c[4n, m] + # iteration `j = 4n`
-                        sum( (c[j-4n, m′]/4 + c[j, m′]/2) * c[j, m] for j = n_j-4n+1:n_j )
-                H_vals[p] = (pumptype == :space ? λₗ/2 * j_sum : λₗ/2 * j_sum * cis(-2ϕ)) # a check for space or space-time pumping
-
-            p += 1
-            # place the conjugate element
-            H_rows[p] = m
-            H_cols[p] = m′
-            H_vals[p] = H_vals[p-1]'
-            p += 1
-        end
-        
-        # place the elements of the short lattice (S29)
-        for i in 1:G[m]
-            m′ = g*s + g*((ν[m]-1)÷2) + iseven(ν[m])*G[1] + i
-            m′ > H_dim && break
-            H_rows[p] = m′
-            H_cols[p] = m
-                j_sum = sum( (-c[j+4n, m′]/4 - c[j-4n, m′]/4 + c[j, m′]/2) * c[j, m] for j = 4n+1:n_j-4n ) + 
-                        sum( (-c[j+4n, m′]/4 + c[-j+4n, m′]/4 + c[j, m′]/2) * c[j, m] for j = 1:4n-1) +
-                        (-c[4n+4n, m′]/4 + c[4n, m′]/2) * c[4n, m] + # iteration `j = 4n`
-                        sum( (-c[j-4n, m′]/4 + c[j, m′]/2) * c[j, m] for j = n_j-4n+1:n_j)
-                H_vals[p] = λₛ/2 * j_sum
-            p += 1
-            # place the conjugate element
-            H_rows[p] = m
-            H_cols[p] = m′
-            H_vals[p] = H_vals[p-1]'
-            p += 1
-        end
-    end
-    H = sparse(H_rows, H_cols, H_vals)
-    E, b, info = eigsolve(H, Δn, :LR; krylovdim=H_dim)
-    if info.converged < Δn
-        @warn "Only $(info.converged) eigenvalues out of $(Δn) converged when diagonalising 𝐻ₖ. "*
-                "Results may be inaccurate." unconverged_norms=info.normres[info.converged+1:end]
-    end
-
-    return ϵ, E, c, b
-end
-
-

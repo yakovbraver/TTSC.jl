@@ -40,7 +40,9 @@ Aₗ = abs(coeffs[2]); χₗ = angle(coeffs[2])
 
 ########## Periodic case
 
-phases = range(0, π, length=61)
+phases = [range(0, pi/4-0.1, length=10); range(pi/4-0.01, pi/4+0.01, length=10);
+          range(pi/4+0.1, 3pi/4-0.1, length=20); range(3pi/4-0.01, 3pi/4+0.01, length=10);
+          range(3pi/4+0.1, pi, length=10)]
 n_cells = 2
 
 h = Bandsolvers.UnperturbedHamiltonian(n_cells; M=1/2, gₗ, Vₗ, phases, maxband=30, isperiodic=true)
@@ -86,15 +88,17 @@ for (f, n) in enumerate(whichstates)
 end
 plot(figs...)
 
-# # Wannier centres
-# pyplot()
-# Bandsolvers.compute_wanniers!(h, targetband=1)
-# fig = plot();
-# for (i, ϕ) in enumerate(φₜ)
-#     scatter!(h.w.pos_lo[i], fill(ϕ, n_cells); marker_z=h.w.E_lo[i], c=:coolwarm, label=false, markerstrokewidth=0)
-#     scatter!(h.w.pos_hi[i], fill(ϕ, n_cells); marker_z=h.w.E_hi[i], c=:coolwarm, label=false, markerstrokewidth=0)
-# end
-# plot!(minorgrid=true, xlabel=L"x", ylabel=L"\phi_t", cbtitle="Energy")
+# Wannier centres
+pyplot()
+targetlevels_lo = [1, 2, 5, 6]
+targetlevels_hi = [3, 4, 7, 8]
+Bandsolvers.compute_wanniers!(H; targetlevels_lo, targetlevels_hi)
+fig = plot();
+for (i, ϕ) in enumerate(phases)
+    scatter!(H.uh.w.pos_lo[i], fill(ϕ, length(targetlevels_lo)); marker_z=H.uh.w.E_lo[i], c=:coolwarm, label=false, markerstrokewidth=0)
+    scatter!(H.uh.w.pos_hi[i], fill(ϕ, length(targetlevels_hi)); marker_z=H.uh.w.E_hi[i], c=:coolwarm, label=false, markerstrokewidth=0)
+end
+plot!(minorgrid=true, xlabel=L"x", ylabel=L"\phi_x", cbtitle="Energy")
 
 # # Wannier functions
 # x = range(0, n_cells*π, length=50n_cells)
