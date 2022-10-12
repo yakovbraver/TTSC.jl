@@ -583,6 +583,29 @@ function compute_wanniers!(fh::FloquetHamiltonian; targetlevels_lo::AbstractVect
     end
 end
 
+"""
+Construct Wannier functions at coordinates in `x` at each phase number in `whichphases`. All Wannier functions contained in `fh` are constructed.
+Return `(w_lo, w_hi)`, where `w_**[i][j][ix, it]` = `j`th Wannier function at `i`th phase at `ix`th coordinate at `it`th time moment.
+"""
+function make_wannierfunctions(fh::FloquetHamiltonian, x::AbstractVector{<:Real}, Ωt::AbstractVector{<:Real}, whichphases::AbstractVector{<:Integer})
+    u = make_eigenfunctions(fh, x, Ωt, whichphases, [fh.uh.w.targetlevels_lo; fh.uh.w.targetlevels_hi])
+    w_lo = [Vector{Matrix{ComplexF64}}() for _ in eachindex(whichphases)]
+    w_hi = [Vector{Matrix{ComplexF64}}() for _ in eachindex(whichphases)]
+    for (i, iϕ) in enumerate(whichphases)
+        n_lo = size(fh.uh.w.d_lo[iϕ], 1)
+        w_lo[i] = [Matrix{ComplexF64}(undef, length(x), length(Ωt)) for _ in 1:n_lo]
+        for j in 1:n_lo
+            w_lo[i][j] = sum(fh.uh.w.d_lo[iϕ][k, j] * u[:, :, k, iϕ] for k = 1:n_lo)
+        end
+        n_hi = size(fh.uh.w.d_hi[iϕ], 1)
+        w_hi[i] = [Matrix{ComplexF64}(undef, length(x), length(Ωt)) for _ in 1:n_hi]
+        for j in 1:n_hi
+            w_hi[i][j] = sum(fh.uh.w.d_lo[iϕ][k, j] * u[:, :, k+n_lo, iϕ] for k = 1:n_hi)
+        end
+    end
+    return w_lo, w_hi
+end
+
 end
 
 """

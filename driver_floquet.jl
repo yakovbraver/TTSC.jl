@@ -100,21 +100,18 @@ for (i, ϕ) in enumerate(phases)
 end
 plot!(minorgrid=true, xlabel=L"x", ylabel=L"\phi_x", cbtitle="Energy")
 
-# # Wannier functions
-# x = range(0, n_cells*π, length=50n_cells)
-# w_lo, w_hi = Bandsolvers.make_wannierfunctions(h, x, 1:length(φₜ))
-# p = Progress(length(φₜ), 1)
-# @gif for (i, ϕ) in enumerate(φₜ)
-#     U = @. -λₛ*Aₛ*cos(4x) + λₗ*Aₗ*cos(2x - ϕ) + H.𝐸(Iₛ) - ω/s*Iₛ
-#     plot(x, U, label=false, ylims=(-5610, -5575))
-#     scatter!(h.w.pos_lo[i], h.w.E_lo[i]; marker_z=h.w.E_lo[i], c=:coolwarm, label=false, markerstrokewidth=0, clims=(-5610, -5575))
-#     scatter!(h.w.pos_hi[i], h.w.E_hi[i]; marker_z=h.w.E_hi[i], c=:coolwarm, label=false, markerstrokewidth=0)
-#     for j in 1:n_cells
-#         plot!(x, 4abs2.(w_lo[i][j]) .+ h.w.E_lo[i][j], label=false)
-#         plot!(x, 4abs2.(w_hi[i][j]) .+ h.w.E_hi[i][j], label=false)
-#     end
-#     next!(p)
-# end
+# Maps of Wannier functions
+x = range(0, n_cells*pi, length=50n_cells)
+Ωt = range(0, 2π, length=40s)
+iϕ = 1
+w_lo, w_hi = Bandsolvers.make_wannierfunctions(H, x, Ωt, [iϕ])
+using BenchmarkTools
+@benchmark Bandsolvers.make_wannierfunctions($H, $x, $Ωt, [iϕ])
+figs = [plot() for _ in eachindex(targetlevels_lo)]
+for f in eachindex(targetlevels_lo)
+    figs[f] = heatmap(x, Ωt, abs2.(w_lo[iϕ][f][:, :]'), xlabel=L"x", ylabel=L"\Omega t", c=:viridis, title="Wannier $f")
+end
+plot(figs...)
 
 # ########## Non-periodic case
 
