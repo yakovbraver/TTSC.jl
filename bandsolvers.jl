@@ -213,10 +213,10 @@ function make_wannierfunctions(uh::UnperturbedHamiltonian, x::AbstractVector{<:R
     ψ = make_eigenfunctions(uh, x, whichphases, uh.w.minlevel:uh.w.minlevel+n_w) # construct energy eigenfunctions
     for i in eachindex(whichphases)
         for j in 1:uh.w.n_lo[i]
-            w[:, j, i] = sum(uh.w.d[k, j, i] * ψ[:, uh.w.minlevel+k-1, i] for k = 1:uh.w.n_lo[i])
+            w[:, j, i] = sum(uh.w.d[k, j, i] * ψ[:, k, i] for k = 1:uh.w.n_lo[i])
         end
         for j in uh.w.n_lo[i]+1:n_w
-            w[:, j, i] = sum(uh.w.d[k, j, i] * ψ[:, uh.w.minlevel+uh.w.n_lo[i]+k-1, i] for k = 1:n_w-uh.w.n_lo[i])
+            w[:, j, i] = sum(uh.w.d[k, j, i] * ψ[:, uh.w.n_lo[i]+k-1, i] for k = 1:n_w-uh.w.n_lo[i])
         end
     end
     return ψ, w
