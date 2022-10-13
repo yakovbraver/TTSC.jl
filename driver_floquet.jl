@@ -31,9 +31,9 @@ Vₗ = -2
 λₛ = 100; λₗ = 40; ω = 410
 s = 2
 params = [gₗ, l, Vₗ, λₛ, λₗ, ω]
-H = SpacetimeHamiltonian(𝐻₀, 𝐻, params, s, (1.5, 2), (2, 2.5))
+H_classical = SpacetimeHamiltonian(𝐻₀, 𝐻, params, s, (1.5, 2), (2, 2.5))
 
-Iₛ, M, coeffs = compute_parameters(H, Function[𝑄ₛ, 𝑄ₗ], [2s, s])
+Iₛ, M, coeffs = compute_parameters(H_classical, Function[𝑄ₛ, 𝑄ₗ], [2s, s])
 
 Aₛ = abs(coeffs[1]); χₛ = angle(coeffs[1])
 Aₗ = abs(coeffs[2]); χₗ = angle(coeffs[2])
@@ -89,27 +89,19 @@ end
 plot(figs...)
 
 # Wannier centres
-pyplot()
-targetlevels_lo = [1, 2, 5, 6]
-targetlevels_hi = [3, 4, 7, 8]
-Bandsolvers.compute_wanniers!(H; targetlevels_lo, targetlevels_hi)
+targetlevels = [1, 2, 5, 6]
+Bandsolvers.compute_wanniers!(H; targetlevels)
 fig = plot();
 for (i, ϕ) in enumerate(phases)
-    scatter!(H.uh.w.pos_lo[i], fill(ϕ, length(targetlevels_lo)); marker_z=H.uh.w.E_lo[i], c=:coolwarm, label=false, markerstrokewidth=0)
-    scatter!(H.uh.w.pos_hi[i], fill(ϕ, length(targetlevels_hi)); marker_z=H.uh.w.E_hi[i], c=:coolwarm, label=false, markerstrokewidth=0)
+    scatter!(H.uh.w.pos[:, i], fill(ϕ, length(targetlevels)); label=false, markerstrokewidth=0, c=1)
 end
-plot!(minorgrid=true, xlabel=L"x", ylabel=L"\phi_x", cbtitle="Energy")
+plot!(minorgrid=true, xlabel=L"x", ylabel=L"\phi_x")
 
 # Maps of Wannier functions
-x = range(0, n_cells*pi, length=50n_cells)
-Ωt = range(0, 2π, length=40s)
-iϕ = 1
-w_lo, w_hi = Bandsolvers.make_wannierfunctions(H, x, Ωt, [iϕ])
-using BenchmarkTools
-@benchmark Bandsolvers.make_wannierfunctions($H, $x, $Ωt, [iϕ])
-figs = [plot() for _ in eachindex(targetlevels_lo)]
-for f in eachindex(targetlevels_lo)
-    figs[f] = heatmap(x, Ωt, abs2.(w_lo[iϕ][f][:, :]'), xlabel=L"x", ylabel=L"\Omega t", c=:viridis, title="Wannier $f")
+_, w = Bandsolvers.make_wannierfunctions(H, x, Ωt, [iϕ])
+figs = [plot() for _ in eachindex(targetlevels)]
+for f in eachindex(targetlevels)
+    figs[f] = heatmap(x, Ωt, abs2.(w[:, :, f, iϕ]'), xlabel=L"x", ylabel=L"\Omega t", c=:viridis, title="Wannier $f")
 end
 plot(figs...)
 

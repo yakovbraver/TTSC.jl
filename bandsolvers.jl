@@ -357,23 +357,21 @@ function diagonalise!(fh::FloquetHamiltonian)
 end
 
 """
-Construct Floquet modes at coordinates in `x` and time moments in `Ωt` for each tate number in `whichstates` at each phase number in `whichphases`.
+Construct Floquet modes at coordinates in `x` and time moments in `Ωt` for each state number in `whichstates` at each phase number in `whichphases`.
 Return `u`, where `u[ix, it, j, i]` = `j`th wavefunction at `i`th phase at `ix`th coordinate at `it`th time moment.
 """
 function make_eigenfunctions(fh::FloquetHamiltonian, x::AbstractVector{<:Real}, Ωt::AbstractVector{<:Real}, whichphases::AbstractVector{<:Integer},
                              whichstates::AbstractVector{<:Integer})
     u = Array{ComplexF64,4}(undef, length(x), length(Ωt), length(whichstates), length(whichphases))
     n_levels = size(fh.E, 1) # number of Floquet levels; equivalently, number of levels of ℎ used for constructing ℋ
-    ψ = Array{ComplexF64,2}(undef, length(x), n_levels) # for storing eigenfunctions of ℎ, which are mixed during construction of `u`
+    # Eigenfunctions of ℎ, which are mixed during construction of `u`. For time-only pumping use only eigenstates at the first phase, corresponding to 𝜑ₓ = 0
+    ψ = make_eigenfunctions(fh.uh, x, (fh.pumptype == :time ? [1] : whichphases), fh.minlevel:fh.minlevel+n_levels-1)
     ν(m) = ceil(Int, m/2fh.uh.N)
-    make_state = fh.uh.isperiodic ? make_exp_state : make_sin_state
     for (i, iϕ) in enumerate(whichphases)
-        for m in 1:n_levels
-            ψ[:, m] = make_state(x, fh.uh.c[:, fh.minlevel+m-1, iϕ]; N=fh.uh.N)
-        end
+        p = (fh.pumptype == :time ? 1 : iϕ)
         for (j, js) in enumerate(whichstates)
             for (it, t) in enumerate(Ωt)
-                u[:, it, j, i] = sum(cis(-ν(m)*t) * ψ[:, m] * fh.b[m, js, iϕ] for m in 1:n_levels)
+                u[:, it, j, i] = sum(cis(-ν(m)*t) * ψ[:, m, p] * fh.b[m, js, iϕ] for m in 1:n_levels)
             end
         end
     end
@@ -405,88 +403,73 @@ end
 """
 Calculate Wannier vectors for the FloquetHamiltonian Hamiltonian `fh` using the quasienergy levels `targetlevels_lo` and `targetlevels_hi`.
 """
-function compute_wanniers!(fh::FloquetHamiltonian; targetlevels_lo::AbstractVector{<:Real}, targetlevels_hi::AbstractVector{<:Real})
+function compute_wanniers!(fh::FloquetHamiltonian; targetlevels::AbstractVector{<:Real})
     (;N, phases, c) = fh.uh
-    (;pos_lo, pos_hi, E_lo, E_hi, d_lo, d_hi) = fh.uh.w
     ν(m) = ceil(Int, m/2N)
 
-    fh.uh.w.targetlevels_lo = targetlevels_lo # save this because it's needed in `make_wavefunction` when constructing coordinate space Wannier functions
-    fh.uh.w.targetlevels_hi = targetlevels_hi
+    fh.uh.w.targetlevels = targetlevels # save this because it's needed in `make_wavefunction` when constructing coordinate space Wannier functions
 
-    X = Matrix{ComplexF64}(undef, length(targetlevels_lo), length(targetlevels_lo)) # position operator
+    n_w = length(targetlevels)
+    E = Matrix{Float64}(undef, n_w, length(phases))
+    pos = Matrix{Float64}(undef, n_w, length(phases))
+    d = Array{ComplexF64, 3}(undef, n_w, n_w, length(phases))
+    fh.uh.w = Wanniers(0, targetlevels, Int[], E, pos, d)
+    X = Matrix{ComplexF64}(undef, n_w, n_w) # position operator
     
-    n_levels = fh.uh.maxlevel - fh.minlevel + 1 # number of levels of spatial Hamiltonian to use for constructing Floquet Hamiltonian
+    n_levels = size(fh.E, 1)
     ∑cc = Matrix{ComplexF64}(undef, n_levels, n_levels)
     cis∑cc = Matrix{ComplexF64}(undef, n_levels, n_levels)
     
     for i in eachindex(phases)
-        for m in fh.minlevel:fh.minlevel+n_levels-1
-            for m′ in fh.minlevel:fh.minlevel+n_levels-1
-                ∑cc[m′-fh.minlevel+1, m-fh.minlevel+1] = sum(c[j+1, m′, i]' * c[j, m, i] for j = 1:size(c, 1)-1)
-            end
-        end
-
-        t = (fh.pumptype == :space ? π/5 : π/5 - i/length(phases)*π/2) # time moment at which to diagonalise the coordinate operator
-        if fh.pumptype == :space || i == 1 # if pumping is space-only, `cis∑cc` can be calculated only once, at `i == 1`, because `t` does not change
-            for m in 1:n_levels
-                for m′ in 1:n_levels
-                    cis∑cc[m′, m] = ∑cc[m′, m] * cis((ν(m′+fh.minlevel-1) - ν(m+fh.minlevel-1)) * t)
+        # if pumping is time-only, then `∑cc` must be calculated only at the first iteration, thereby using `c`'s at 𝜑ₓ = 0
+        if fh.pumptype != :time || i == 1
+            for m in fh.minlevel:fh.minlevel+n_levels-1
+                for m′ in fh.minlevel:fh.minlevel+n_levels-1
+                    ∑cc[m′-fh.minlevel+1, m-fh.minlevel+1] = sum(c[j+1, m′, i]' * c[j, m, i] for j = 1:size(c, 1)-1)
                 end
             end
         end
 
-        # Lower band
-        for (in, n) in enumerate(targetlevels_lo)
-            for (in′, n′) in enumerate(targetlevels_lo)
+        t = (fh.pumptype == :space ? π/5 : π/5 - i/length(phases)*π/2) # time moment at which to diagonalise the coordinate operator
+        # `cis∑cc` must be calculated at every phase: if pumping is temporal, `t` depends on phase;
+        # if pumping is spatial, `∑cc` depends on phase (because `c`'s do)
+        for m in 1:n_levels
+            for m′ in 1:n_levels
+                cis∑cc[m′, m] = ∑cc[m′, m] * cis((ν(m′+fh.minlevel-1) - ν(m+fh.minlevel-1)) * t)
+            end
+        end
+
+        for (in, n) in enumerate(targetlevels)
+            for (in′, n′) in enumerate(targetlevels)
                 X[in′, in] = sum(fh.b[m, n, i] * sum(fh.b[m′, n′, i]' * cis∑cc[m′, m] for m′ in 1:n_levels) for m in 1:n_levels)
             end
         end
-        # `eigen` does not guarantee orthogonality of eigenvectors in case of degeneracies for `X` unitary, so use `schur`
-        # (although a degeneracy of coordinates eigenvalues is unlikely here)
-        _, d_lo[i], pos_complex = schur(X)
+        _, d[:, :, i], pos_complex = schur(X)
         pos_real = @. mod2pi(angle(pos_complex)) / 2 * N # `mod2pi` converts the angle from [-π, π) to [0, 2π)
         sp = sortperm(pos_real)         # sort the eigenvalues
-        pos_lo[i] = pos_real[sp]
-        Base.permutecols!!(d_lo[i], sp) # sort the eigenvectors in the same way
-        E_lo[i] = [abs2.(dˣ) ⋅ fh.E[targetlevels_lo, i] for dˣ in eachcol(d_lo[i])]
-
-        # Higher band
-        for (in, n) in enumerate(targetlevels_hi)
-            for (in′, n′) in enumerate(targetlevels_hi)
-                X[in′, in] = sum(fh.b[m, n, i] * sum(fh.b[m′, n′, i]' * cis∑cc[m′, m] for m′ in 1:n_levels) for m in 1:n_levels)
-            end
-        end
-        _, d_hi[i], pos_complex = schur(X)
-        pos_real = @. mod2pi(angle(pos_complex)) / 2 * N # `mod2pi` converts the angle from [-π, π) to [0, 2π)
-        sp = sortperm(pos_real)
-        pos_hi[i] = pos_real[sp]
-        Base.permutecols!!(d_hi[i], sp)
-        E_hi[i] = [abs2.(dˣ) ⋅ fh.E[targetlevels_hi, i] for dˣ in eachcol(d_hi[i])]
+        pos[:, i] = pos_real[sp]
+        @views Base.permutecols!!(d[:, :, i], sp) # sort the eigenvectors in the same way
+        E[:, i] = [abs2.(dˣ) ⋅ fh.E[targetlevels, i] for dˣ in eachcol(d[:, :, i])]
     end
 end
 
-# """
-# Construct Wannier functions at coordinates in `x` at each phase number in `whichphases`. All Wannier functions contained in `fh` are constructed.
-# Return `(w_lo, w_hi)`, where `w_**[i][j][ix, it]` = `j`th Wannier function at `i`th phase at `ix`th coordinate at `it`th time moment.
-# """
-# function make_wannierfunctions(fh::FloquetHamiltonian, x::AbstractVector{<:Real}, Ωt::AbstractVector{<:Real}, whichphases::AbstractVector{<:Integer})
-#     u = make_eigenfunctions(fh, x, Ωt, whichphases, [fh.uh.w.targetlevels_lo; fh.uh.w.targetlevels_hi])
-#     w_lo = [Vector{Matrix{ComplexF64}}() for _ in eachindex(whichphases)]
-#     w_hi = [Vector{Matrix{ComplexF64}}() for _ in eachindex(whichphases)]
-#     for (i, iϕ) in enumerate(whichphases)
-#         n_lo = size(fh.uh.w.d_lo[iϕ], 1)
-#         w_lo[i] = [Matrix{ComplexF64}(undef, length(x), length(Ωt)) for _ in 1:n_lo]
-#         for j in 1:n_lo
-#             w_lo[i][j] = sum(fh.uh.w.d_lo[iϕ][k, j] * u[:, :, k, iϕ] for k = 1:n_lo)
-#         end
-#         n_hi = size(fh.uh.w.d_hi[iϕ], 1)
-#         w_hi[i] = [Matrix{ComplexF64}(undef, length(x), length(Ωt)) for _ in 1:n_hi]
-#         for j in 1:n_hi
-#             w_hi[i][j] = sum(fh.uh.w.d_lo[iϕ][k, j] * u[:, :, k+n_lo, iϕ] for k = 1:n_hi)
-#         end
-#     end
-#     return w_lo, w_hi
-# end
+"""
+Construct Wannier functions at coordinates in `x` at each phase number in `whichphases`. All Wannier functions contained in `fh` are constructed.
+In the process, energy eigenfunctions are also constructed.
+Return `u, w`, where `w[ix, it, j, i]` = `j`th Wannier function at `i`th phase at `ix`th coordinate at `it`th time moment,
+and `u` is an array of Floquet modes in the same format.
+"""
+function make_wannierfunctions(fh::FloquetHamiltonian, x::AbstractVector{<:Real}, Ωt::AbstractVector{<:Real}, whichphases::AbstractVector{<:Integer})
+    n_w = length(fh.uh.w.targetlevels)
+    u = make_eigenfunctions(fh, x, Ωt, whichphases, fh.uh.w.targetlevels)
+    w = Array{ComplexF64, 4}(undef, length(x), length(Ωt), n_w, length(fh.uh.phases))
+    for i in eachindex(whichphases)
+        for j in 1:n_w
+            w[:, :, j, i] = sum(fh.uh.w.d[k, j, i] * u[:, :, k, i] for k = 1:n_w)
+        end
+    end
+    return u, w
+end
 
 end
 
