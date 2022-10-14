@@ -44,10 +44,10 @@ set_defaults(width=2*8.6, height=7.5)
 
 ### (a) Floquet spectrum
 
-phases = range(0, pi, length=61)
+φₓ = range(0, pi, length=61)
 n_cells = 1
 
-h = Bandsolvers.UnperturbedHamiltonian(n_cells; M=1/2, gₗ, Vₗ, phases, maxband=34, isperiodic=true)
+h = Bandsolvers.UnperturbedHamiltonian(n_cells; M=1/2, gₗ, Vₗ, φₓ, maxband=34, isperiodic=true)
 Bandsolvers.diagonalise!(h)
 H = Bandsolvers.FloquetHamiltonian(h; s, λₛ, λₗ, ω, pumptype=:time, minband=1)
 Bandsolvers.diagonalise!(H)
@@ -55,7 +55,7 @@ Bandsolvers.diagonalise!(H)
 figa = plot();
 for i in 1:8n_cells
     label, ls, c = (i == 1 ? (L"\beta=1", :solid, BROWN) : i == 3 ? (L"\beta=2", :dash, BROWN) : ("", :solid, GREY))
-    plot!(2phases ./ π, H.E[i, :]; label, c, ls, lw=0.8)
+    plot!(2φₓ ./ π, H.E[i, :]; label, c, ls, lw=0.8)
 end
 plot!(xlabel=L"\varphi_t/\pi", ylabel="Quasienergy", title="x", legend=(0.01, 0.5))
 
@@ -80,7 +80,7 @@ Bandsolvers.compute_wanniers!(H; targetlevels)
 
 x = range(0, n_cells*pi, length=50n_cells) # x's for wavefunctions
 Ωt = range(0, 2π, length=40s) # time moments for wavefunctions
-_, w_c = Bandsolvers.make_wannierfunctions(H, x, Ωt, 1:length(phases))
+_, w_c = Bandsolvers.make_wannierfunctions(H, x, Ωt, 1:length(φₓ))
 w = abs2.(w_c)
 
 iϕ = 1
@@ -108,10 +108,10 @@ figc = plot(fig1, fig2, layout=(2,1), link=:x)
 
 ### Maps of Wannier functions
 
-fig1 = heatmap(Ωt ./ π, 2phases ./ π, w[i_x, :, 1, :]', xformatter=_->"", ylabel=L"\varphi_t/\pi", title="x", cbartitle=L"|w_1(x_0,t)|^2", c=CMAP, rightmargin=-10mm)
+fig1 = heatmap(Ωt ./ π, 2φₓ ./ π, w[i_x, :, 1, :]', xformatter=_->"", ylabel=L"\varphi_t/\pi", title="x", cbartitle=L"|w_1(x_0,t)|^2", c=CMAP, rightmargin=-10mm)
 vspan!([0, 1], c=GREEN, label=L"\gamma=1", alpha=0.3)
 vspan!([1, 2], xformatter=_->"", c=RED, label=L"\gamma=2", alpha=0.3, widen=false, xlims=(0, 2))
-fig2 = heatmap(Ωt ./ π, 2phases ./ π, w[i_x, :, 2, :]', xlabel=L"\Omega t/\pi", ylabel=L"\varphi_t/\pi", cbartitle=L"|w_2(x_0,t)|^2", c=CMAP, rightmargin=-10mm)
+fig2 = heatmap(Ωt ./ π, 2φₓ ./ π, w[i_x, :, 2, :]', xlabel=L"\Omega t/\pi", ylabel=L"\varphi_t/\pi", cbartitle=L"|w_2(x_0,t)|^2", c=CMAP, rightmargin=-10mm)
 vspan!([0, 1], c=GREEN, label=false, alpha=0.3)
 vspan!([1, 2], c=RED, label=false, alpha=0.3, widen=false, xlims=(0, 2))
 figd = plot(fig1, fig2, layout=(2,1), link=:x)
@@ -127,10 +127,10 @@ set_defaults(width=2*8.6, height=7.5)
 
 ### (a) Floquet spectrum
 
-phases = [range(0, 0.7, length=10); range(0.75, 0.85, length=15); range(0.9, 2.2, length=10); range(2.3, 2.4, length=15); range(2.4, pi, length=10)]
+φₓ = [range(0, 0.7, length=10); range(0.75, 0.85, length=15); range(0.9, 2.2, length=10); range(2.3, 2.4, length=15); range(2.4, pi, length=10)]
 n_cells = 2
 
-h = Bandsolvers.UnperturbedHamiltonian(n_cells; M=1/2, gₗ, Vₗ, phases, maxband=34, isperiodic=true)
+h = Bandsolvers.UnperturbedHamiltonian(n_cells; M=1/2, gₗ, Vₗ, φₓ, maxband=34, isperiodic=true)
 Bandsolvers.diagonalise!(h)
 H = Bandsolvers.FloquetHamiltonian(h; s, λₛ, λₗ, ω, pumptype=:space, minband=1)
 Bandsolvers.diagonalise!(H)
@@ -138,7 +138,7 @@ Bandsolvers.diagonalise!(H)
 figa = plot();
 for i in 1:8n_cells
     label, ls, c = (i == 1 ? (L"j=1,\beta=1", :solid, BROWN) : i == 2 ? (L"j=2,\beta=1", :dash, BROWN) : ("", :solid, GREY))
-    plot!(phases ./ π, H.E[i, :]; label, c, ls, lw=0.8, xlims=(0, 1))
+    plot!(φₓ ./ π, H.E[i, :]; label, c, ls, lw=0.8, xlims=(0, 1))
 end
 plot!(xlabel=L"\varphi_x/\pi", ylabel="Quasienergy (recoil units)", title="x", legend=(0.01, 0.1), xtick=0:0.25:1, bgcolorlegend=RGBA(1, 1, 1, 0.3), fgcolorlegend=RGBA(0, 0, 0, 0.3))
 lens!([0.225, 0.275], [-5696.41, -5696.25], inset = (1, bbox(0.35, 0.25, 0.5, 0.25)), lw=0.5, c=:black)
@@ -150,13 +150,12 @@ Bandsolvers.compute_wanniers!(H; targetlevels)
 
 x = range(0, n_cells*pi, length=1000n_cells) # x's for wavefunctions
 Ωt = range(0, 2π, length=40s) # time moments for wavefunctions: 𝜔𝑡/𝑠 ∈ [0; 2π]
-_, w_c = Bandsolvers.make_wannierfunctions(H, x, Ωt, 1:length(phases))
+_, w_c = Bandsolvers.make_wannierfunctions(H, x, Ωt, 1:length(φₓ))
 w = abs2.(w_c)
 
 i_t = 21
 
-# swap the Wanniers 1 and 2 at phases 31:end
-swap_wanniers!(w, 1, 2, 31:lastindex(phases))
+swap_wanniers!(w, 1, 2, 31:lastindex(φₓ))
 
 iϕ = 1
 fig1 = plot(x ./ π, w[:, i_t, 1, iϕ], c=BLACK, xformatter=_->"", ylabel=L"|w_{i,1}(x,t_0)|^2", label=L"i=1", lw=0.5)
@@ -170,10 +169,10 @@ figb = plot(fig1, fig2, layout=(2,1), link=:x)
 
 ### (c) Maps of Wannier functions
 
-fig1 = heatmap(x ./ π, phases ./ π, w[:, i_t, 1, :]', ylabel=L"\varphi_x/\pi", title="x", cbartitle=L"|w_{1,1}(x,t_0)|^2", c=CMAP, rightmargin=-10mm)
+fig1 = heatmap(x ./ π, φₓ ./ π, w[:, i_t, 1, :]', ylabel=L"\varphi_x/\pi", title="x", cbartitle=L"|w_{1,1}(x,t_0)|^2", c=CMAP, rightmargin=-10mm)
 vspan!([0, 1/4-0.02, 5/4+0.02, 7/4-0.02, 7/4+0.02, 2], c=GREEN, label=L"k=1", alpha=0.3)
 vspan!([1/4+0.02, 3/4-0.02, 3/4+0.02, 5/4-0.02], xformatter=_->"", c=BLUE, label=L"k=2", alpha=0.3, widen=false, xlims=(0, 2))
-fig2 = heatmap(x ./ π, phases ./ π, w[:, i_t, 2, :]', xlabel=L"x/\pi", ylabel=L"\varphi_x/\pi", cbartitle=L"|w_{2,1}(x,t_0)|^2", c=CMAP, rightmargin=-10mm)
+fig2 = heatmap(x ./ π, φₓ ./ π, w[:, i_t, 2, :]', xlabel=L"x/\pi", ylabel=L"\varphi_x/\pi", cbartitle=L"|w_{2,1}(x,t_0)|^2", c=CMAP, rightmargin=-10mm)
 vspan!([0, 1/4-0.02, 5/4+0.02, 7/4-0.02, 7/4+0.02, 2], c=GREEN, label=false, alpha=0.3)
 vspan!([1/4+0.02, 3/4-0.02, 3/4+0.02, 5/4-0.02], c=BLUE, label=false, alpha=0.3, widen=false, xlims=(0, 2))
 
@@ -190,10 +189,10 @@ set_defaults(width=2*8.6, height=15)
 
 ### (a) Floquet spectrum
 
-phases = [range(0, 0.7, length=10); range(0.75, 0.85, length=15); range(0.9, 2.2, length=10); range(2.3, 2.4, length=15); range(2.4, pi, length=10)]
+φₓ = [range(0, 0.7, length=10); range(0.75, 0.85, length=15); range(0.9, 2.2, length=10); range(2.3, 2.4, length=15); range(2.4, pi, length=10)]
 n_cells = 2
 
-h = Bandsolvers.UnperturbedHamiltonian(n_cells; M=1/2, gₗ, Vₗ, phases, maxband=34, isperiodic=true)
+h = Bandsolvers.UnperturbedHamiltonian(n_cells; M=1/2, gₗ, Vₗ, φₓ, maxband=34, isperiodic=true)
 Bandsolvers.diagonalise!(h)
 H = Bandsolvers.FloquetHamiltonian(h; s, λₛ, λₗ, ω, pumptype=:spacetime, minband=1)
 Bandsolvers.diagonalise!(H)
@@ -204,7 +203,7 @@ for i in 1:8n_cells
         i == 2 ? (L"j=2,\beta=1", :dash, BROWN) :
         i == 5 ? (L"j=1,\beta=2", :dot, BROWN) :
         i == 6 ? (L"j=2,\beta=2", :dashdot, BROWN) : ("", :solid, GREY)
-    plot!(2phases ./ π, H.E[i, :]; label, c, ls, xlims=(0, 2), lw=0.8)
+    plot!(2φₓ ./ π, H.E[i, :]; label, c, ls, xlims=(0, 2), lw=0.8)
 end
 plot!(xlabel=L"\varphi_t=2\varphi_x\ (\pi"*" rad)", ylabel="Quasienergy (recoil units)", title="x", legend=(0.01, 0.35), bgcolorlegend=RGBA(1, 1, 1, 0.3), fgcolorlegend=RGBA(0, 0, 0, 0.3))
 # lens!([0.475, 0.525], [-5695.9, -5695.8], inset = (1, bbox(0.25, 0.25, 0.5, 0.25)), lw=0.5, c=:black)
@@ -255,13 +254,13 @@ Bandsolvers.compute_wanniers!(H; targetlevels)
 
 x = range(0, n_cells*pi, length=50n_cells)
 Ωt = range(0, 2π, length=40s)
-_, w_c = Bandsolvers.make_wannierfunctions(H, x, Ωt, 1:length(phases))
+_, w_c = Bandsolvers.make_wannierfunctions(H, x, Ωt, 1:length(φₓ))
 w = abs2.(w_c)
 
 swap_wanniers!(w, 1, 2, 16)
 swap_wanniers!(w, 3, 4, 16)
-swap_wanniers!(w, 1, 3, 17:lastindex(phases))
-swap_wanniers!(w, 2, 4, 17:lastindex(phases))
+swap_wanniers!(w, 1, 3, 17:lastindex(φₓ))
+swap_wanniers!(w, 2, 4, 17:lastindex(φₓ))
 
 figb = four_wanniers(w, 1, "0")
 figc = four_wanniers(w, 16, L"\pi/2")
@@ -357,7 +356,7 @@ n_cells = s
 gₗ = -2λₛ*Aₛ
 Vₗ = 2λₗ*Aₗ
 
-h = Bandsolvers.UnperturbedHamiltonian(n_cells; M, gₗ, Vₗ, phases=-φₜ/2, maxband=2, isperiodic=true)
+h = Bandsolvers.UnperturbedHamiltonian(n_cells; M, gₗ, Vₗ, φₓ=-φₜ/2, maxband=2, isperiodic=true)
 Bandsolvers.diagonalise!(h)
 h.E .+= -(gₗ + Vₗ)/2 + H_classical.𝐸(Iₛ) - ω/s*Iₛ
 

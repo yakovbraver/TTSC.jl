@@ -45,7 +45,7 @@ n_cells = s
 gₗ = -2λₛ*Aₛ
 Vₗ = 2λₗ*Aₗ
 
-h = Bandsolvers.UnperturbedHamiltonian(n_cells; M, gₗ, Vₗ, phases=-φₜ/2, maxband=2, isperiodic=true)
+h = Bandsolvers.UnperturbedHamiltonian(n_cells; M, gₗ, Vₗ, φₓ=-φₜ/2, maxband=2, isperiodic=true)
 Bandsolvers.diagonalise!(h)
 h.E .+= -(gₗ + Vₗ)/2 + H.𝐸(Iₛ) - ω/s*Iₛ
 
@@ -81,7 +81,7 @@ end
 
 ########## Non-periodic case
 
-h = Bandsolvers.UnperturbedHamiltonian(n_cells; M, gₗ, Vₗ, phases=-φₜ/2, maxband=2, isperiodic=false)
+h = Bandsolvers.UnperturbedHamiltonian(n_cells; M, gₗ, Vₗ, φₓ=-φₜ/2, maxband=2, isperiodic=false)
 Bandsolvers.diagonalise!(h)
 h.E .+= -(gₗ + Vₗ)/2 + H.𝐸(Iₛ) - ω/s*Iₛ
 

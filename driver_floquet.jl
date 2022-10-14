@@ -40,19 +40,19 @@ Aₗ = abs(coeffs[2]); χₗ = angle(coeffs[2])
 
 ########## Periodic case
 
-phases = [range(0, pi/4-0.1, length=10); range(pi/4-0.01, pi/4+0.01, length=10);
-          range(pi/4+0.1, 3pi/4-0.1, length=20); range(3pi/4-0.01, 3pi/4+0.01, length=10);
-          range(3pi/4+0.1, pi, length=10)]
+φₓ = [range(0, pi/4-0.1, length=10); range(pi/4-0.01, pi/4+0.01, length=10);
+      range(pi/4+0.1, 3pi/4-0.1, length=20); range(3pi/4-0.01, 3pi/4+0.01, length=10);
+      range(3pi/4+0.1, pi, length=10)]
 n_cells = 2
 
-h = Bandsolvers.UnperturbedHamiltonian(n_cells; M=1/2, gₗ, Vₗ, phases, maxband=30, isperiodic=true)
+h = Bandsolvers.UnperturbedHamiltonian(n_cells; M=1/2, gₗ, Vₗ, φₓ, maxband=30, isperiodic=true)
 Bandsolvers.diagonalise!(h)
 
 # energy of the unperturbed Hamiltonian spectrum
 fig = plot();
 plot!(range(0, π, length=200), x -> 𝐻₀(0, x, params), lw=2, c=:white, label=false) # spatial potential
 for r in eachrow(h.E)
-    plot!(phases, r, label=false)
+    plot!(φₓ, r, label=false)
 end
 plot!(xlabel=L"\phi_x", ylabel="Energy")
 
@@ -62,7 +62,7 @@ Bandsolvers.diagonalise!(H)
 # Floquet quasienergy spectrum
 fig = plot();
 for r in eachrow(H.E)
-    plot!(phases, r, label=false)
+    plot!(φₓ, r, label=false)
 end
 plot!(xlabel=L"\phi_x", ylabel="Quasienergy")
 
@@ -72,7 +72,7 @@ fig = plot();
 for (i, r) in enumerate(eachrow(E_ordered))
     n = i + H.minlevel - 1
     b = (n - 1) ÷ 2n_cells + 1
-    plot!(phases, r, label="band $b, level $n", c=b)
+    plot!(φₓ, r, label="band $b, level $n", c=b)
 end
 plot!(xlabel=L"\phi_x", ylabel="Quasienergy")
 
@@ -92,7 +92,7 @@ plot(figs...)
 targetlevels = [1, 2, 5, 6]
 Bandsolvers.compute_wanniers!(H; targetlevels)
 fig = plot();
-for (i, ϕ) in enumerate(phases)
+for (i, ϕ) in enumerate(φₓ)
     scatter!(H.uh.w.pos[:, i], fill(ϕ, length(targetlevels)); label=false, markerstrokewidth=0, c=1)
 end
 plot!(minorgrid=true, xlabel=L"x", ylabel=L"\phi_x")
@@ -107,14 +107,14 @@ plot(figs...)
 
 # ########## Non-periodic case
 
-# h = Bandsolvers.UnperturbedHamiltonian(n_cells; M, gₗ, Vₗ, phases=-φₜ/2, maxband=2, isperiodic=false)
+# h = Bandsolvers.UnperturbedHamiltonian(n_cells; M, gₗ, Vₗ, φₓ=-φₜ/2, maxband=2, isperiodic=false)
 # Bandsolvers.diagonalise!(h)
 # h.E .+= -(gₗ + Vₗ)/2 + H.𝐸(Iₛ) - ω/s*Iₛ
 
 # # Energy spectrum
 # fig = plot();
 # for r in eachrow(h.E)
-#     plot!(phases, r, label=false)
+#     plot!(φₓ, r, label=false)
 # end
 # plot!(xlabel=L"\phi_t", ylabel="Energy")
 
