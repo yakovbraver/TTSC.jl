@@ -49,7 +49,7 @@ end
 
 ########## Non-periodic case
 
-φₓ = [range(0, 0.005, length=10); range(0.006, 3.11, length=40); range(3.14, pi, length=10)]
+# φₓ = [range(0, 0.005, length=10); range(0.006, 3.11, length=40); range(3.14, pi, length=10)] # good for the system of Nakajima et al.
 n_cells = 4
 gₗ = -7640; Vₗ = -2
 h = Bandsolvers.UnperturbedHamiltonian(n_cells; M=1/2, gₗ, Vₗ, φₓ, maxband=30, isperiodic=false)

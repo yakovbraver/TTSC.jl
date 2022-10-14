@@ -1,6 +1,6 @@
 module Bandsolvers
 
-using LinearAlgebra: eigen, eigvals, schur, ⋅, diagm, diagind
+using LinearAlgebra: eigen, schur, ⋅, diagm, diagind
 
 "A type for storing the Wannier functions."
 mutable struct Wanniers
@@ -13,9 +13,7 @@ mutable struct Wanniers
 end
 
 "Default-construct an empty `Wanniers` object."
-function Wanniers()
-    Wanniers(0, Int[], Int[], Float64[;;], Float64[;;], ComplexF64[;;;])
-end
+Wanniers() = Wanniers(0, Int[], Int[], Float64[;;], Float64[;;], ComplexF64[;;;])
 
 """
 A type representing the unperturbed Hamiltonian
@@ -139,7 +137,7 @@ function compute_wanniers!(uh::UnperturbedHamiltonian; targetband::Integer)
                 sp = sortperm(pos_real)                 # sort the eigenvalues
                 pos[window, i] = pos_real[sp]
                 @views Base.permutecols!!(d[:, window, i], sp)    # sort the eigenvectors in the same way
-                E[window, i] = [abs2.(dˣ) ⋅ uh.E[minlevel+o:minlevel+N+o-1, i] for dˣ in eachcol(d[:, window, i])]
+                E[window, i] = [abs2.(dˣ) ⋅ uh.E[range(minlevel+o, length=N), i] for dˣ in eachcol(d[:, window, i])]
             end
         end
     else
@@ -170,7 +168,7 @@ function compute_wanniers!(uh::UnperturbedHamiltonian; targetband::Integer)
                 end
             end
             uh.w.pos[1:n_lo, i], uh.w.d[1:n_lo, 1:n_lo, i] = eigen(X)
-            uh.w.E[1:n_lo, i] = [dˣ.^2 ⋅ uh.E[minlevel:minlevel+n_lo-1, i] for dˣ in eachcol(uh.w.d[1:n_lo, 1:n_lo, i])]
+            uh.w.E[1:n_lo, i] = [dˣ.^2 ⋅ uh.E[range(minlevel, length=n_lo), i] for dˣ in eachcol(uh.w.d[1:n_lo, 1:n_lo, i])]
 
             # Higher band
             X = up ? X_more : X_less
@@ -182,7 +180,7 @@ function compute_wanniers!(uh::UnperturbedHamiltonian; targetband::Integer)
                 end
             end
             uh.w.pos[n_lo+1:n_w, i], uh.w.d[1:n_hi, n_lo+1:n_w, i] = eigen(X)
-            uh.w.E[n_lo+1:n_w, i] = [dˣ.^2 ⋅ uh.E[minlevel+n_lo:minlevel+n_w-1, i] for dˣ in eachcol(uh.w.d[1:n_hi, n_lo+1:n_w, i])]
+            uh.w.E[n_lo+1:n_w, i] = [dˣ.^2 ⋅ uh.E[range(minlevel+n_lo, length=n_hi), i] for dˣ in eachcol(uh.w.d[1:n_hi, n_lo+1:n_w, i])]
         end
     end
 end
@@ -210,7 +208,7 @@ Return `ψ, w`, where `ψ[:, j, i]` = `j`th eigenfunction at `i`th phase, and `w
 function make_wannierfunctions(uh::UnperturbedHamiltonian, x::AbstractVector{<:Real}, whichphases::AbstractVector{<:Integer})
     n_w = size(uh.w.E, 1)
     w = Array{ComplexF64, 3}(undef, length(x), n_w, length(uh.φₓ))
-    ψ = make_eigenfunctions(uh, x, whichphases, uh.w.minlevel:uh.w.minlevel+n_w-1) # construct energy eigenfunctions
+    ψ = make_eigenfunctions(uh, x, whichphases, range(uh.w.minlevel, length=n_w))
     for i in eachindex(whichphases)
         for j in 1:uh.w.n_lo[i]
             w[:, j, i] = sum(uh.w.d[k, j, i] * ψ[:, k, i] for k = 1:uh.w.n_lo[i])
@@ -326,12 +324,12 @@ function diagonalise!(fh::FloquetHamiltonian)
                 m′ = 2N*(s + ν(m) - 1) + g
                 e′ = m′ - fh.minlevel + 1
                 e′ > n_levels && break
-                if pumptype != :time || i == 1 # if pumping is time-only, this may be calculated only once, at `i` = 1
-                    j_sum = sum( (                 2c[j, m′, i] + c[j+2N, m′, i])' * c[j, m, i] for j = 1:2N ) +
-                            sum( (c[j-2N, m′, i] + 2c[j, m′, i] + c[j+2N, m′, i])' * c[j, m, i] for j = 2N+1:n_j-2N ) + 
-                            sum( (c[j-2N, m′, i] + 2c[j, m′, i]                 )' * c[j, m, i] for j = n_j-2N+1:n_j )
+                if pumptype != :time || i == 1 # if pumping is time-only, this must be calculated only once, at `i` = 1
+                    ∑cc = sum( (                 2c[j, m′, i] + c[j+2N, m′, i])' * c[j, m, i] for j = 1:2N ) +
+                          sum( (c[j-2N, m′, i] + 2c[j, m′, i] + c[j+2N, m′, i])' * c[j, m, i] for j = 2N+1:n_j-2N ) + 
+                          sum( (c[j-2N, m′, i] + 2c[j, m′, i]                 )' * c[j, m, i] for j = n_j-2N+1:n_j )
                     # if pumping is space-time, then also multiply by cis(-𝜑ₜ). `ϕ` runs over 𝜑ₓ, and we assume the pumping protocol 𝜑ₜ = 2𝜑ₓ
-                    H[e′, e] = (pumptype == :space ? λₗ/8 * j_sum : λₗ/8 * j_sum * cis(-2ϕ))
+                    H[e′, e] = (pumptype == :space ? λₗ/8 * ∑cc : λₗ/8 * ∑cc * cis(-2ϕ))
                 elseif pumptype == :time 
                     H[e′, e] *= cis(-2(φₓ[2]-φₓ[1]))
                 end
@@ -343,11 +341,11 @@ function diagonalise!(fh::FloquetHamiltonian)
                 m′ = 2N*(2s + ν(m) - 1) + g
                 e′ = m′ - fh.minlevel + 1
                 e′ > n_levels && break
-                if pumptype != :time || i == 1 # if pumping is time-only, this may be calculated only once, at `i` = 1
-                    j_sum = sum( (                  2c[j, m′, i] - c[j+2N, m′, i])' * c[j, m, i] for j = 1:2N ) +
-                            sum( (-c[j-2N, m′, i] + 2c[j, m′, i] - c[j+2N, m′, i])' * c[j, m, i] for j = 2N+1:n_j-2N ) + 
-                            sum( (-c[j-2N, m′, i] + 2c[j, m′, i]                 )' * c[j, m, i] for j = n_j-2N+1:n_j )
-                    H[e′, e] = λₛ/8 * j_sum
+                if pumptype != :time || i == 1 # if pumping is time-only, this must be calculated only once, at `i` = 1
+                    ∑cc = sum( (                  2c[j, m′, i] - c[j+2N, m′, i])' * c[j, m, i] for j = 1:2N ) +
+                          sum( (-c[j-2N, m′, i] + 2c[j, m′, i] - c[j+2N, m′, i])' * c[j, m, i] for j = 2N+1:n_j-2N ) + 
+                          sum( (-c[j-2N, m′, i] + 2c[j, m′, i]                 )' * c[j, m, i] for j = n_j-2N+1:n_j )
+                    H[e′, e] = λₛ/8 * ∑cc
                 end
                 H[e, e′] = H[e′, e]'
             end
@@ -365,7 +363,7 @@ function make_eigenfunctions(fh::FloquetHamiltonian, x::AbstractVector{<:Real}, 
     u = Array{ComplexF64,4}(undef, length(x), length(Ωt), length(whichstates), length(whichphases))
     n_levels = size(fh.E, 1) # number of Floquet levels; equivalently, number of levels of ℎ used for constructing ℋ
     # Eigenfunctions of ℎ, which are mixed during construction of `u`. For time-only pumping use only eigenstates at the first phase, corresponding to 𝜑ₓ = 0
-    ψ = make_eigenfunctions(fh.uh, x, (fh.pumptype == :time ? [1] : whichphases), fh.minlevel:fh.minlevel+n_levels-1)
+    ψ = make_eigenfunctions(fh.uh, x, (fh.pumptype == :time ? [1] : whichphases), range(fh.minlevel, length=n_levels))
     ν(m) = ceil(Int, m/2fh.uh.N)
     for (i, iϕ) in enumerate(whichphases)
         p = (fh.pumptype == :time ? 1 : iϕ)
@@ -423,8 +421,8 @@ function compute_wanniers!(fh::FloquetHamiltonian; targetlevels::AbstractVector{
     for i in eachindex(φₓ)
         # if pumping is time-only, then `∑cc` must be calculated only at the first iteration, thereby using `c`'s at 𝜑ₓ = 0
         if fh.pumptype != :time || i == 1
-            for m in fh.minlevel:fh.minlevel+n_levels-1
-                for m′ in fh.minlevel:fh.minlevel+n_levels-1
+            for m in range(fh.minlevel, length=n_levels)
+                for m′ in range(fh.minlevel, length=n_levels)
                     ∑cc[m′-fh.minlevel+1, m-fh.minlevel+1] = sum(c[j+1, m′, i]' * c[j, m, i] for j = 1:size(c, 1)-1)
                 end
             end
