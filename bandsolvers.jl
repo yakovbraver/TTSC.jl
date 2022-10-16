@@ -7,7 +7,7 @@ mutable struct Wanniers
     minlevel::Int # number of the first energy level of ℎ to use for constructing wanniers (this is used in the unperturbed case)
     targetlevels::Vector{Int} # numbers of quasienergy levels to use for constructing wanniers (this is used in the Floquet case)
     n_lo::Vector{Int} # number of levels in the lower subband at each phase; in non-periodic case this depends on the edge state branch position 
-    E::Matrix{Float64} # `E[j, i]` = mean energy of `j`th wannier at `i`th phase; use nested arrays because in non-periodic case
+    E::Matrix{Float64} # `E[j, i]` = mean energy of `j`th wannier at `i`th phase
     pos::Matrix{Float64} # `pos[j, i]` = position eigenvalue of `j`th wannier at `i`th phase
     d::Array{ComplexF64, 3} # `d[:, :, i]` = position eigenvectors at `i`th phase; see methods of `compute_wanniers!` for details
 end
@@ -28,7 +28,6 @@ mutable struct UnperturbedHamiltonian
     isperiodic::Bool
     φₓ::Vector{Float64}
     maxlevel::Int # highest level number to consider
-    bandsizes::Tuple{Int, Int} # = (number of levels in the first band, number of levels in the second band)
     E::Matrix{Float64}      # `E[i, j]` = `i`th eigenvalue at `j`th phase, `i = 1:maxlevel`
     c::Array{ComplexF64, 3} # `c[:, i, j]` = `i`th eigenvector at `j`th phase, `i = 1:maxlevel; j = 1:2maxlevel+1`
     w::Wanniers
@@ -40,20 +39,18 @@ Each band is assumed to consist of 2 subbands containing `2n_cells` levels in to
 """
 function UnperturbedHamiltonian(n_cells::Integer; M::Real, gₗ::Real, Vₗ::Real, maxband::Integer, isperiodic::Bool, φₓ::AbstractVector{<:Real},
                                 l::Union{Nothing, Integer}=nothing)
-    bandsizes = (2n_cells - 1, 2n_cells + 1)
-
     # convert max band number to level number
     if isperiodic
         maxlevel = maxband * 2n_cells
     else
-        maxlevel = (maxband-1) ÷ 2 * 4n_cells + (isodd(maxband) ? bandsizes[1] : sum(bandsizes))
+        maxlevel = (maxband-1) ÷ 2 * 4n_cells + (isodd(maxband) ? 2n_cells-1 : 4n_cells)
     end
 
     E = Matrix{Float64}(undef, maxlevel, length(φₓ))
     c = Array{ComplexF64,3}(undef, 2maxlevel+1, maxlevel, length(φₓ))
 
     UnperturbedHamiltonian(Int(n_cells), Float64(M), (l === nothing ? 1 : l), Float64(gₗ), Float64(Vₗ), isperiodic,
-                           collect(Float64, φₓ), maxlevel, bandsizes, E, c, Wanniers())
+                           collect(Float64, φₓ), maxlevel, E, c, Wanniers())
 end
 
 "Diagonalise the unperturbed Hamiltonian `uh` at each phase."
@@ -251,9 +248,10 @@ mutable struct FloquetHamiltonian
     λₗ::Float64
     ω::Float64
     pumptype::Symbol
-    minlevel::Int # lowest level number of ℎ to use when constructing Floquet Hamiltonian
+    minlevel::Int # lowest level number of ℎ to use when constructing ℋ
     E::Matrix{Float64}      # `E[i, j]` = `i`th eigenvalue (Floquet quasienergy) at `j`th phase, `i = 1:maxlevel`
     b::Array{ComplexF64, 3} # `b[:, i, j]` = `i`th eigenvector at `j`th phase, `i = 1:maxlevel; j = 1:2maxlevel+1`
+    ν::Vector{Int}  # band map 𝜈(𝑚)
 end
 
 """
@@ -263,38 +261,35 @@ Type of pumping is controlled via `pumptype`: `:time` for temporal, `:space` for
 function FloquetHamiltonian(uh::UnperturbedHamiltonian; s::Integer, λₛ::Real, λₗ::Real, ω::Real, pumptype::Symbol, minband::Integer)
     N = uh.N
 
+    bs1 = 2N - 1 # "bandsize 1" = number of levels in the lowest band of ℎ
+
     # convert min band number to level number
     if uh.isperiodic
         minlevel = (minband - 1) * 2N + 1
     else
-        minlevel = (minband - 1) ÷ 2 * 4N + (isodd(minband) ? 1 : uh.bandsizes[1] + 1)
+        minlevel = (minband - 1) ÷ 2 * 4N + (isodd(minband) ? 1 : bs1 + 1)
     end
-
-    # if iseven(minlevel) # swap `bs1` and `bs2` so that they correspond to actual band sizes
-    #     bs1, bs2 = bs2, bs1
-    # end
-
-    n_levels = uh.maxlevel - minlevel + 1
-    # ν = Vector{Int}(undef, Δn)
-    # # FIll `ν`: [1 (`bs1` times), 2 (`bs2` times), 3 (`bs1` times), 4 (`bs2` times), ...]
-    # number = 1
-    # g = bs1 + bs2
-    # for i in 0:Δn÷g-1
-    #     ν[g*i+1:g*i+bs1] .= number
-    #     number += 1
-    #     ν[g*i+bs1+1:g*i+g] .= number
-    #     number += 1
-    # end
-    # ν[Δn - Δn%g + 1:end] .= number
-
-    # pattern = [fill(bs1, bs1); fill(bs2, bs2)]
-    # G = repeat(pattern, Δn÷g) # a pattern which e.g. for `n == 2` looks like [3, 3, 3, 5, 5, 5, 5, 3, 3, 3, 5, 5, 5, 5, ...]
-    # Δn % g != 0 && append!(G, fill(bs1, bs1))
     
+    # FIll `ν`: [1 (`bs1` times), 2 (`bs2 = 2N+1` times), 3 (`bs1` times), 4 (`bs2` times), ...]
+    if uh.isperiodic
+        ν = [ceil(Int, m/2N) for m in 1:uh.maxlevel] 
+    else
+        ν = Vector{Int}(undef, uh.maxlevel)
+        number = 1
+        for i in 0:uh.maxlevel÷4N-1
+            ν[4N*i+1:4N*i+bs1] .= number
+            number += 1
+            ν[4N*i+bs1+1:4N*i+4N] .= number
+            number += 1
+        end
+        ν[uh.maxlevel - uh.maxlevel%4N + 1:end] .= number
+    end
+    
+    n_levels = uh.maxlevel - minlevel + 1
     E = Matrix{Float64}(undef, n_levels, length(uh.φₓ))
     b = Array{ComplexF64,3}(undef, n_levels, n_levels, length(uh.φₓ))
     
-    FloquetHamiltonian(uh, Int(s), Float64(λₛ), Float64(λₗ), Float64(ω), pumptype, Int(minlevel), E, b)
+    FloquetHamiltonian(uh, Int(s), Float64(λₛ), Float64(λₗ), Float64(ω), pumptype, Int(minlevel), E, b, ν)
 end
 
 "Diagonalise the Floquet Hamiltonian `fh` at each phase."
@@ -302,55 +297,109 @@ function diagonalise!(fh::FloquetHamiltonian)
     # make views
     (;N, φₓ, E, c) = fh.uh
     n_j = size(c, 1)
-    (;s, ω, λₛ, λₗ, pumptype) = fh
+    (;s, ω, λₛ, λₗ, pumptype, ν) = fh
 
-    n_levels = fh.uh.maxlevel - fh.minlevel + 1 # number of levels of spatial Hamiltonian to use for constructing Floquet Hamiltonian
-    ν(m) = ceil(Int, m/2N)
+    n_levels = fh.uh.maxlevel - fh.minlevel + 1 # number of levels of spatial Hamiltonian to use for constructing ℋ
 
-    H = zeros(ComplexF64, n_levels, n_levels) # Floquet Hamiltonian matrix
+    H = zeros(ComplexF64, n_levels, n_levels) # ℋ matrix
 
-    for (i, ϕ) in enumerate(φₓ)
-        # `m` and `m′` number the levels of the unperturbed Hamiltonian
-        # `e` and `e′` number the elements of the FloquetHamiltonian
-        for m in fh.minlevel:fh.uh.maxlevel
-            e = m - fh.minlevel + 1
+    if fh.uh.isperiodic
+        for (i, ϕ) in enumerate(φₓ)
+            # `m` and `m′` number the levels of ℎ
+            # `e` and `e′` number the elements of `H`
+            for m in fh.minlevel:fh.uh.maxlevel
+                e = m - fh.minlevel + 1
 
-            # for time-only pumping, always take the eigenenergies at the first phase, corresponding to 𝜑ₓ = 0
-            p = (pumptype == :time ? 1 : i)
-            H[e, e] = E[m, p] - ν(m)*ω/s
+                # for time-only pumping, always take the eigenenergies at the first phase, corresponding to 𝜑ₓ = 0
+                p = (pumptype == :time ? 1 : i)
+                H[e, e] = E[m, p] - ν[m]*ω/s
 
-            # place the elements of the long lattice
-            for g in 1:2N
-                m′ = 2N*(s + ν(m) - 1) + g
-                e′ = m′ - fh.minlevel + 1
-                e′ > n_levels && break
-                if pumptype != :time || i == 1 # if pumping is time-only, this must be calculated only once, at `i` = 1
-                    ∑cc = sum( (                 2c[j, m′, i] + c[j+2N, m′, i])' * c[j, m, i] for j = 1:2N ) +
-                          sum( (c[j-2N, m′, i] + 2c[j, m′, i] + c[j+2N, m′, i])' * c[j, m, i] for j = 2N+1:n_j-2N ) + 
-                          sum( (c[j-2N, m′, i] + 2c[j, m′, i]                 )' * c[j, m, i] for j = n_j-2N+1:n_j )
-                    # if pumping is space-time, then also multiply by cis(-𝜑ₜ). `ϕ` runs over 𝜑ₓ, and we assume the pumping protocol 𝜑ₜ = 2𝜑ₓ
-                    H[e′, e] = (pumptype == :space ? λₗ/8 * ∑cc : λₗ/8 * ∑cc * cis(-2ϕ))
-                elseif pumptype == :time 
-                    H[e′, e] *= cis(-2(φₓ[2]-φₓ[1]))
+                # place the elements of the long lattice
+                for g in 1:2N
+                    m′ = 2N*(s + ν[m] - 1) + g
+                    e′ = m′ - fh.minlevel + 1
+                    e′ > n_levels && break
+                    if pumptype != :time || i == 1 # if pumping is time-only, this must be calculated only once, at `i` = 1
+                        ∑cc = sum( (                 2c[j, m′, i] + c[j+2N, m′, i])' * c[j, m, i] for j = 1:2N ) +
+                              sum( (c[j-2N, m′, i] + 2c[j, m′, i] + c[j+2N, m′, i])' * c[j, m, i] for j = 2N+1:n_j-2N ) + 
+                              sum( (c[j-2N, m′, i] + 2c[j, m′, i]                 )' * c[j, m, i] for j = n_j-2N+1:n_j )
+                        # if pumping is space-time, then also multiply by cis(-𝜑ₜ). `ϕ` runs over 𝜑ₓ, and we assume the pumping protocol 𝜑ₜ = 2𝜑ₓ
+                        H[e′, e] = (pumptype == :space ? λₗ/8 * ∑cc : λₗ/8 * ∑cc * cis(-2ϕ))
+                    elseif pumptype == :time 
+                        H[e′, e] *= cis(-2(φₓ[2]-φₓ[1]))
+                    end
+                    H[e, e′] = H[e′, e]'
                 end
-                H[e, e′] = H[e′, e]'
-            end
-            
-            # place the elements of the short lattice
-            for g in 1:2N
-                m′ = 2N*(2s + ν(m) - 1) + g
-                e′ = m′ - fh.minlevel + 1
-                e′ > n_levels && break
-                if pumptype != :time || i == 1 # if pumping is time-only, this must be calculated only once, at `i` = 1
-                    ∑cc = sum( (                  2c[j, m′, i] - c[j+2N, m′, i])' * c[j, m, i] for j = 1:2N ) +
-                          sum( (-c[j-2N, m′, i] + 2c[j, m′, i] - c[j+2N, m′, i])' * c[j, m, i] for j = 2N+1:n_j-2N ) + 
-                          sum( (-c[j-2N, m′, i] + 2c[j, m′, i]                 )' * c[j, m, i] for j = n_j-2N+1:n_j )
-                    H[e′, e] = λₛ/8 * ∑cc
+                
+                # place the elements of the short lattice
+                for g in 1:2N
+                    m′ = 2N*(2s + ν[m] - 1) + g
+                    e′ = m′ - fh.minlevel + 1
+                    e′ > n_levels && break
+                    if pumptype != :time || i == 1 # if pumping is time-only, this must be calculated only once, at `i` = 1
+                        ∑cc = sum( (                  2c[j, m′, i] - c[j+2N, m′, i])' * c[j, m, i] for j = 1:2N ) +
+                              sum( (-c[j-2N, m′, i] + 2c[j, m′, i] - c[j+2N, m′, i])' * c[j, m, i] for j = 2N+1:n_j-2N ) + 
+                              sum( (-c[j-2N, m′, i] + 2c[j, m′, i]                 )' * c[j, m, i] for j = n_j-2N+1:n_j )
+                        H[e′, e] = λₛ/8 * ∑cc
+                    end
+                    H[e, e′] = H[e′, e]'
                 end
-                H[e, e′] = H[e′, e]'
             end
+            fh.E[:, i], fh.b[:, :, i] = eigen(H, sortby=-)
         end
-        fh.E[:, i], fh.b[:, :, i] = eigen(H, sortby=-)
+    else
+        for (i, ϕ) in enumerate(φₓ)
+            bs1 = 2N - 1
+            bs2 = 2N + 1
+            pattern = [fill(bs1, bs1); fill(bs2, bs2)]
+            G = repeat(pattern, fh.uh.maxlevel÷4N) # a pattern which e.g. for `N == 2` looks like [3, 3, 3, 5, 5, 5, 5, 3, 3, 3, 5, 5, 5, 5, ...]
+            fh.uh.maxlevel % 4N != 0 && append!(G, fill(bs1, bs1))
+
+            # `m` and `m′` number the levels of ℎ
+            # `e` and `e′` number the elements of `H`
+            for m in fh.minlevel:fh.uh.maxlevel
+                e = m - fh.minlevel + 1
+
+                # for time-only pumping, always take the eigenenergies at the first phase, corresponding to 𝜑ₓ = 0
+                p = (pumptype == :time ? 1 : i)
+                H[e, e] = E[m, p] - fh.ν[m]*ω/s
+
+                # place the elements of the long lattice
+                for g in 1:G[m]
+                    # skip `s` groups of `4N`, then some more groups depending on `m`, then skip `G[fh.minlevel]` cells
+                    e′ = 4N*(s÷2) + 4N*((fh.ν[m]-1)÷2) + iseven(ν[m])*G[1] + g
+                    e′ > n_levels && break
+                    m′ = e′ + fh.minlevel - 1 
+                    if pumptype != :time || i == 1 # if pumping is time-only, this must be calculated only once, at `i` = 1
+                        ∑cc = sum( (-c[-j+4N, m′, i] + 2c[j, m′, i] + c[j+4N, m′, i]) * c[j, m, i] for j = 1:4N-1 ) +
+                                   (                 + 2c[4N, m′, i]+ c[4N+4N, m′, i]) * c[4N, m, i] + # iteration `j = 4N`
+                              sum( (  c[j-4N, m′, i] + 2c[j, m′, i] + c[j+4N, m′, i]) * c[j, m, i] for j = 4N+1:n_j-4N ) + 
+                              sum( (  c[j-4N, m′, i] + 2c[j, m′, i]                 ) * c[j, m, i] for j = n_j-4N+1:n_j )
+                        # if pumping is space-time, then also multiply by cis(-𝜑ₜ). `ϕ` runs over 𝜑ₓ, and we assume the pumping protocol 𝜑ₜ = 2𝜑ₓ
+                        H[e′, e] = (pumptype == :space ? λₗ/8 * ∑cc : λₗ/8 * ∑cc * cis(-2ϕ))
+                    elseif pumptype == :time 
+                        H[e′, e] *= cis(-2(φₓ[2]-φₓ[1]))
+                    end
+                    H[e, e′] = H[e′, e]'
+                end
+                
+                # place the elements of the short lattice
+                for g in 1:2N
+                    e′ = 4N*s + 4N*((fh.ν[m]-1)÷2) + iseven(ν[m])*G[1] + g
+                    e′ > n_levels && break
+                    m′ = e′ + fh.minlevel - 1 
+                    if pumptype != :time || i == 1 # if pumping is time-only, this must be calculated only once, at `i` = 1
+                        ∑cc = sum( ( c[-j+4N, m′, i] + 2c[j, m′, i] - c[j+4N, m′, i]) * c[j, m, i] for j = 1:4N-1 ) +
+                                   (                 + 2c[4N, m′, i]- c[4N+4N, m′, i]) * c[4N, m, i] + # iteration `j = 4N`
+                              sum( ( -c[j-4N, m′, i] + 2c[j, m′, i] - c[j+4N, m′, i]) * c[j, m, i] for j = 4N+1:n_j-4N ) + 
+                              sum( ( -c[j-4N, m′, i] + 2c[j, m′, i]                 ) * c[j, m, i] for j = n_j-4N+1:n_j )
+                        H[e′, e] = λₛ/8 * ∑cc
+                    end
+                    H[e, e′] = H[e′, e]'
+                end
+            end
+            fh.E[:, i], fh.b[:, :, i] = eigen(H, sortby=-)
+        end
     end
 end
 
@@ -364,12 +413,11 @@ function make_eigenfunctions(fh::FloquetHamiltonian, x::AbstractVector{<:Real}, 
     n_levels = size(fh.E, 1) # number of Floquet levels; equivalently, number of levels of ℎ used for constructing ℋ
     # Eigenfunctions of ℎ, which are mixed during construction of `u`. For time-only pumping use only eigenstates at the first phase, corresponding to 𝜑ₓ = 0
     ψ = make_eigenfunctions(fh.uh, x, (fh.pumptype == :time ? [1] : whichphases), range(fh.minlevel, length=n_levels))
-    ν(m) = ceil(Int, m/2fh.uh.N)
     for (i, iϕ) in enumerate(whichphases)
         p = (fh.pumptype == :time ? 1 : iϕ)
         for (j, js) in enumerate(whichstates)
             for (it, t) in enumerate(Ωt)
-                u[:, it, j, i] = sum(cis(-ν(m)*t) * ψ[:, m, p] * fh.b[m, js, iϕ] for m in 1:n_levels)
+                u[:, it, j, i] = sum(cis(-fh.ν[m]*t) * ψ[:, m, p] * fh.b[m, js, iϕ] for m in 1:n_levels)
             end
         end
     end
@@ -379,19 +427,18 @@ end
 """
 Permute Floquet quasienergy levels contained in `fh.E` so that they are stored in the same order as the eigenenergies of ℎ stored in `fh.uh.E`.
 Repeat this for every phase (i.e. column of `fh.E`).
-To perfrorm the sorting, we first calculate `fh.uh.E - ν(m)` which is the diagonal of ℋ. If there is no perturbation, then these
-are the Floquet quasienergies. Then, we sort them in descending order (as if we diagonalised the Hamiltonian) and find the permutation
+To perfrorm the sorting, first calculate `fh.uh.E - fh.ν[m]`, which is the diagonal of ℋ. If there is no perturbation, then these
+are the Floquet quasienergies. Then, sort them in descending order (as if we diagonalised the Hamiltonian) and find the permutation
 that would undo this sorting. This permutation is applied to a copy of `fh.E`.
-The procedure yields fully correct results only if `E` has been calculated at zero perturbation. The perturbation may additionally change
-the order of levels, and there is no simple way to disentangle the order. The permutation is still useful in that case, but the results 
+The procedure yields fully correct results only if `fh.E` has been calculated at zero perturbation. The perturbation may additionally change
+the order of levels, and there is no simple way of disentangling the order. The permutation is still useful in that case, but the results 
 should not be taken too literally.
 """
 function order_floquet_levels(fh::FloquetHamiltonian)
     E = similar(fh.E)
-    ν(m) = ceil(Int, m/2fh.uh.N)
     n_levels = size(fh.E, 1) # number of Floquet levels; equivalently, number of levels of ℎ used for constructing ℋ
     for i in eachindex(fh.uh.φₓ)
-        E_diag = [fh.uh.E[m, i] - ν(m) * fh.ω/fh.s for m in 1:n_levels] # Floquet energies at zero perturbation
+        E_diag = [fh.uh.E[m, i] - fh.ν[m] * fh.ω/fh.s for m in 1:n_levels] # Floquet energies at zero perturbation
         invsort = sortperm(sortperm(E_diag, rev=true))  # inverse permutation, such that `sort(E_diag, rev=true)[invsort] == E_diag`
         E[:, i] .= fh.E[invsort, i]
     end
@@ -399,11 +446,10 @@ function order_floquet_levels(fh::FloquetHamiltonian)
 end
 
 """
-Calculate Wannier vectors for the FloquetHamiltonian Hamiltonian `fh` using the quasienergy levels `targetlevels_lo` and `targetlevels_hi`.
+Calculate Wannier vectors for the Floquet Hamiltonian `fh` using the quasienergy levels `targetlevels`.
 """
 function compute_wanniers!(fh::FloquetHamiltonian; targetlevels::AbstractVector{<:Real})
     (;N, φₓ, c) = fh.uh
-    ν(m) = ceil(Int, m/2N)
 
     fh.uh.w.targetlevels = targetlevels # save this because it's needed in `make_wavefunction` when constructing coordinate space Wannier functions
 
@@ -433,7 +479,7 @@ function compute_wanniers!(fh::FloquetHamiltonian; targetlevels::AbstractVector{
         # if pumping is spatial, `∑cc` depends on phase (because `c`'s do)
         for m in 1:n_levels
             for m′ in 1:n_levels
-                cis∑cc[m′, m] = ∑cc[m′, m] * cis((ν(m′+fh.minlevel-1) - ν(m+fh.minlevel-1)) * t)
+                cis∑cc[m′, m] = ∑cc[m′, m] * cis((fh.ν[m′+fh.minlevel-1] - fh.ν[m+fh.minlevel-1]) * t)
             end
         end
 
@@ -469,191 +515,4 @@ function make_wannierfunctions(fh::FloquetHamiltonian, x::AbstractVector{<:Real}
     return u, w
 end
 
-end
-
-"""
-Permute Floquet energy levels calculated with open boundary conditions contained in `E` so that they are stored in the same order as the eigenenergies `e` of
-the spatial Hamiltonian.
-The operation of this function follows that of [`permute_floquet_bands`](@ref).
-"""
-function permute_floquet_bands_with_boundary!(E::AbstractMatrix{<:Float64}, e::AbstractMatrix{<:Float64}; n_cells::Integer, n_min::Integer, ω::Real, s::Integer)
-    n_energies, n_phases = size(e)
-
-    gs1 = 2n_cells - 1 # number of levels in the first band of spatial Hamiltonian (group size 1)
-    gs2 = 2n_cells + 1 # number of levels in the second band of spatial Hamiltonian (group size 2)
-    if iseven(n_min) # swap `gs1` and `gs2` so that they correspond to actual group sizes
-        gs1, gs2 = gs2, gs1
-    end
-
-    ν = Vector{Int}(undef, n_energies)
-    # FIll `ν`: [1 (`gs1` times), 2 (`gs2` times), 3 (`gs1` times), 4 (`gs2` times), ...]
-    number = 1;
-    g = gs1 + gs2
-    for i in 0:n_energies÷g-1
-        ν[g*i+1:g*i+gs1] .= number
-        number += 1
-        ν[g*i+gs1+1:g*i+g] .= number
-        number += 1
-    end
-    ν[n_energies - n_energies%g + 1:end] .= number
-    ν .*= ω/s
-    
-    for p in 1:n_phases
-        e_diag = [e[m, p] - ν[m] for m in 1:n_energies] # Floquet energies at zero perturbation
-        invsort = sortperm(sortperm(e_diag, rev=true))  # inverse permutation, such that `sort(e_diag, rev=true)[invsort] == e_diag`
-        E[1:n_energies, p] .= E[invsort, p]
-    end
-end
-
-"""
-Calculate energy bands of the Floquet Hamiltonian (S20) with boundaries sweeping over the adiabatic `phases` φₓ. 
-The operation of this function follows that of [`compute_floquet_bands`](@ref).
-Parameter `n` is the number of cells in the lattice; the eigenfunctions will be calculated in the basis of functions sin(𝑗𝑥/𝑛) / √(𝑛π/2).
-"""
-function compute_floquet_bands_with_boundary(; n::Integer, n_min::Integer, n_max::Integer, phases::AbstractVector{<:Real}, s::Integer, gₗ::Real, Vₗ::Real, λₗ::Real, λₛ::Real, ω::Real, pumptype::Symbol)
-    X(j′, j) = 16n*j*j′ / (π*((j-j′)^2-(2n)^2)*((j+j′)^2-(2n)^2))
-    
-    gs1 = 2n - 1 # number of levels in the first band of spatial Hamiltonian (group size 1)
-    gs2 = 2n + 1 # number of levels in the second band of spatial Hamiltonian (group size 2)
-    # convert `n_min` and `n_max` to actual level numbers
-    n_min = (n_min-1) ÷ 2 * 4n + (isodd(n_min) ? 1 : gs1 + 1)
-    n_max = (n_max-1) ÷ 2 * 4n + (isodd(n_max) ? gs1 : gs1 + gs2)
-    if iseven(n_min) # swap `gs1` and `gs2` so that they correspond to actual group sizes
-        gs1, gs2 = gs2, gs1
-    end
-
-    n_j = 2n_max # number of indices 𝑗 to use for constructing the unperturbed Hamiltonian
-    h = zeros(n_j, n_j)
-
-    Δn = n_max - n_min + 1
-    ν = Vector{Int}(undef, Δn)
-    # FIll `ν`: [1 (`gs1` times), 2 (`gs2` times), 3 (`gs1` times), 4 (`gs2` times), ...]
-    number = 1
-    g = gs1 + gs2
-    for i in 0:Δn÷g-1
-        ν[g*i+1:g*i+gs1] .= number
-        number += 1
-        ν[g*i+gs1+1:g*i+g] .= number
-        number += 1
-    end
-    ν[Δn - Δn%g + 1:end] .= number
-
-    pattern = [fill(gs1, gs1); fill(gs2, gs2)]
-    G = repeat(pattern, Δn÷g) # a pattern which e.g. for `n == 2` looks like [3, 3, 3, 5, 5, 5, 5, 3, 3, 3, 5, 5, 5, 5, ...]
-    Δn % g != 0 && append!(G, fill(gs1, gs1))
-    
-    ϵ = Matrix{Float64}(undef, Δn, length(phases)) # eigenvalues of ℎ (the unperturbed Hamiltonian)
-    c = Matrix{Float64}(undef, n_j, Δn) # eigenvectors of ℎ
-    
-    E = Matrix{Float64}(undef, Δn, length(phases)) # eigenvalues of 𝐻 (Floquet quasi-energies)
-    H_dim = Δn # dimension of the constructed 𝐻 matrix
-    # number of non-zero elements in 𝐻:
-    n_H_nonzeros = H_dim + 2*( # diagonal plus two times upper off-diagonal terms:
-                   (H_dim ÷ g - 1) * (gs1^2 + gs2^2) + # number of long  lattice blocks of size `g` × `g`, each having `(gs1^2 + gs2^2)` elements
-                   (H_dim ÷ g - 2) * (gs1^2 + gs2^2) + # number of short lattice blocks of size `g` × `g`, each having `(gs1^2 + gs2^2)` elements
-                   2(H_dim % g != 0 ? gs1^2 : 0) ) # if `H_dim % g != 0`, then one more block of size `gs1` is present, both for short and long lattice
-   
-    H_rows = zeros(Int, n_H_nonzeros)
-    H_cols = zeros(Int, n_H_nonzeros)
-    H_vals = zeros(ComplexF64, n_H_nonzeros)
-    
-    for (z, ϕ) in enumerate(phases)
-        if pumptype != :time || z == 1 # If pupming is not time-only, ℎ has to be diagonalised on each iteration. If it's time-only, then we diagonalise only once, at `z == 1`.
-            for j in 1:n_j
-                for j′ in j:n_j
-                    val = 0.0
-                    if isodd(j′ + j)
-                        val += Vₗ/2 * X(j′, j) * sin(2ϕ)
-                    else
-                        # check diagonals "\"
-                        if j′ == j
-                            val += (gₗ + Vₗ)/2 + (j / n)^2
-                        elseif j′ == j - 2n || j′ == j + 2n
-                            val += Vₗ/2 * cos(2ϕ) / 2
-                        elseif j′ == j - 4n || j′ == j + 4n
-                            val += gₗ/2 / 2
-                        end
-                        # check anti-diagonals "/"
-                        if j′ == -j - 2n || j′ == -j + 2n
-                            val += -Vₗ/2 * cos(2ϕ) / 2
-                        elseif j′ == -j - 4n || j′ == -j + 4n
-                            val += -gₗ/2 / 2
-                        end
-                    end
-                    h[j′, j] = h[j, j′] = val # push the element to the conjugate positions
-                end
-            end
-            f = eigen(h)
-            # save only energies and states for levels from `n_min` to `n_max`
-            ϵ[:, z] = f.values[n_min:n_max]
-            c .= f.vectors[:, n_min:n_max]
-            if pumptype == :time
-                for p in 2:length(phases) # copy the calculated first column of `ϵ` to all other columns for consistency
-                    ϵ[:, p] = ϵ[:, 1]
-                end
-            end
-        end
-
-        # Construct 𝐻
-        p = 1 # a counter for placing elements to the vectors `H_*`
-        for m in 1:H_dim
-            # place the diagonal element (S25)
-            H_rows[p] = H_cols[p] = m
-            H_vals[p] = ϵ[m, z] - ν[m]*ω/s
-            p += 1
-
-            # place the elements of the long lattice (S26)
-            for i in 1:G[m]
-                # skip `s` groups of `g`, then some more groups depending on `m`, then skip `G[1]` cells
-                m′ = g*(s÷2) + g*((ν[m]-1)÷2) + iseven(ν[m])*G[1] + i
-                m′ > H_dim && break
-                H_rows[p] = m′
-                H_cols[p] = m
-                if pumptype != :time || z == 1 # If pumping is time-only, this may be calculated only once
-                    j_sum = sum( (c[j+4n, m′]/4 + c[j-4n, m′]/4 + c[j, m′]/2) * c[j, m] for j = 4n+1:n_j-4n ) + 
-                            sum( (c[j+4n, m′]/4 - c[-j+4n, m′]/4 + c[j, m′]/2) * c[j, m] for j = 1:4n-1 ) +
-                            (c[4n+4n, m′]/4 + c[4n, m′]/2) * c[4n, m] + # iteration `j = 4n`
-                            sum( (c[j-4n, m′]/4 + c[j, m′]/2) * c[j, m] for j = n_j-4n+1:n_j )
-                    H_vals[p] = (pumptype == :space ? λₗ/2 * j_sum : λₗ/2 * j_sum * cis(-2ϕ)) # a check for space or space-time pumping
-                elseif pumptype == :time 
-                    H_vals[p] *= cis(-2(phases[2]-phases[1]))
-                end
-                p += 1
-                # place the conjugate element
-                H_rows[p] = m
-                H_cols[p] = m′
-                H_vals[p] = H_vals[p-1]'
-                p += 1
-            end
-            
-            # place the elements of the short lattice (S29)
-            for i in 1:G[m]
-                m′ = g*s + g*((ν[m]-1)÷2) + iseven(ν[m])*G[1] + i
-                m′ > H_dim && break
-                H_rows[p] = m′
-                H_cols[p] = m
-                if pumptype != :time || z == 1 # If pumping is time-only, this may be calculated only once
-                    j_sum = sum( (-c[j+4n, m′]/4 - c[j-4n, m′]/4 + c[j, m′]/2) * c[j, m] for j = 4n+1:n_j-4n ) + 
-                            sum( (-c[j+4n, m′]/4 + c[-j+4n, m′]/4 + c[j, m′]/2) * c[j, m] for j = 1:4n-1) +
-                            (-c[4n+4n, m′]/4 + c[4n, m′]/2) * c[4n, m] + # iteration `j = 4n`
-                            sum( (-c[j-4n, m′]/4 + c[j, m′]/2) * c[j, m] for j = n_j-4n+1:n_j)
-                    H_vals[p] = λₛ/2 * j_sum
-                end
-                p += 1
-                # place the conjugate element
-                H_rows[p] = m
-                H_cols[p] = m′
-                H_vals[p] = H_vals[p-1]'
-                p += 1
-            end
-        end
-        H = sparse(H_rows, H_cols, H_vals)
-        vals, _, info = eigsolve(H, Δn, :LR; krylovdim=H_dim)
-        if info.converged < Δn
-            @warn "Only $(info.converged) eigenvalues out of $(Δn) converged when diagonalising 𝐻ₖ. "*
-                  "Results may be inaccurate." unconverged_norms=info.normres[info.converged+1:end]
-        end
-        E[:, z] .= vals[1:Δn]
-    end
-    return ϵ, E
 end
