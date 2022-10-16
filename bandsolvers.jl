@@ -1,6 +1,6 @@
 module Bandsolvers
 
-using LinearAlgebra: eigen, schur, ⋅, diagm, diagind
+using LinearAlgebra: eigen, schur, ⋅, diagm, diagind, eigvals
 
 "A type for storing the Wannier functions."
 mutable struct Wanniers
@@ -367,7 +367,7 @@ function diagonalise!(fh::FloquetHamiltonian)
                 # place the elements of the long lattice
                 for g in 1:G[m]
                     # skip `s` groups of `4N`, then some more groups depending on `m`, then skip `G[fh.minlevel]` cells
-                    e′ = 4N*(s÷2) + 4N*((fh.ν[m]-1)÷2) + iseven(ν[m])*G[1] + g
+                    e′ = 4N*(s÷2) + 4N*((fh.ν[m]-1)÷2) + iseven(ν[m])*G[fh.minlevel] + g
                     e′ > n_levels && break
                     m′ = e′ + fh.minlevel - 1 
                     if pumptype != :time || i == 1 # if pumping is time-only, this must be calculated only once, at `i` = 1
@@ -385,7 +385,7 @@ function diagonalise!(fh::FloquetHamiltonian)
                 
                 # place the elements of the short lattice
                 for g in 1:2N
-                    e′ = 4N*s + 4N*((fh.ν[m]-1)÷2) + iseven(ν[m])*G[1] + g
+                    e′ = 4N*s + 4N*((fh.ν[m]-1)÷2) + iseven(ν[m])*G[fh.minlevel] + g
                     e′ > n_levels && break
                     m′ = e′ + fh.minlevel - 1 
                     if pumptype != :time || i == 1 # if pumping is time-only, this must be calculated only once, at `i` = 1
