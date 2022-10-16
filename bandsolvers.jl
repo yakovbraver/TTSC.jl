@@ -257,6 +257,7 @@ end
 """
 Construct a `FloquetHamiltonian` object. `minband` is the first energy band of `uh` to use when constructing the Floquet Hamiltonian matrix.
 Type of pumping is controlled via `pumptype`: `:time` for temporal, `:space` for spatial, or anything else for simultaneous space-time pumping.
+In the case of time-only pumping, it is assumed that 𝜑ₓ = 0, and hence that `uh.φₓ[1] == 0`.
 """
 function FloquetHamiltonian(uh::UnperturbedHamiltonian; s::Integer, λₛ::Real, λₗ::Real, ω::Real, pumptype::Symbol, minband::Integer)
     N = uh.N
@@ -310,7 +311,7 @@ function diagonalise!(fh::FloquetHamiltonian)
             for m in fh.minlevel:fh.uh.maxlevel
                 e = m - fh.minlevel + 1
 
-                # for time-only pumping, always take the eigenenergies at the first phase, corresponding to 𝜑ₓ = 0
+                # for time-only pumping, always take the eigenenergies at the first phase, which is asssumed to correspond to 𝜑ₓ = 0
                 p = (pumptype == :time ? 1 : i)
                 H[e, e] = E[m, p] - ν[m]*ω/s
 
@@ -326,7 +327,7 @@ function diagonalise!(fh::FloquetHamiltonian)
                         # if pumping is space-time, then also multiply by cis(-𝜑ₜ). `ϕ` runs over 𝜑ₓ, and we assume the pumping protocol 𝜑ₜ = 2𝜑ₓ
                         H[e′, e] = (pumptype == :space ? λₗ/8 * ∑cc : λₗ/8 * ∑cc * cis(-2ϕ))
                     elseif pumptype == :time 
-                        H[e′, e] *= cis(-2(φₓ[2]-φₓ[1]))
+                        H[e′, e] *= cis(-2(φₓ[i]-φₓ[i-1]))
                     end
                     H[e, e′] = H[e′, e]'
                 end
@@ -378,7 +379,7 @@ function diagonalise!(fh::FloquetHamiltonian)
                         # if pumping is space-time, then also multiply by cis(-𝜑ₜ). `ϕ` runs over 𝜑ₓ, and we assume the pumping protocol 𝜑ₜ = 2𝜑ₓ
                         H[e′, e] = (pumptype == :space ? λₗ/8 * ∑cc : λₗ/8 * ∑cc * cis(-2ϕ))
                     elseif pumptype == :time 
-                        H[e′, e] *= cis(-2(φₓ[2]-φₓ[1]))
+                        H[e′, e] *= cis(-2(φₓ[i]-φₓ[i-1]))
                     end
                     H[e, e′] = H[e′, e]'
                 end
