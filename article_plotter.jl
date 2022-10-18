@@ -313,28 +313,24 @@ Aₗ = abs(coeffs[2]); χₗ = angle(coeffs[2])
 
 ### Make a plot of the motion in the (𝐼, ϑ) phase-space in the secular approximation
 
-function plot_isoenergies(; ω, M, λₛ, Aₛ, χₛ, λₗ, Aₗ, χₗ, φₜ, Iₛ, s, I_min, I_max)
-    ϑ = range(0, 2π, length=100)
-    I = range(I_min, I_max, length=50)
-    E = Matrix{Float64}(undef, length(ϑ), length(I))
-    h₀ = H.𝐸(Iₛ) - ω/s*Iₛ
-    for i in eachindex(I), t in eachindex(ϑ)
-        E[t, i] = h₀ + (I[i]-Iₛ)^2/2M + λₛ*Aₛ*cos(2s*ϑ[t] + χₛ) + λₗ*Aₗ*cos(s*ϑ[t] + χₗ - φₜ)
-    end
-    contour(ϑ ./ π, I, E', xlabel=L"\Theta/\pi", ylabel=L"I", color=[GREY], minorgrid=true,
-           levels=[range(-5725, -5610, length=10); range(-5600, -5575, length=10)], colorbar=false, lw=0.5, xlims=(0, 2))
-    hline!([Iₛ], c=YELLOW, label=false, lw=0.5)
-end
-
 I_min = 19.5; I_max = 28
-figa = plot_isoenergies(; ω, M, λₛ, Aₛ, χₛ, λₗ, Aₗ, χₗ, φₜ=π/2, Iₛ, s, I_min, I_max)
+ϑ = range(0, 2π, length=100)
+I = range(I_min, I_max, length=50)
+E = Matrix{Float64}(undef, length(ϑ), length(I))
+h₀ = H_classical.𝐸(Iₛ) - ω/s*Iₛ
+for i in eachindex(I), t in eachindex(ϑ)
+    E[t, i] = h₀ + (I[i]-Iₛ)^2/2M + λₛ*Aₛ*cos(2s*ϑ[t] + χₛ) + λₗ*Aₗ*cos(s*ϑ[t] + χₗ - π/2)
+end
+figa = contour(ϑ ./ π, I, E', xlabel=L"\Theta/\pi", ylabel=L"I", color=[GREY], minorgrid=true,
+               levels=[range(-5725, -5610, length=10); range(-5600, -5575, length=10)], colorbar=false, lw=0.5, xlims=(0, 2))
+hline!([Iₛ], c=YELLOW, label=false, lw=0.5)
 
 ### Make an "exact" plot of the motion in the (𝐼, ϑ) phase-space
 
 figb = plot();
 for (I_min, χ₀) in zip([20, 22.5, 23.5], [0, 0.75, -0.75])
     for i in I_min:0.5:I_max
-        I, Θ = compute_IΘ(H, i; n_T=100, χ₀)
+        I, Θ = compute_IΘ(H_classical, i; n_T=100, χ₀)
         scatter!(Θ ./ π, I, xlabel=L"\theta, rad", markerstrokewidth=0, markeralpha=0.6, label=false, minorgrid=true, c=GREY, markersize=1)
     end
 end

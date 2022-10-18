@@ -83,6 +83,7 @@ for (i, ϕ) in enumerate(φₓ)
 end
 plot!(minorgrid=true, xlabel=L"z", ylabel=L"\phi", cbtitle="Energy", title=L"(V_S, V_L) = (%$(-gₗ), %$(-Vₗ))"*"; non-periodic")
 
+# Wannier functions
 x = range(0, n_cells*π, length=50n_cells)
 _, w = Bandsolvers.make_wannierfunctions(h, x, 1:length(φₓ))
 lims = (minimum(h.w.E)-0.5, maximum(h.w.E)+2)
