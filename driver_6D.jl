@@ -66,8 +66,8 @@ savefig("secular-isoenergies.pdf")
 ### Make an "exact" plot of the motion in the (𝐼, ϑ) phase-space
 
 fig = plot();
-for i in [2:2:34; Iₛ; 36:39]
-    I, Θ = compute_IΘ(H, i, n_T=200)
+for i in 25:0.5:40
+    I, Θ = compute_IΘ(H, i, χ₀=1, n_T=200)
     scatter!(mod2pi.(Θ.+pi/2), I, xlabel=L"\theta", ylabel=L"I", markerstrokewidth=0, markeralpha=0.6, label=false)
 end
 display(fig)
