@@ -25,11 +25,12 @@ function plot_potential(uh::DeltaModel.UnperturbedHamiltonian)
     end
 end
 
-n_cells = 5
+n_cells = 3
 a = 2; λ = 500; U = 3
 φₓ = range(0, 2π, length=61)
 h = DeltaModel.UnperturbedHamiltonian(n_cells; a, λ, U, isperiodic=true, φₓ)
-plot_potential(h)
+
+plot_potential(h, iϕ)
 savefig("potential.pdf")
 
 function plot_dispersion(ε::AbstractVector; φ::Real, uh::DeltaModel.UnperturbedHamiltonian)
@@ -53,3 +54,8 @@ for (j, bounds) in enumerate(bandbounds)
     end
 end
 display(fig)
+
+x, ψ = DeltaModel.make_eigenfunctions(h, 50, [15])
+plot(x, abs2.(ψ[:, 1, 1]))
+plot(x, abs2.(ψ[:, 2, 1]))
+plot(x, abs2.(ψ[:, 3, 1]))
