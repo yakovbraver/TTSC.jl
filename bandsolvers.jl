@@ -17,19 +17,19 @@ Wanniers() = Wanniers(0, Int[], Int[], Float64[;;], Float64[;;], ComplexF64[;;;]
 
 """
 A type representing the unperturbed Hamiltonian
-    ℎ = 𝑝/2𝑀 + 𝑔ₗcos²(2𝑥) + 𝑉ₗcos²(𝑥 + 𝜑ₓ).
+    ℎ = 𝑝²/2𝑀 + 𝑔ₗcos²(2𝑥) + 𝑉ₗcos²(𝑥 + 𝜑ₓ).
 """
 mutable struct UnperturbedHamiltonian
-    N::Int # number of lattice cells
+    N::Int  # number of lattice cells
     M::Float64
     l::Int
     gₗ::Float64
     Vₗ::Float64
     isperiodic::Bool
     φₓ::Vector{Float64}
-    maxlevel::Int # highest level number to consider
-    E::Matrix{Float64}      # `E[i, j]` = `i`th eigenvalue at `j`th phase, `i = 1:maxlevel`
-    c::Array{ComplexF64, 3} # `c[:, i, j]` = `i`th eigenvector at `j`th phase, `i = 1:maxlevel; j = 1:2maxlevel+1`
+    maxlevel::Int   # highest level number to consider
+    E::Matrix{Float64}      # `E[i, j]` = `i`th eigenvalue at `j`th phase, `i` ∈ [1, `maxlevel`], `j` ∈ [1, `length(φₓ)`]
+    c::Array{ComplexF64, 3} # `c[:, i, j]` = `i`th eigenvector at `j`th phase
     w::Wanniers
 end
 
