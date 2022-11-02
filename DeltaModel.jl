@@ -1,52 +1,60 @@
-using Plots, LaTeXStrings, ProgressMeter
-plotlyjs()
-# pyplot()
-theme(:dark, size=(800, 500))
+module DeltaModel
 
-function 𝑔(x; n, L)
-    Int( n/3 <= (x % L)/L < (n+1)/3 )
+import Roots
+using LinearAlgebra: eigen, schur, ⋅, diagm, diagind, eigvals
+
+"""
+A type representing the unperturbed Hamiltonian
+    ℎ = 𝑝² + 𝜆 ∑ₙ𝛿(𝑥 - 𝑛𝑎/3) + 𝑈 ∑ₙ𝑔ₙ(𝑥)cos(𝜑ₓ + 2π𝑛/3).
+"""
+mutable struct UnperturbedHamiltonian
+    N::Int # number of lattice cells
+    a::Float64
+    λ::Float64
+    U::Float64
+    isperiodic::Bool
+    φₓ::Vector{Float64}
+    E::Matrix{Float64}      # `E[i, j]` = `i`th eigenvalue of the band of interest at `j`th phase, `i` ∈ [1, `N`], `j` ∈ [1, `length(φₓ)`]
+    c::Array{ComplexF64, 3} # `c[:, i, j]` = `i`th eigenvector of the band of interest at `j`th phase
 end
 
-function plot_potential(;L, U, n_cells)
-    x = range(0, n_cells * L, length=100)
-    𝑈 = [x -> U * 𝑔(x; n, L) for n = 0:2]
-    # ϕ = 0
-    barriers = [-0.01, 0.01]
-    for i = 1:3n_cells
-        append!(barriers, [i/3 - 0.01, i/3 + 0.01])
-    end
-    @gif for ϕ in range(0, 2π, 61)
-        V = zeros(length(x))
-        for n in 1:3
-            V .+= 𝑈[n].(x) .* cos(ϕ + 2π*(n-1)/3)
-        end
-        plot(x, V, ylims=(-1.1U, 2U), lw=2, label=false, xlabel=L"x", ylabel="Energy",
-             title=L"U=%$U, L=%$L, \phi=%$(round(ϕ, digits=3))", titlepos=:left)
-        vspan!(barriers, c=:grey, label=false)
-    end
+"""
+Construct an `UnperturbedHamiltonian` object.
+"""
+function UnperturbedHamiltonian(n_cells::Integer; a::Real, λ::Real, U::Real, isperiodic::Bool, φₓ::AbstractVector{<:Real})
+    E = Matrix{Float64}(undef, n_cells, length(φₓ))
+    c = Array{ComplexF64,3}(undef, 6, n_cells, length(φₓ))
+
+    UnperturbedHamiltonian(Int(n_cells), Float64(a), Float64(λ), Float64(U), isperiodic, collect(Float64, φₓ), E, c)
 end
 
-plot_potential(L=1, U=1, n_cells=2)
-savefig("potential.pdf")
+"Return 𝑔ₙ(𝑥) which realises the pumping protocol."
+function 𝑔(x; n, a)
+    Int( n/3 <= (x % a)/a < (n+1)/3 )
+end
 
-function K(ε; ϕ, L, U, λ)
-    κ = [sqrt(ε - U*cos(ϕ + 2π*n/3)) for n = 0:2]
-    s = sin.(κ*L/3)
-    c = cos.(κ*L/3)
+"Return cos(𝑘𝑎)/2𝜅₁𝜅₂𝜅₃ for a given energy `ε` and phase `φ`."
+function cos_ka(ε::Real; φ::Real, uh::UnperturbedHamiltonian)
+    (;a, U, λ) = uh
+    κ = [sqrt(ε - U*cos(φ + 2π*n/3)) for n = 0:2]
+    s = sin.(κ*a/3)
+    c = cos.(κ*a/3)
     return (-κ[1]^2*s[1] * (s[2]*(λ*s[3]+κ[3]c[3]) + κ[2]s[3]c[2]) +
-            κ[1]c[1] * (s[2] * (3λ*κ[3]c[3] - s[3]*(κ[2]^2+κ[3]^2-2λ^2)) + κ[2]c[2]*(3λ*s[3]+2κ[3]*c[3])) +
+            κ[1]c[1] * (s[2] * (3λ*κ[3]c[3] - s[3]*(κ[2]^2+κ[3]^2-2λ^2)) + κ[2]c[2]*(3λ*s[3]+2κ[3]c[3])) +
             s[1] * (s[2]*(λ*s[3]*(-κ[2]^2-κ[3]^2+λ^2) + κ[3]c[3]*(2λ^2-κ[2]^2)) + κ[2]c[2]*(3λ*κ[3]c[3] - s[3]*(κ[3]^2-2λ^2)))
-    ) / (2κ[1]κ[2]κ[3])
+    ) / 2κ[1]κ[2]κ[3]
 end
 
-function plot_dispersion(ε; ϕ, L, U, λ)
-    cos_kL = [K(E; ϕ, L, U, λ) for E in ε]
-    plot(ε, cos_kL, xlabel=L"\varepsilon", ylabel=L"\cos(kL)", ylims=(-4, 4),
-         title=L"U=%$U, L=%$L, \lambda=%$λ, \phi=%$(round(ϕ, digits=3))", titlepos=:left)
-    hline!([-1, 1], c=:white, legend=false)
+"Find allowed energies for the Hamiltonian `uh` at each phase for a band bracketed in energy by `bounds`."
+function diagonalise!(uh::UnperturbedHamiltonian, bounds::Tuple{<:Real, <:Real})
+    (;N) = uh
+    for (i, φ) in enumerate(uh.φₓ)
+        mid = N÷2 + 1
+        for n in 0:mid
+            uh.E[n+1, i] = Roots.find_zero(ε -> cos_ka(ε; φ, uh) - cos(2π*n/N), bounds, Roots.A42(), rtol=1e-5)
+        end
+        uh.E[mid+1:N, i] = uh.E[N-mid+1:-1:2, i]
+    end
 end
 
-U = 3
-ε = range(U, 1000, length=2000)
-plot_dispersion(ε; ϕ=0, L=2, U, λ=500)
-savefig("solution.html")
+end
