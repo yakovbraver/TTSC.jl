@@ -7,7 +7,7 @@ includet("DeltaModel.jl")
 import .DeltaModel
 
 "Produce an animation of potential if `iϕ == nothing`; otherwise, plot the potential at phase number `iϕ`."
-function plot_potential(uh::DeltaModel.UnperturbedHamiltonian; U::Real, lift::Real=0, iϕ::Union{Nothing, <:Real}=nothing)
+function plot_potential(uh::DeltaModel.UnperturbedHamiltonian; U::Real, U_title::Real=U, lift::Real=0, iϕ::Union{Nothing, <:Real}=nothing)
     (;a, φₓ, N) = uh
     x = range(0, N * a, length=100)
     𝑈 = [x -> U * DeltaModel.𝑔(x; n, a) for n = 0:2]
@@ -22,7 +22,7 @@ function plot_potential(uh::DeltaModel.UnperturbedHamiltonian; U::Real, lift::Re
                 V .+= 𝑈[n].(x) .* cos(φ + 2π*(n-1)/3)
             end
             plot(x, V.+lift, ylims=(-1.1U, 2U).+lift, lw=2, c=:white, label=false, xlabel=L"x", ylabel="Energy",
-                title=L"U=%$U, a=%$a, \varphi=%$(round(φ, digits=3))", titlepos=:left)
+                title=L"a=%$a, U=%$U_title, \lambda=%$(uh.λ), \varphi=%$(round(φ, digits=3))", titlepos=:left)
             vspan!(barriers, c=:grey, label=false)
         end
     else
@@ -32,12 +32,12 @@ function plot_potential(uh::DeltaModel.UnperturbedHamiltonian; U::Real, lift::Re
             V .+= 𝑈[n].(x) .* cos(φ + 2π*(n-1)/3)
         end
         plot(x, V.+lift, ylims=(-1.1U, 2U).+lift, lw=2, c=:white, label=false, xlabel=L"x", ylabel="Energy",
-            title=L"U=%$U, a=%$a, \varphi=%$(round(φ, digits=3))", titlepos=:left)
+            title=L"a=%$a, U=%$U_title, \lambda=%$(uh.λ), \varphi=%$(round(φ, digits=3))", titlepos=:left)
         vspan!(barriers, c=:grey, label=false)
     end
 end
 
-n_cells = 5
+n_cells = 3
 a = 2; λ = 500; U = 3
 φₓ = range(0, 2π, length=61)
 h = DeltaModel.UnperturbedHamiltonian(n_cells; a, λ, U, isperiodic=true, φₓ)
@@ -55,21 +55,23 @@ function plot_dispersion(ε::AbstractVector; φ::Real, uh::DeltaModel.Unperturbe
 end
 
 ε = range(U, 1000, length=2000)
-plot_dispersion(ε; φ=φₓ[6], uh=h)
-savefig("solution.html")
+plot_dispersion(ε; φ=φₓ[1], uh=h)
+xlims!(340, 360)
+savefig("dispersion.pdf")
 
 # spectrum
 
 bandbounds = [(346, 348), (349, 353), (354, 356.5)]
-fig = plot()
+fig = plot();
 for (j, bounds) in enumerate(bandbounds)
     display(bounds)
     DeltaModel.diagonalise!(h, bounds)
     for i in 1:n_cells
-        plot!(φₓ, h.E[i, :], label="m = $j, k = 2π/Na*$(i-1)", xlabel=L"\varphi_x", ylabel="Energy")
+        plot!(φₓ, h.E[i, :], label=L"m = %$j, k = 2\pi/Na\cdot%$(i-1)", xlabel=L"\varphi_x", ylabel="Energy")
     end
 end
-display(fig)
+title!(L"a=%$a, U=%$U, \lambda=%$(h.λ)")
+savefig("spectrum.pdf")
 
 # eigenfunctions
 
@@ -77,11 +79,11 @@ DeltaModel.diagonalise!(h, (354, 356.5))
 iϕ = 5
 n_x = 50
 x, ψ = DeltaModel.make_eigenfunctions(h, n_x, [iϕ])
-fig = plot()
+fig = plot();
 for n in 1:n_cells
     plot!(x, abs2.(ψ[:, n, 1]) .+ h.E[n, iϕ])
 end
-ylims!(h.E[1, iϕ]-5, h.E[1, iϕ]+5)
+ylims!(345, 358)
 
 # Wannier centres
 
@@ -94,16 +96,38 @@ end
 plot!(minorgrid=true, xlabel=L"x", ylabel=L"\varphi", cbtitle="Energy")
 
 # Wannier functions
-
+pyplot()
 x, _, w = DeltaModel.make_wannierfunctions(h, n_x, 1:length(φₓ))
 lift = minimum(h.w.E) - 0.5
 lims = (lift-1, lift+4)
 p = Progress(length(φₓ), 1)
 @gif for iϕ in eachindex(φₓ)
-    fig = plot_potential(h; U=0.2, lift, iϕ)
+    fig = plot_potential(h; U=0.2, U_title=U, lift, iϕ)
     scatter!(h.w.pos[:, iϕ], h.w.E[:, iϕ]; label=false, markerstrokewidth=0, ylims=lims, c=1:n_cells, markersize=5)
     for j in 1:n_cells
         plot!(x, abs2.(w[:, j, iϕ]) .+ h.w.E[j, iϕ], label=false, c=j)
+    end
+    next!(p)
+end
+
+hs = [DeltaModel.UnperturbedHamiltonian(n_cells; a, λ, U, isperiodic=true, φₓ) for _ in 1:3]
+ws = [ComplexF64[;;;], ComplexF64[;;;], ComplexF64[;;;]]
+x = Float64[]
+for (i, bounds) in enumerate(bandbounds)
+    DeltaModel.diagonalise!(hs[i], bounds)
+    DeltaModel.compute_wanniers!(hs[i])
+    x, _, ws[i] = DeltaModel.make_wannierfunctions(hs[i], n_x, 1:length(φₓ))
+end
+lift = minimum(hs[1].w.E) - 1
+lims = (lift-2, maximum(hs[3].w.E)+2)
+p = Progress(length(φₓ), 1)
+@gif for iϕ in eachindex(φₓ)
+    fig = plot_potential(h; U=0.5, U_title=U, lift, iϕ)
+    for b in 1:3
+        scatter!(hs[b].w.pos[:, iϕ], hs[b].w.E[:, iϕ]; label=false, markerstrokewidth=0, ylims=lims, c=1:n_cells, markersize=5)
+        for j in 1:n_cells
+            plot!(x, 0.5abs2.(ws[b][:, j, iϕ]) .+ hs[b].w.E[j, iϕ], label=false, c=j)
+        end
     end
     next!(p)
 end

@@ -86,12 +86,13 @@ function diagonalise!(uh::UnperturbedHamiltonian, bounds::Tuple{<:Real, <:Real})
             else
                 E[i, j] = E[N-i+2, j]
             end
+            uh.κ[:, i, j] .= [√(E[i, j] - U*cos(φ + 2π*n/3)) for n = 0:2] # calculate and save κ's
+            
             # eigenfunctions
             M = system_matrix(uh, i, j)
             uh.c[:, i, j] = svd(M).V[:, end]
             
             # normalise coefficients
-            uh.κ[:, i, j] .= [√(E[i, j] - U*cos(φ + 2π*n/3)) for n = 0:2] # calculate and save κ's
             κ = view(uh.κ, :, i, j)
             c = view(uh.c, :, i, j)
             X = (c⋅c)a/6 + real(c[1]c[2]')sin(κ[1]a/3)^2/κ[1] + (abs2(c[2]) - abs2(c[1]))sin(2κ[1]a/3)/4κ[1] +
