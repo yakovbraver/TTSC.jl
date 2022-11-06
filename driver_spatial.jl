@@ -18,10 +18,22 @@ Bandsolvers.diagonalise!(h)
 
 # Energy spectrum
 fig = plot();
-for r in eachrow(h.E)
-    plot!(φₓ, r, label=false)
+for (i, r) in enumerate(eachrow(h.E))
+    plot!(φₓ, r, label="$i")
 end
-plot!(xlabel=L"\phi_x", ylabel="Energy", title=L"(V_S, V_L) = (%$(-gₗ), %$(-Vₗ))", ylims=(-Inf, 0))
+plot!(xlabel=L"\varphi_x", ylabel="Energy", title=L"(V_S, V_L) = (%$(-gₗ), %$(-Vₗ))")
+
+# Eigenfunctions
+iϕ = 1;
+x = range(0, n_cells*π, length=1000n_cells)
+U = @. gₗ*cos(2x)^2 + Vₗ*cos(x + φₓ[iϕ])^2
+fig = plot(x ./ π, U, label=false, c=:white, lw=1)
+for i in 145:150
+    ψ = 4abs2.(Bandsolvers.make_eigenfunctions(h, x, [iϕ], [i])) .+ h.E[i, iϕ]
+    hline!([h.E[i, iϕ]], c=:white, ls=:dot, lw=0.5, label=false)
+    plot!(x ./ π, ψ[:, 1, 1], xlabel=L"x", ylabel="Energy", c=i, label="$i")
+end
+display(fig)
 
 # Wannier centres
 pyplot()
@@ -30,7 +42,7 @@ fig = plot();
 for (i, ϕ) in enumerate(φₓ)
     scatter!(h.w.pos[:, i], fill(ϕ, 2n_cells); marker_z=h.w.E[:, i], c=:coolwarm, label=false, markerstrokewidth=0)
 end
-plot!(minorgrid=true, xlabel=L"z", ylabel=L"\phi_x", cbtitle="Energy", title=L"(V_S, V_L) = (%$(-gₗ), %$(-Vₗ))"*"; periodic")
+plot!(minorgrid=true, xlabel=L"x", ylabel=L"\varphi_x", cbtitle="Energy", title=L"(V_S, V_L) = (%$(-gₗ), %$(-Vₗ))"*"; periodic")
 
 # Wannier functions
 x = range(0, n_cells*π, length=50n_cells)
@@ -41,7 +53,7 @@ p = Progress(length(φₓ), 1)
     U = @. gₗ*cos(2x)^2 + Vₗ*cos(x + ϕ)^2
     plot(x, U, label=false, ylims=lims)
     scatter!(h.w.pos[:, i], h.w.E[:, i]; marker_z=h.w.E[:, i], c=:coolwarm, label=false, markerstrokewidth=0, clims=lims)
-    for j in 1:size(w, 2)
+    for j in axes(w, 2)
         plot!(x, abs2.(w[:, j, i]) .+ h.w.E[j, i], label=false)
     end
     next!(p)
@@ -60,10 +72,10 @@ fig = plot();
 for r in eachrow(h.E)
     plot!(φₓ, r, label=false)
 end
-plot!(xlabel=L"\phi_x", ylabel="Energy", title=L"(V_S, V_L) = (%$(-gₗ), %$(-Vₗ))", ylims=(-Inf, 0))
+plot!(xlabel=L"\varphi_x", ylabel="Energy", title=L"(V_S, V_L) = (%$(-gₗ), %$(-Vₗ))", ylims=(-Inf, 0))
 
 # Wavefunctions
-iϕ = 46; ϕ_str = L"\phi_x = 3\pi/4"
+iϕ = 46; ϕ_str = L"\varphi_x = 3\pi/4"
 
 x = range(0, n_cells*π, length=100n_cells)
 U = @. gₗ*cos(2x)^2 + Vₗ*cos(x + φₓ[iϕ])^2
@@ -81,7 +93,7 @@ fig = plot();
 for (i, ϕ) in enumerate(φₓ)
     scatter!(h.w.pos[:, i], fill(ϕ, size(h.w.pos, 1)); marker_z=h.w.E[:, i], c=:coolwarm, label=false, markerstrokewidth=0)
 end
-plot!(minorgrid=true, xlabel=L"z", ylabel=L"\phi", cbtitle="Energy", title=L"(V_S, V_L) = (%$(-gₗ), %$(-Vₗ))"*"; non-periodic")
+plot!(minorgrid=true, xlabel=L"x", ylabel=L"\varphi", cbtitle="Energy", title=L"(V_S, V_L) = (%$(-gₗ), %$(-Vₗ))"*"; non-periodic")
 
 # Wannier functions
 x = range(0, n_cells*π, length=50n_cells)
@@ -92,7 +104,7 @@ p = Progress(length(φₓ), 1)
     U = @. gₗ*cos(2x)^2 + Vₗ*cos(x + ϕ)^2
     plot(x, U, label=false, ylims=lims)
     scatter!(h.w.pos[:, i], h.w.E[:, i]; marker_z=h.w.E[:, i], c=:coolwarm, label=false, markerstrokewidth=0, clims=lims)
-    for j in 1:size(w, 2)
+    for j in axes(w, 2)
         plot!(x, abs2.(w[:, j, i]) .+ h.w.E[j, i], label=false)
     end
     next!(p)
