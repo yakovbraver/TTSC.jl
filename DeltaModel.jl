@@ -26,6 +26,7 @@ mutable struct UnperturbedHamiltonian
     φₓ::Vector{Float64}
     E::Matrix{Float64}      # `E[i, j]` = `i`th eigenvalue of the band of interest at `j`th phase, `i` ∈ [1, `N`], `j` ∈ [1, `length(φₓ)`]
     c::Array{ComplexF64, 3} # `c[:, i, j]` = `i`th eigenvector of the band of interest at `j`th phase
+    κ::Array{Float64, 3}    # `κ[n, i, j]` = √(E[i, j] - U*cos(φₓ[j] + 2π*n/3))`
     w::Wanniers
 end
 
@@ -34,10 +35,11 @@ Construct an `UnperturbedHamiltonian` object.
 """
 function UnperturbedHamiltonian(n_cells::Integer; a::Real, λ::Real, U::Real, isperiodic::Bool, φₓ::AbstractVector{<:Real})
     E = Matrix{Float64}(undef, n_cells, length(φₓ))
-    c = Array{ComplexF64,3}(undef, 6, n_cells, length(φₓ))
+    c = Array{ComplexF64, 3}(undef, 6, n_cells, length(φₓ))
+    κ = Array{Float64, 3}(undef, 3, n_cells, length(φₓ))
     w = Wanniers(Matrix{Float64}(undef, n_cells, length(φₓ)), Matrix{Float64}(undef, n_cells, length(φₓ)),
                  Array{ComplexF64,3}(undef, n_cells, n_cells, length(φₓ)))
-    UnperturbedHamiltonian(Int(n_cells), Float64(a), Float64(λ), Float64(U), isperiodic, collect(Float64, φₓ), E, c, w)
+    UnperturbedHamiltonian(Int(n_cells), Float64(a), Float64(λ), Float64(U), isperiodic, collect(Float64, φₓ), E, c, κ, w)
 end
 
 "Return 𝑔ₙ(𝑥) which realises the pumping protocol."
@@ -58,12 +60,12 @@ function cos_ka(ε::Real; φ::Real, uh::UnperturbedHamiltonian)
 end
 
 "Return the 6×6 matrix that characterises the system."
-function system_matrix(ε::Real; φ::Real, ka::Real, uh::UnperturbedHamiltonian)
-    (;a, U, λ) = uh
-    κ = [sqrt(ε - U*cos(φ + 2π*n/3)) for n = 0:2]
+function system_matrix(uh::UnperturbedHamiltonian, state::Integer, iϕ::Integer)
+    (;N, a, λ) = uh
+    κ = view(uh.κ, :, state, iϕ)
     s = [sin(n*κ[m]*a/3) for n = 1:3, m = 1:3]
     c = [cos(n*κ[m]*a/3) for n = 1:3, m = 1:3]
-    e = cis(-ka)
+    e = cis(-2π*(state-1)/N)
     [0                    -1                  0                    0                   s[3,3]e       c[3,3]e;
      s[1,1]               c[1,1]              -s[1,2]              -c[1,2]             0             0;
      0                    0                   s[2,2]               c[2,2]              -s[2,3]       -c[2,3];
@@ -85,11 +87,12 @@ function diagonalise!(uh::UnperturbedHamiltonian, bounds::Tuple{<:Real, <:Real})
                 E[i, j] = E[N-i+2, j]
             end
             # eigenfunctions
-            M = system_matrix(E[i, j]; φ, ka, uh)
+            M = system_matrix(uh, i, j)
             uh.c[:, i, j] = svd(M).V[:, end]
             
             # normalise coefficients
-            κ = [sqrt(E[i, j] - U*cos(φ + 2π*n/3)) for n = 0:2]
+            uh.κ[:, i, j] .= [√(E[i, j] - U*cos(φ + 2π*n/3)) for n = 0:2] # calculate and save κ's
+            κ = view(uh.κ, :, i, j)
             c = view(uh.c, :, i, j)
             X = (c⋅c)a/6 + real(c[1]c[2]')sin(κ[1]a/3)^2/κ[1] + (abs2(c[2]) - abs2(c[1]))sin(2κ[1]a/3)/4κ[1] +
                 sin(κ[2]a/3)/κ[2] * (real(c[3]c[4]')sin(κ[2]a) + (abs2(c[4]) - abs2(c[3]))cos(κ[2]a)/2) +
@@ -105,16 +108,15 @@ Construct energy eigenfunctions for each eigenstate in `uh` at each phase number
 Return (`x`, `ψ`), where `x` are the abscissas, and `ψ[:, j, i]` = `j`th eigenfunction at `i`th phase.
 """
 function make_eigenfunctions(uh::UnperturbedHamiltonian, n_x::Integer, whichphases::AbstractVector{<:Integer})
-    (;N, a, U, φₓ, E, c) = uh
+    (;N, a, c, κ) = uh
     x = range(0, a*N, 3N*n_x+1)
     ψ = Array{ComplexF64,3}(undef, length(x), N, length(whichphases))
     for (i, iϕ) in enumerate(whichphases)
         for j = 1:N # for each eigenenergy
-            κ = [sqrt(E[j, iϕ] - U*cos(φₓ[iϕ] + 2π*n/3)) for n = 0:2]
             # construct wave function in the 3 sites of the first cell
             for n = 1:3
                 mask = (n-1)*n_x+1:n*n_x
-                @. ψ[mask, j, i] = c[2n-1, j, iϕ]sin(κ[n]x[mask]) + c[2n, j, iϕ]cos(κ[n]x[mask])
+                @. ψ[mask, j, i] = c[2n-1, j, iϕ]sin(κ[n, j, iϕ]x[mask]) + c[2n, j, iϕ]cos(κ[n, j, iϕ]x[mask])
             end
             # repeat the first cell according to the Bloch's theorem
             for n in 1:N-1
@@ -128,15 +130,14 @@ end
 
 "Calculate Wannier vectors for the unperturbed Hamiltonian `uh`."
 function compute_wanniers!(uh::UnperturbedHamiltonian)
-    (;N, a, φₓ, U, c, E) = uh
+    (;N, a, φₓ, c, E, κ) = uh
 
     X = Matrix{ComplexF64}(undef, N, N) # position operator
     
-    𝜅(i, j, iϕ) = √(E[j, iϕ] - U*cos(φₓ[iϕ] + 2π*(i-1)/3))
     k₂ = 2π/(N*a)
     𝐹(x, i, n, j′, j, iϕ) = begin
-        κʲ = 𝜅(i, j, iϕ)
-        κʲ′ = 𝜅(i, j′, iϕ)
+        κʲ = κ[i, j, iϕ]
+        κʲ′ = κ[i, j′, iϕ]
         cis((n-1)*2π*(j-j′)/N - (κʲ′ + κʲ - k₂)x) / 4 * (
             im * (c[2i-1, j′, iϕ] + im*c[2i, j′, iϕ])' * (c[2i-1, j, iϕ] - im*c[2i, j, iϕ]) / (κʲ′ + κʲ - k₂) +
             (c[2i-1, j, iϕ] + im*c[2i, j, iϕ]) * cis(2κʲ*x) * ( 
