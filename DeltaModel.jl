@@ -59,6 +59,19 @@ function cos_ka(ε::Real; φ::Real, uh::UnperturbedHamiltonian)
     ) / 2κ[1]κ[2]κ[3]
 end
 
+"Same as [`cos_ka`](@ref) calculated using transfer matrix formalism."
+function cos_ka_tm(ε::Real; φ::Real, uh::UnperturbedHamiltonian)
+    (;a, U, λ) = uh
+    κ = [√(ε - U*cos(φ + 2π*n/3)) for n = 0:2]
+    R = ComplexF64[1 0; 0 1]
+    for n in 0:2
+        F = (κ[(n+1)%3 + 1] - im*λ + κ[n+1])cis(κ[n+1]a/3)
+        G = (κ[(n+1)%3 + 1] + im*λ - κ[n+1])cis(κ[n+1]a/3)
+        R .= [F G'; G F']/2κ[(n+1)%3 + 1] * R
+    end 
+    return real(R[1, 1])
+end
+
 "Return the 6×6 matrix that characterises the system."
 function system_matrix(uh::UnperturbedHamiltonian, state::Integer, iϕ::Integer)
     (;N, a, λ) = uh
