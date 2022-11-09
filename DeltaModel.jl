@@ -1,7 +1,7 @@
 module DeltaModel
 
 import Roots
-using LinearAlgebra: eigen, schur, ⋅, svd
+using LinearAlgebra: eigvals, eigen, schur, ⋅, svd, diagm, Diagonal
 
 "A type for storing the Wannier functions."
 mutable struct Wanniers
@@ -87,7 +87,10 @@ function system_matrix(uh::UnperturbedHamiltonian, state::Integer, iϕ::Integer)
      0                    0                   -κ[2]c[2,2]-s[2,2]λ  κ[2]s[2,2]-c[2,2]λ  κ[3]c[2,3]    -κ[3]s[2,3]]
 end
 
-"Find allowed energies for the Hamiltonian `uh` at each phase for a band bracketed in energy by `bounds`."
+"""
+Diagonalise the unperturbed Hamiltonian `uh`: Find allowed energies at each phase for a band bracketed in energy by `bounds`,
+and calculate the corresponding eigenfunctions.
+"""
 function diagonalise!(uh::UnperturbedHamiltonian, bounds::Tuple{<:Real, <:Real})
     (;N, a, U, φₓ, E) = uh
     for (j, φ) in enumerate(φₓ)
@@ -194,6 +197,86 @@ function make_wannierfunctions(uh::UnperturbedHamiltonian, n_x::Integer, whichph
         end
     end
     return x, ψ, w
+end
+
+"""
+A type representing the tight-binding Hamiltonian
+    hₜ = ∑ⱼ 𝐽₁𝑏⁺ⱼ𝑎ⱼ + 𝐽₂𝑐⁺ⱼ𝑏ⱼ + 𝐽₃𝑎⁺ⱼ₊₁𝑐ⱼ + h.c.
+         + 𝑈 ∑ⱼ 𝑎⁺ⱼ𝑎ⱼcos(𝜑ₓ) + 𝑏⁺ⱼ𝑏ⱼcos(𝜑ₓ + 2π/3) + 𝑐⁺ⱼ𝑐ⱼcos(𝜑ₓ + 4π/3)
+"""
+mutable struct TBHamiltonian
+    N::Int # number of lattice cells
+    a::Float64
+    U::Float64
+    J::Vector{ComplexF64}
+    isperiodic::Bool
+    φₓ::Vector{Float64}
+    E::Matrix{Float64}      # `E[i, j]` = `i`th eigenvalue at `j`th phase, `i` ∈ [1, `3N`], `j` ∈ [1, `length(φₓ)`]
+    c::Array{ComplexF64, 3} # `c[:, i, j]` = `i`th eigenvector at `j`th phase
+    w::Wanniers 
+end
+
+"Construct a `TBHamiltonian` object."
+function TBHamiltonian(n_cells::Integer; a::Real, U::Real, J::Vector{<:Number}, isperiodic::Bool, φₓ::AbstractVector{<:Real})
+    E = Matrix{Float64}(undef, 3n_cells, length(φₓ))
+    c = Array{ComplexF64, 3}(undef, 3n_cells, 3n_cells, length(φₓ))
+    w = Wanniers(Matrix{Float64}(undef, n_cells, length(φₓ)), Matrix{Float64}(undef, n_cells, length(φₓ)),
+                 Array{ComplexF64,3}(undef, n_cells, n_cells, length(φₓ)))
+    TBHamiltonian(Int(n_cells), Float64(a), Float64(U), ComplexF64.(J), isperiodic, collect(Float64, φₓ), E, c, w)
+end
+
+"Diagonalise the TB Hamiltonian `h` at each phase."
+function diagonalise!(h::TBHamiltonian)
+    (;N, U, J, isperiodic, φₓ) = h
+    for (i, φ) in enumerate(φₓ)
+        diag = repeat([U*cos(φ), U*cos(φ+2π/3), U*cos(φ+4π/3)], N)
+        J_diag = [repeat(J, N-1); J[1:2]]
+        H = diagm(0 => diag, -1 => J_diag, 1 => conj.(J_diag))
+        if isperiodic
+            H[1, end] = J[3]
+            H[end, 1] = J[3]'
+        end
+        h.E[:, i], h.c[:, :, i] = eigen(H)
+    end
+end
+
+"Calculate Wannier vectors for the subband number `whichband` for the TB Hamiltonian `h`."
+function compute_wanniers!(h::TBHamiltonian; whichband::Integer)
+    (;N, a, φₓ) = h
+    levels = N*(whichband-1)+1:N*whichband
+    X = Diagonal([cis(2π/(N*a) * n*a/3) for n in 0:3N-1]) # position operator in coordinate representation
+    for iφ in eachindex(φₓ)
+        XE = h.c[:, levels, iφ]' * X * h.c[:, levels, iφ] # position operator in energy representation
+        _, h.w.d[:, :, iφ], pos_complex = schur(XE)
+        pos_real = @. (angle(pos_complex) + pi) / 2π * N*a # shift angle from [-π, π) to [0, 2π)
+        sp = sortperm(pos_real)                        # sort the eigenvalues
+        h.w.pos[:, iφ] = pos_real[sp]
+        @views Base.permutecols!!(h.w.d[:, :, iφ], sp) # sort the eigenvectors in the same way
+        h.w.E[:, iφ] = [abs2.(dˣ) ⋅ h.E[levels, iφ] for dˣ in eachcol(h.w.d[:, :, iφ])]
+    end
+end
+
+"Return the 𝑘-space Hamiltonian matrix for `h` at the given phase `φ` and at 𝑘𝑎 = `ka`."
+function kspace_hamiltonian(h::TBHamiltonian, φ::Real, ka::Real)
+    (;U, J) = h
+    [U*cos(φ)        J[1]'         J[3]cis(-ka)
+     J[1]            U*cos(φ+2π/3) J[2]'
+     (J[3]cis(-ka))' J[2]          U*cos(φ+4π/3)]
+end
+
+"""
+Diagonalise the TB Hamiltonian `h` in 𝑘-space at each phase for the values of 𝑘𝑎 in `ka`.
+Return the matrix of eigenenergies `E`, where `E[:, i]` is the energy at `i`th phase.
+In `E`, rows 1:3 corresopnd to `ka[1]`, rows 4:6 correspond to `ka[2]`, and so on.
+"""
+function diagonalise_kspace(h::TBHamiltonian, ka::AbstractVector{<:Real})
+    E = Matrix{Float64}(undef, 3length(ka), length(h.φₓ))
+    for (iφ, φ) in enumerate(h.φₓ)
+        for ik in eachindex(ka)
+            E[3(ik-1)+1:3ik, iφ] .= eigvals(kspace_hamiltonian(h, φ, ka[ik]))
+        end
+    end
+    return E
 end
 
 end

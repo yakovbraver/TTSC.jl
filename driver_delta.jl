@@ -37,7 +37,7 @@ function plot_potential(uh::DeltaModel.UnperturbedHamiltonian; U::Real, U_title:
     end
 end
 
-n_cells = 3
+n_cells = 2
 a = 2; λ = 500; U = 3
 φₓ = range(0, 2π, length=61)
 h = DeltaModel.UnperturbedHamiltonian(n_cells; a, λ, U, isperiodic=true, φₓ)
@@ -67,10 +67,10 @@ for (j, bounds) in enumerate(bandbounds)
     display(bounds)
     DeltaModel.diagonalise!(h, bounds)
     for i in 1:n_cells
-        plot!(φₓ, h.E[i, :], label=L"m = %$j, k = 2\pi/Na\cdot%$(i-1)", xlabel=L"\varphi_x", ylabel="Energy")
+        plot!(φₓ, h.E[i, :], label=L"m = %$j, k = 2\pi/Na\cdot%$(i-1)", xlabel=L"\varphi_x", ylabel="Energy", legend=:topleft)
     end
 end
-title!(L"a=%$a, U=%$U, \lambda=%$(h.λ)")
+title!(L"N=%$n_cells, a=%$a, U=%$U, \lambda=%$(h.λ)")
 savefig("spectrum.pdf")
 
 # eigenfunctions
@@ -88,14 +88,17 @@ ylims!(345, 358)
 # Wannier centres
 
 DeltaModel.compute_wanniers!(h)
-
+pyplot()
 fig = plot();
+m = 3
 for (i, ϕ) in enumerate(φₓ)
-    scatter!(h.w.pos[:, i], fill(ϕ, size(h.w.pos, 1)); marker_z=h.w.E[:, i], c=:coolwarm, label=false, markerstrokewidth=0)
+    scatter!(hs[m].w.pos[:, i], fill(ϕ, size(hs[m].w.pos, 1)); marker_z=hs[m].w.E[:, i], c=:coolwarm, label=false, markerstrokewidth=0)
 end
-plot!(minorgrid=true, xlabel=L"x", ylabel=L"\varphi", cbtitle="Energy")
+plot!(minorgrid=true, xlabel=L"x", ylabel=L"\varphi", cbtitle="Energy",
+      title=L"N=%$n_cells, U=%$U, a=%$a, \lambda=%$λ")
 
 # Wannier functions
+
 pyplot()
 x, _, w = DeltaModel.make_wannierfunctions(h, n_x, 1:length(φₓ))
 lift = minimum(h.w.E) - 0.5
@@ -110,6 +113,8 @@ p = Progress(length(φₓ), 1)
     next!(p)
 end
 
+n_x = 50
+bandbounds = [(346, 348), (349, 353), (354, 356.5)]
 hs = [DeltaModel.UnperturbedHamiltonian(n_cells; a, λ, U, isperiodic=true, φₓ) for _ in 1:3]
 ws = [ComplexF64[;;;], ComplexF64[;;;], ComplexF64[;;;]]
 x = Float64[]
@@ -131,3 +136,49 @@ p = Progress(length(φₓ), 1)
     end
     next!(p)
 end
+
+###### TB Hamiltonian
+
+n_cells = 2
+a = 2; U = 3; 
+J = [1, 1, 1]*2.09
+φₓ = range(0, 2π, length=61)
+h = DeltaModel.TBHamiltonian(n_cells; a, U, J, isperiodic=true, φₓ)
+DeltaModel.diagonalise!(h)
+
+hs[3].E[1, 1] - hs[1].E[end, 1:1] # "true" bandwidth
+h.E[end, 1] - h.E[1, 1:1] # TB bandwidth
+
+# Energy spectrum
+
+shift = hs[3].E[1, 1] - h.E[end, 1]
+fig2 = plot();
+for r in eachrow(h.E)
+    plot!(φₓ, r .+ shift, xlabel=L"\varphi_x", ylabel="Energy", legend=false)
+end
+title!("non-periodic TB: "*L"J=%$(J[1]), U=%$U")
+savefig("non-periodic.pdf")
+
+# Wannier centres
+
+fig2 = plot();
+DeltaModel.compute_wanniers!(h; whichband=3)
+for (i, ϕ) in enumerate(φₓ)
+    scatter!(h.w.pos[:, i], fill(ϕ, size(h.w.pos, 1)); marker_z=h.w.E[:, i] .+ shift, c=:coolwarm, label=false, markerstrokewidth=0)
+end
+plot!(minorgrid=true, xlabel=L"x", ylabel=L"\varphi", cbtitle="Energy", title="TB: "*L"J=%$(J[1]), U=%$U")
+
+plot(fig, fig2, layout=(2,1))
+savefig("pumping-tb.pdf")
+
+# Energy spectrum calculated using k-space representation
+
+ka = [0, pi]
+E = DeltaModel.diagonalise_kspace(h, ka)
+fig2 = plot();
+for ik in eachindex(ka)
+    for m = 1:3
+        plot!(φₓ, E[3(ik-1)+m, :], label=L"m = %$m, k=%$(round(ka[ik], digits=3))")
+    end
+end
+title!("TB: "*L"J=%$(J[1]), U=%$U")
