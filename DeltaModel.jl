@@ -220,8 +220,8 @@ end
 function TBHamiltonian(n_cells::Integer; a::Real, U::Real, J::Vector{<:Number}, isperiodic::Bool, φₓ::AbstractVector{<:Real})
     E = Matrix{Float64}(undef, 3n_cells, length(φₓ))
     c = Array{ComplexF64, 3}(undef, 3n_cells, 3n_cells, length(φₓ))
-    w = Wanniers(Matrix{Float64}(undef, n_cells, length(φₓ)), Matrix{Float64}(undef, n_cells, length(φₓ)),
-                 Array{ComplexF64,3}(undef, n_cells, n_cells, length(φₓ)))
+    w = Wanniers(Matrix{Float64}(undef, 3n_cells, length(φₓ)), Matrix{Float64}(undef, 3n_cells, length(φₓ)),
+                 Array{ComplexF64,3}(undef, n_cells, 3n_cells, length(φₓ)))
     TBHamiltonian(Int(n_cells), Float64(a), Float64(U), ComplexF64.(J), isperiodic, collect(Float64, φₓ), E, c, w)
 end
 
@@ -240,29 +240,50 @@ function diagonalise!(h::TBHamiltonian)
     end
 end
 
-"Calculate Wannier vectors for the subband number `whichband` for the TB Hamiltonian `h`."
-function compute_wanniers!(h::TBHamiltonian; whichband::Integer)
+"Calculate Wannier vectors for each of the three subbands for the TB Hamiltonian `h`."
+function compute_wanniers!(h::TBHamiltonian)
     (;N, a, φₓ) = h
-    levels = N*(whichband-1)+1:N*whichband
-    if h.isperiodic
-        X = Diagonal([cis(2π/(N*a) * n*a/3) for n in 0:3N-1]) # position operator in coordinate representation
-        for iφ in eachindex(φₓ)
-            XE = h.c[:, levels, iφ]' * X * h.c[:, levels, iφ] # position operator in energy representation
-            _, h.w.d[:, :, iφ], pos_complex = schur(XE)
-            pos_real = @. (angle(pos_complex) + pi) / 2π * N*a # shift angle from [-π, π) to [0, 2π)
-            sp = sortperm(pos_real)                        # sort the eigenvalues
-            h.w.pos[:, iφ] = pos_real[sp]
-            @views Base.permutecols!!(h.w.d[:, :, iφ], sp) # sort the eigenvectors in the same way
-            h.w.E[:, iφ] = [abs2.(dˣ) ⋅ h.E[levels, iφ] for dˣ in eachcol(h.w.d[:, :, iφ])]
-        end
-    else
-        X = Diagonal([n*a/3 for n in 0:3N-1]) # position operator in coordinate representation
-        for iφ in eachindex(φₓ)
-            XE = h.c[:, levels, iφ]' * X * h.c[:, levels, iφ] # position operator in energy representation
-            h.w.pos[:, iφ], h.w.d[:, :, iφ] = eigen(XE)
-            h.w.E[:, iφ] = [abs2.(dˣ) ⋅ h.E[levels, iφ] for dˣ in eachcol(h.w.d[:, :, iφ])]
+    for band in 1:3
+        levels = N*(band-1)+1:N*band
+        if h.isperiodic
+            X = Diagonal([cis(2π/(N*a) * n*a/3) for n in 0:3N-1]) # position operator in coordinate representation
+            for iφ in eachindex(φₓ)
+                XE = h.c[:, levels, iφ]' * X * h.c[:, levels, iφ] # position operator in energy representation
+                _, h.w.d[:, levels, iφ], pos_complex = schur(XE)
+                pos_real = @. mod2pi(angle(pos_complex)) / 2π * N*a # shift angle from [-π, π) to [0, 2π)
+                sp = sortperm(pos_real)                        # sort the eigenvalues
+                h.w.pos[levels, iφ] = pos_real[sp]
+                @views Base.permutecols!!(h.w.d[:, levels, iφ], sp) # sort the eigenvectors in the same way
+                h.w.E[levels, iφ] = [abs2.(dˣ) ⋅ h.E[levels, iφ] for dˣ in eachcol(h.w.d[:, levels, iφ])]
+            end
+        else
+            X = Diagonal([n*a/3 for n in 0:3N-1]) # position operator in coordinate representation
+            for iφ in eachindex(φₓ)
+                XE = h.c[:, levels, iφ]' * X * h.c[:, levels, iφ] # position operator in energy representation
+                h.w.pos[levels, iφ], h.w.d[:, levels, iφ] = eigen(XE)
+                h.w.E[levels, iφ] = [abs2.(dˣ) ⋅ h.E[levels, iφ] for dˣ in eachcol(h.w.d[:, levels, iφ])]
+            end
         end
     end
+end
+
+"""
+Construct Wannier functions at each phase number in `whichphases`.
+All Wannier functions contained in `uh` are constructed.
+Return `w`, where `w[:, j, i]` = `j`th Wannier function at `i`th phase;
+`w[:, 1:N, i]`, `w[:, N+1:2N, i]`, and `w[:, 2N+1:3N, i]` correspond to the three subbands.
+"""
+function make_wannierfunctions(h::TBHamiltonian, whichphases::AbstractVector{<:Integer})
+    w = similar(h.c)
+    for i in eachindex(whichphases)
+        for band in 1:3
+            levels = h.N*(band-1)+1:h.N*band
+            for j in levels
+                w[:, j, i] = sum(h.w.d[k, j, i] * h.c[:, levels[1]-1+k, i] for k = 1:h.N)
+            end
+        end
+    end
+    return w
 end
 
 "Return the 𝑘-space Hamiltonian matrix for `h` at the given phase `φ` and at 𝑘𝑎 = `ka`."
