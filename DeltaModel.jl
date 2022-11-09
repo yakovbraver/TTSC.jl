@@ -244,15 +244,24 @@ end
 function compute_wanniers!(h::TBHamiltonian; whichband::Integer)
     (;N, a, φₓ) = h
     levels = N*(whichband-1)+1:N*whichband
-    X = Diagonal([cis(2π/(N*a) * n*a/3) for n in 0:3N-1]) # position operator in coordinate representation
-    for iφ in eachindex(φₓ)
-        XE = h.c[:, levels, iφ]' * X * h.c[:, levels, iφ] # position operator in energy representation
-        _, h.w.d[:, :, iφ], pos_complex = schur(XE)
-        pos_real = @. (angle(pos_complex) + pi) / 2π * N*a # shift angle from [-π, π) to [0, 2π)
-        sp = sortperm(pos_real)                        # sort the eigenvalues
-        h.w.pos[:, iφ] = pos_real[sp]
-        @views Base.permutecols!!(h.w.d[:, :, iφ], sp) # sort the eigenvectors in the same way
-        h.w.E[:, iφ] = [abs2.(dˣ) ⋅ h.E[levels, iφ] for dˣ in eachcol(h.w.d[:, :, iφ])]
+    if h.isperiodic
+        X = Diagonal([cis(2π/(N*a) * n*a/3) for n in 0:3N-1]) # position operator in coordinate representation
+        for iφ in eachindex(φₓ)
+            XE = h.c[:, levels, iφ]' * X * h.c[:, levels, iφ] # position operator in energy representation
+            _, h.w.d[:, :, iφ], pos_complex = schur(XE)
+            pos_real = @. (angle(pos_complex) + pi) / 2π * N*a # shift angle from [-π, π) to [0, 2π)
+            sp = sortperm(pos_real)                        # sort the eigenvalues
+            h.w.pos[:, iφ] = pos_real[sp]
+            @views Base.permutecols!!(h.w.d[:, :, iφ], sp) # sort the eigenvectors in the same way
+            h.w.E[:, iφ] = [abs2.(dˣ) ⋅ h.E[levels, iφ] for dˣ in eachcol(h.w.d[:, :, iφ])]
+        end
+    else
+        X = Diagonal([n*a/3 for n in 0:3N-1]) # position operator in coordinate representation
+        for iφ in eachindex(φₓ)
+            XE = h.c[:, levels, iφ]' * X * h.c[:, levels, iφ] # position operator in energy representation
+            h.w.pos[:, iφ], h.w.d[:, :, iφ] = eigen(XE)
+            h.w.E[:, iφ] = [abs2.(dˣ) ⋅ h.E[levels, iφ] for dˣ in eachcol(h.w.d[:, :, iφ])]
+        end
     end
 end
 
