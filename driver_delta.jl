@@ -7,14 +7,16 @@ includet("DeltaModel.jl")
 import .DeltaModel
 
 "Produce an animation of potential if `iϕ == nothing`; otherwise, plot the potential at phase number `iϕ`."
-function plot_potential(uh::DeltaModel.UnperturbedHamiltonian; U::Real, U_title::Real=U, lift::Real=0, iϕ::Union{Nothing, <:Real}=nothing)
-    (;a, φₓ, N) = uh
-    x = range(0, N * a, length=100)
-    𝑈 = [x -> U * DeltaModel.𝑔(x; n, a) for n = 0:2]
-    barriers = [-0.01, 0.01]
-    for i = 1:3n_cells
+function plot_potential(H; U::Real, U_title::Real=U, lift::Real=0, iϕ::Union{Nothing, <:Real}=nothing)
+    (;a, φₓ, N) = H
+    x = Float64[]
+    barriers = Float64[]
+    for i = 0:3N-1
         append!(barriers, [i*a/3 - 0.01, i*a/3 + 0.01])
+        append!(x, [i*a/3 + 0.005, (i+1)*a/3 - 0.005])
     end
+    append!(barriers, [3N*a/3 - 0.01, 3N*a/3 + 0.01])
+    𝑈 = [x -> U * DeltaModel.𝑔(x; n, a) for n = 0:2]
     if iϕ === nothing
         @gif for φ in φₓ
             V = zeros(length(x))
@@ -32,17 +34,18 @@ function plot_potential(uh::DeltaModel.UnperturbedHamiltonian; U::Real, U_title:
             V .+= 𝑈[n].(x) .* cos(φ + 2π*(n-1)/3)
         end
         plot(x, V.+lift, ylims=(-1.1U, 2U).+lift, lw=2, c=:white, label=false, xlabel=L"x", ylabel="Energy",
-            title=L"a=%$a, U=%$U_title, \lambda=%$(uh.λ), \varphi=%$(round(φ, digits=3))", titlepos=:left)
+            title=L"a=%$a, U=%$U_title, \lambda=%$(500), \varphi=%$(round(φ, digits=3))", titlepos=:left)
         vspan!(barriers, c=:grey, label=false)
     end
 end
 
-n_cells = 3
+n_cells = 4
 a = 2; λ = 500; U = 3
 φₓ = range(0, 2π, length=61)
 h = DeltaModel.UnperturbedHamiltonian(n_cells; a, λ, U, isperiodic=true, φₓ)
 
 plot_potential(h; U, lift=0)
+plot_potential(h; U, iϕ=1)
 savefig("potential.pdf")
 
 # dispersion
@@ -138,8 +141,7 @@ p = Progress(length(φₓ), 1)
 end
 
 ###### TB Hamiltonian
-
-n_cells = 3
+n_cells = 8
 a = 2; U = 3; 
 J = [1, 1, 1]*2.09
 φₓ = range(0, 2π, length=61)
@@ -149,8 +151,8 @@ J = [1, 1, 1]*2.09
 htb = DeltaModel.TBHamiltonian(n_cells; a, U, J, isperiodic=false, φₓ)
 DeltaModel.diagonalise!(htb)
 
-hs[3].E[1, 1] - hs[1].E[end, 1:1] # "true" bandwidth
-htb.E[end, 1] - htb.E[1, 1:1] # TB bandwidth
+hs[3].E[1, 1] - hs[1].E[end, 1] # "true" bandwidth
+htb.E[end, 1] - htb.E[1, 1] # TB bandwidth
 
 # Energy spectrum
 
@@ -184,7 +186,7 @@ end
 plot!(minorgrid=true, xlabel=L"x", ylabel=L"\varphi", cbtitle="Energy", title="TB: "*L"J=%$(J[1]), U=%$U")
 
 plot(fig, fig2, layout=(2,1))
-savefig(fig2, "centres-tb-nonperiodic.pdf")
+savefig(fig2, "centres-tb-nonperiodic-8.pdf")
 
 # Wannier functions
 wanniers = DeltaModel.make_wannierfunctions(htb, 1:length(φₓ))
@@ -195,7 +197,7 @@ lims = (lift-2, maximum(htb.w.E)+2)
 x = range(start=a/6, step=a/3, length=3n_cells)
 p = Progress(length(φₓ), 1)
 @gif for iϕ in eachindex(φₓ)
-    fig = plot_potential(h; U=0.5, U_title=U, lift, iϕ)
+    fig = plot_potential(htb; U=0.5, U_title=U, lift, iϕ)
     scatter!((htb.w.pos[:, iϕ].+a/6).%(a*n_cells), htb.w.E[:, iϕ]; label=false, markerstrokewidth=0, ylims=lims, markersize=5, c=1:3n_cells)
     for j in 1:3n_cells
         plot!(x, abs2.(wanniers[:, j, iϕ]) .+ htb.w.E[j, iϕ], label=false, c=j)
