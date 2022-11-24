@@ -184,6 +184,46 @@ function compute_wanniers!(uh::UnperturbedHamiltonian)
 end
 
 """
+Calculate Wannier vectors for the unperturbed Hamiltonians `hs`. `hs` is assumed to contain 3 elements corresponding to the 3 subbands of a band.
+Each constituent Hamiltonian should be diagonalised for a single cell, `hs[i].N` = 1.
+"""
+function compute_wanniers(hs::Vector{UnperturbedHamiltonian})
+    (;N, a) = hs[1]
+
+    X = Matrix{ComplexF64}(undef, 3, 3) # position operator
+    
+    k₂ = 2π/(N*a)
+    iϕ = 1
+    m = 1 # which value of 𝑘 to take in the `c` array; take the first since there is only one
+    𝐹(x, i, j′, j) = begin
+        κʲ = hs[j].κ[i, 1, iϕ]
+        κʲ′ = hs[j′].κ[i, 1, iϕ]
+        cis(-(κʲ′ + κʲ - k₂)x) / 4 * (
+            im * (hs[j′].c[2i-1, m, iϕ] + im*hs[j′].c[2i, m, iϕ])' * (hs[j].c[2i-1, m, iϕ] - im*hs[j].c[2i, m, iϕ]) / (κʲ′ + κʲ - k₂) +
+            (hs[j].c[2i-1, m, iϕ] + im*hs[j].c[2i, m, iϕ]) * cis(2κʲ*x) * ( 
+                (hs[j′].c[2i, m, iϕ] - im*hs[j′].c[2i-1, m, iϕ]) / (-κʲ′ + κʲ + k₂) +
+                (hs[j′].c[2i, m, iϕ] + im*hs[j′].c[2i-1, m, iϕ]) / ( κʲ′ + κʲ + k₂) * cis(-2κʲ′*x) )' +
+            (hs[j′].c[2i-1, m, iϕ] - im*hs[j′].c[2i, m, iϕ])' * (hs[j].c[2i, m, iϕ] + im*hs[j].c[2i-1, m, iϕ]) * cis(2κʲ′*x) / (κʲ′ - κʲ + k₂) )
+    end
+
+    for j in 1:3
+        for j′ in 1:3
+            X[j′, j] = 0
+            for n = 1:N, i = 1:3
+                X[j′, j] += 𝐹((n-1)a + i*a/3, i, j′, j) - 𝐹((n-1)a + (i-1)a/3, i, j′, j)
+            end
+        end
+    end
+    _, d, pos_complex = schur(X)
+    pos_real = @. (angle(pos_complex) + pi) / k₂ # shift angle from [-π, π) to [0, 2π)
+    sp = sortperm(pos_real)          # sort the eigenvalues
+    pos = pos_real[sp]
+    @views Base.permutecols!!(d, sp) # sort the eigenvectors in the same way
+    E = [sum(abs2(dˣ[i]) * hs[i].E[1, 1] for i in 1:3) for dˣ in eachcol(d)]
+    return d, pos, E
+end
+
+"""
 Construct Wannier functions at each phase number in `whichphases`. `n_x` specifies the number of points to use for each site.
 All Wannier functions contained in `uh` are constructed. In the process, energy eigenfunctions are also constructed.
 Return `x, ψ, w`, where `ψ[:, j, i]` = `j`th eigenfunction at `i`th phase, and `w[:, j, i]` = `j`th Wannier function at `i`th phase.
