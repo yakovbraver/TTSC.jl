@@ -304,6 +304,17 @@ function diagonalise!(fh::FloquetHamiltonian)
 
     H = zeros(ComplexF64, n_levels, n_levels) # ℋ matrix
 
+    ∑cc(m′, m, i) = if fh.uh.isperiodic
+        sum( (                 c[j+2N, m′, i])' * c[j, m, i] for j = 1:2N ) +
+        sum( (c[j-2N, m′, i] + c[j+2N, m′, i])' * c[j, m, i] for j = 2N+1:n_j-2N ) + 
+        sum( (c[j-2N, m′, i]                 )' * c[j, m, i] for j = n_j-2N+1:n_j )
+    else
+        sum( (-c[-j+4N, m′, i] + c[j+4N, m′, i]) * c[j, m, i] for j = 1:4N-1 ) +
+                               + c[4N+4N, m′, i] * c[4N, m, i] + # iteration `j = 4N`
+        sum( (  c[j-4N, m′, i] + c[j+4N, m′, i]) * c[j, m, i] for j = 4N+1:n_j-4N ) + 
+        sum( (  c[j-4N, m′, i]                 ) * c[j, m, i] for j = n_j-4N+1:n_j )
+    end
+
     if fh.uh.isperiodic
         for (i, ϕ) in enumerate(φₓ)
             # `m` and `m′` number the levels of ℎ
@@ -321,11 +332,8 @@ function diagonalise!(fh::FloquetHamiltonian)
                     e′ = m′ - fh.minlevel + 1
                     e′ > n_levels && break
                     if pumptype != :time || i == 1 # if pumping is time-only, this must be calculated only once, at `i` = 1
-                        ∑cc = sum( (                 2c[j, m′, i] + c[j+2N, m′, i])' * c[j, m, i] for j = 1:2N ) +
-                              sum( (c[j-2N, m′, i] + 2c[j, m′, i] + c[j+2N, m′, i])' * c[j, m, i] for j = 2N+1:n_j-2N ) + 
-                              sum( (c[j-2N, m′, i] + 2c[j, m′, i]                 )' * c[j, m, i] for j = n_j-2N+1:n_j )
                         # if pumping is space-time, then also multiply by cis(-𝜑ₜ). `ϕ` runs over 𝜑ₓ, and we assume the pumping protocol 𝜑ₜ = 2𝜑ₓ
-                        H[e′, e] = (pumptype == :space ? λₗ/8 * ∑cc : λₗ/8 * ∑cc * cis(-2ϕ))
+                        H[e′, e] = (pumptype == :space ? λₗ/8 * ∑cc(m′, m, i) : λₗ/8 * ∑cc(m′, m, i) * cis(-2ϕ))
                     elseif pumptype == :time 
                         H[e′, e] *= cis(-2(φₓ[i]-φₓ[i-1]))
                     end
@@ -338,10 +346,7 @@ function diagonalise!(fh::FloquetHamiltonian)
                     e′ = m′ - fh.minlevel + 1
                     e′ > n_levels && break
                     if pumptype != :time || i == 1 # if pumping is time-only, this must be calculated only once, at `i` = 1
-                        ∑cc = sum( (                  2c[j, m′, i] - c[j+2N, m′, i])' * c[j, m, i] for j = 1:2N ) +
-                              sum( (-c[j-2N, m′, i] + 2c[j, m′, i] - c[j+2N, m′, i])' * c[j, m, i] for j = 2N+1:n_j-2N ) + 
-                              sum( (-c[j-2N, m′, i] + 2c[j, m′, i]                 )' * c[j, m, i] for j = n_j-2N+1:n_j )
-                        H[e′, e] = λₛ/8 * ∑cc
+                        H[e′, e] = -λₛ/8 * ∑cc(m′, m, i)
                     end
                     H[e, e′] = H[e′, e]'
                 end
@@ -372,12 +377,8 @@ function diagonalise!(fh::FloquetHamiltonian)
                     e′ > n_levels && break
                     m′ = e′ + fh.minlevel - 1 
                     if pumptype != :time || i == 1 # if pumping is time-only, this must be calculated only once, at `i` = 1
-                        ∑cc = sum( (-c[-j+4N, m′, i] + 2c[j, m′, i] + c[j+4N, m′, i]) * c[j, m, i] for j = 1:4N-1 ) +
-                                   (                 + 2c[4N, m′, i]+ c[4N+4N, m′, i]) * c[4N, m, i] + # iteration `j = 4N`
-                              sum( (  c[j-4N, m′, i] + 2c[j, m′, i] + c[j+4N, m′, i]) * c[j, m, i] for j = 4N+1:n_j-4N ) + 
-                              sum( (  c[j-4N, m′, i] + 2c[j, m′, i]                 ) * c[j, m, i] for j = n_j-4N+1:n_j )
                         # if pumping is space-time, then also multiply by cis(-𝜑ₜ). `ϕ` runs over 𝜑ₓ, and we assume the pumping protocol 𝜑ₜ = 2𝜑ₓ
-                        H[e′, e] = (pumptype == :space ? λₗ/8 * ∑cc : λₗ/8 * ∑cc * cis(-2ϕ))
+                        H[e′, e] = (pumptype == :space ? λₗ/8 * ∑cc(m′, m, i) : λₗ/8 * ∑cc(m′, m, i) * cis(-2ϕ))
                     elseif pumptype == :time 
                         H[e′, e] *= cis(-2(φₓ[i]-φₓ[i-1]))
                     end
@@ -390,11 +391,7 @@ function diagonalise!(fh::FloquetHamiltonian)
                     e′ > n_levels && break
                     m′ = e′ + fh.minlevel - 1 
                     if pumptype != :time || i == 1 # if pumping is time-only, this must be calculated only once, at `i` = 1
-                        ∑cc = sum( ( c[-j+4N, m′, i] + 2c[j, m′, i] - c[j+4N, m′, i]) * c[j, m, i] for j = 1:4N-1 ) +
-                                   (                 + 2c[4N, m′, i]- c[4N+4N, m′, i]) * c[4N, m, i] + # iteration `j = 4N`
-                              sum( ( -c[j-4N, m′, i] + 2c[j, m′, i] - c[j+4N, m′, i]) * c[j, m, i] for j = 4N+1:n_j-4N ) + 
-                              sum( ( -c[j-4N, m′, i] + 2c[j, m′, i]                 ) * c[j, m, i] for j = n_j-4N+1:n_j )
-                        H[e′, e] = λₛ/8 * ∑cc
+                        H[e′, e] = -λₛ/8 * ∑cc(m′, m, i)
                     end
                     H[e, e′] = H[e′, e]'
                 end

@@ -21,7 +21,7 @@ n_cells = 2
 h = Bandsolvers.UnperturbedHamiltonian(n_cells; M=1/2, gₗ, Vₗ, φₓ, maxband=30, isperiodic=true)
 Bandsolvers.diagonalise!(h)
 
-# energy of the unperturbed Hamiltonian spectrum
+# unperturbed Hamiltonian spectrum
 fig = plot();
 plot!(range(0, π, length=200), x -> gₗ*cos(2x)^2 + Vₗ*cos(x)^2, lw=2, c=:white, label=false) # spatial potential
 for r in eachrow(h.E)
@@ -29,7 +29,7 @@ for r in eachrow(h.E)
 end
 plot!(xlabel=L"\phi_x", ylabel="Energy")
 
-H = Bandsolvers.FloquetHamiltonian(h; s, λₛ, λₗ, ω, pumptype=:space, minband=1)
+H = Bandsolvers.FloquetHamiltonian(h; s, λₛ, λₗ, ω, pumptype=:both, minband=1)
 Bandsolvers.diagonalise!(H)
 
 # Floquet quasienergy spectrum
@@ -82,7 +82,7 @@ plot(figs...)
 h = Bandsolvers.UnperturbedHamiltonian(n_cells; M=1/2, gₗ, Vₗ, φₓ, maxband=30, isperiodic=false)
 Bandsolvers.diagonalise!(h)
 
-# energy of the unperturbed Hamiltonian spectrum
+# unperturbed Hamiltonian spectrum
 fig = plot();
 plot!(range(0, π, length=200), x -> gₗ*cos(2x)^2 + Vₗ*cos(x)^2, lw=2, c=:white, label=false) # spatial potential
 for r in eachrow(h.E)
