@@ -160,8 +160,8 @@ function compute_wanniers!(uh::UnperturbedHamiltonian; targetband::Integer)
             uh.w.n_lo[i] = n_lo
             for n in 1:n_lo
                 for n′ in n:n_lo
-                    X[n′, n] = X[n, n′] = N*sum(uh.c[j, minlevel+n-1, i] * (π/2 * uh.c[j, minlevel+n′-1, i] - 8/π * sum(uh.c[j′, minlevel+n′-1, i]*j*j′/(j^2-j′^2)^2
-                                                                            for j′ = (iseven(j) ? 1 : 2):2:n_j)) for j = 1:n_j)
+                    X[n′, n] = X[n, n′] = (n == n′ ? N*π/2 : 0.0) - 8N/π*sum(uh.c[j, minlevel+n-1, i] * sum(uh.c[j′, minlevel+n′-1, i]*j*j′/(j^2-j′^2)^2
+                                                                             for j′ = (iseven(j) ? 1 : 2):2:n_j) for j = 1:n_j)
                 end
             end
             uh.w.pos[1:n_lo, i], uh.w.d[1:n_lo, 1:n_lo, i] = eigen(X)
@@ -172,8 +172,8 @@ function compute_wanniers!(uh::UnperturbedHamiltonian; targetband::Integer)
             n_hi = n_w - n_lo
             for n in 1:n_hi
                 for n′ in n:n_hi
-                    X[n′, n] = X[n, n′] = N*sum(uh.c[j, minlevel+n_lo+n-1, i] * (π/2 * uh.c[j, minlevel+n_lo+n′-1, i] - 8/π * sum(uh.c[j′, minlevel+n_lo+n′-1, i]*j*j′/(j^2-j′^2)^2
-                                                                                 for j′ = (iseven(j) ? 1 : 2):2:n_j)) for j = 1:n_j)
+                    X[n′, n] = X[n, n′] = (n == n′ ? N*π/2 : 0.0) - 8N/π*sum(uh.c[j, minlevel+n_lo+n-1, i] * sum(uh.c[j′, minlevel+n_lo+n′-1, i]*j*j′/(j^2-j′^2)^2
+                                                                             for j′ = (iseven(j) ? 1 : 2):2:n_j) for j = 1:n_j)
                 end
             end
             uh.w.pos[n_lo+1:n_w, i], uh.w.d[1:n_hi, n_lo+1:n_w, i] = eigen(X)
