@@ -42,7 +42,7 @@ end
 n_cells = 3
 a = 2; λ = 500; U = 3
 φₓ = range(0, 2π, length=61)
-h = DeltaModel.UnperturbedHamiltonian(n_cells; a, λ, U, isperiodic=true, φₓ)
+h = DeltaModel.UnperturbedHamiltonian(n_cells; a, λ, U, φₓ)
 
 plot_potential(h; U, lift=0)
 plot_potential(h; U, iϕ=16)
@@ -51,91 +51,87 @@ savefig("potential.pdf")
 # dispersion
 
 function plot_dispersion(ε::AbstractVector; φ::Real, uh::DeltaModel.UnperturbedHamiltonian)
-    cos_kL = [DeltaModel.cos_ka(E; φ, uh) for E in ε]
-    plot(ε, cos_kL, xlabel=L"\varepsilon", ylabel=L"\cos(ka)", ylims=(-4, 4),
+    cos_kL = [DeltaModel.cos_ka_tm(E; φ, uh) for E in ε]
+    plot(ε, cos_kL, xlabel=L"\varepsilon", ylabel=L"\cos(ka)", ylims=(-4, 4), ticks=:native, xlims=(0, ε[end]),
          title=L"U=%$U, a=%$a, \lambda=%$λ, \varphi=%$(round(φ, digits=3))", titlepos=:left, label=false)
     hline!([-1, 1], c=:white, label=false)
-    vline!(((1:9) .* pi ./ (uh.a/3)).^2, c=2, label=L"(\frac{\pi n}{a/3})^2", lw=0.5) # analytica energy for a single well of width `a/3`
+    vline!(((1:9) .* pi ./ (uh.a/3)).^2, c=2, label=L"(\frac{\pi n}{a/3})^2", lw=0.5) # analytical energy for a single well of width `a/3`
 end
 
-ε = range(U, 500, length=2000)
+ε = range(U, 2000, length=2000)
 plot_dispersion(ε; φ=φₓ[1], uh=h)
 xlims!(340, 360)
 savefig("dispersion.pdf")
 
+import IntervalRootFinding as iroots
+using IntervalArithmetic: (..)
+
+f(E) = DeltaModel.cos_ka(E; φ=0, uh=h)
+bounds = (60, 2000)
+rts = iroots.roots(f, bounds[1]..bounds[2], iroots.Newton)
+z = [rts[i].interval.lo for i in eachindex(rts)]
+sort!(z)
+scatter!(z, zeros(length(z)))
+
+DeltaModel.diagonalise!(h, length(z), bounds)
+
 # spectrum
 
-bandbounds = [(346, 348), (349, 353), (354, 356.5)]
 fig = plot();
-for (j, bounds) in enumerate(bandbounds)
-    display(bounds)
-    DeltaModel.diagonalise!(h, bounds)
-    for i in 1:n_cells
-        plot!(φₓ, h.E[i, :], label=L"m = %$j, k = 2\pi/Na\cdot%$(i-1)", xlabel=L"\varphi_x", ylabel="Energy", legend=:topleft)
+for m in axes(h.E, 2)
+    for ik in axes(h.E, 1)
+        plot!(φₓ, h.E[ik, m, :])
     end
 end
 title!(L"N=%$n_cells, a=%$a, U=%$U, \lambda=%$(h.λ)")
+ylims!(346.1, 356.2)
 savefig("spectrum.pdf")
 
 # eigenfunctions
 
-DeltaModel.diagonalise!(h, (354, 356.5))
-iϕ = 5
+iϕ = 1
 n_x = 50
-x, ψ = DeltaModel.make_eigenfunctions(h, n_x, [iϕ])
+m = 3
+x, ψ = DeltaModel.make_eigenfunctions(h, n_x, m, [iϕ])
 fig = plot();
-for n in 1:n_cells
-    plot!(x, abs2.(ψ[:, n, 1]) .+ h.E[n, iϕ])
+for ik in 1:n_cells
+    for b in 1:3
+        plot!(x, abs2.(ψ[:, ik, b, 1]) .+ h.E[ik, 3(m-1)+b, iϕ])
+    end
 end
-ylims!(345, 358)
+display(fig)
+
+trapz(f) = ( sum(f) + (f[1] + f[end]) / 2 ) * x[2]-x[1]
+trapz(ψ[:, 2, 3, 1] .* conj(ψ[:, 2, 1, 1]))
 
 # Wannier centres
 
-DeltaModel.compute_wanniers!(h)
-pyplot()
+targetband = 3
+DeltaModel.compute_wanniers!(h, targetband)
+
 fig = plot();
-m = 3
 for (i, ϕ) in enumerate(φₓ)
-    scatter!(hs[m].w.pos[:, i], fill(ϕ, size(hs[m].w.pos, 1)); marker_z=hs[m].w.E[:, i], c=:coolwarm, label=false, markerstrokewidth=0)
+    for n in 1:n_cells
+        scatter!(h.w.pos[:, n, i], fill(ϕ, size(h.w.pos, 1)); marker_z=h.w.E[:, n, i], c=:coolwarm, label=false, markerstrokewidth=0)
+    end
 end
 plot!(minorgrid=true, xlabel=L"x", ylabel=L"\varphi", cbtitle="Energy",
       title=L"N=%$n_cells, U=%$U, a=%$a, \lambda=%$λ")
 
 # Wannier functions
 
-pyplot()
 x, _, w = DeltaModel.make_wannierfunctions(h, n_x, 1:length(φₓ))
-lift = minimum(h.w.E) - 0.5
-lims = (lift-1, lift+4)
-p = Progress(length(φₓ), 1)
-@gif for iϕ in eachindex(φₓ)
-    fig = plot_potential(h; U=0.2, U_title=U, lift, iϕ)
-    scatter!(h.w.pos[:, iϕ], h.w.E[:, iϕ]; label=false, markerstrokewidth=0, ylims=lims, c=1:n_cells, markersize=5)
-    for j in 1:n_cells
-        plot!(x, abs2.(w[:, j, iϕ]) .+ h.w.E[j, iϕ], label=false, c=j)
-    end
-    next!(p)
-end
 
 n_x = 50
-bandbounds = [(346, 348), (349, 353), (354, 356.5)]
-hs = [DeltaModel.UnperturbedHamiltonian(n_cells; a, λ, U, isperiodic=true, φₓ) for _ in 1:3]
-ws = [ComplexF64[;;;], ComplexF64[;;;], ComplexF64[;;;]]
-x = Float64[]
-for (i, bounds) in enumerate(bandbounds)
-    DeltaModel.diagonalise!(hs[i], bounds)
-    DeltaModel.compute_wanniers!(hs[i])
-    x, _, ws[i] = DeltaModel.make_wannierfunctions(hs[i], n_x, 1:length(φₓ))
-end
-lift = minimum(hs[1].w.E) - 1
-lims = (lift-2, maximum(hs[3].w.E)+2)
+lift = minimum(h.w.E) - 1
+lims = (lift-2, maximum(h.w.E)+2)
 p = Progress(length(φₓ), 1)
 @gif for iϕ in eachindex(φₓ)
     fig = plot_potential(h; U=0.5, U_title=U, lift, iϕ)
     for b in 1:3
-        scatter!(hs[b].w.pos[:, iϕ], hs[b].w.E[:, iϕ]; label=false, markerstrokewidth=0, ylims=lims, c=1:n_cells, markersize=5)
+        scatter!(h.w.pos[:, b, iϕ], h.w.E[:, b, iϕ]; label=false, markerstrokewidth=0, ylims=lims, c=1:n_cells, markersize=5)
         for j in 1:n_cells
-            plot!(x, 0.5abs2.(ws[b][:, j, iϕ]) .+ hs[b].w.E[j, iϕ], label=false, c=j)
+            plot!(x, 0.5abs2.(w[:, j, b, iϕ]) .+ h.w.E[j, b, iϕ], label=false, c=j)
         end
     end
     next!(p)
@@ -143,36 +139,17 @@ end
 
 # calculate hopping strength for TB
 
-n_cells = 1
-φₓ = [0]
-a = 2; λ = 500; U = 3
-n_x = 50
-ε = range(U, 500, length=2000)
-plot_dispersion(ε; φ=φₓ[1], uh=hs[1])
-bandbounds = [(346, 348), (349, 353), (354, 356.5)]
-hs = [DeltaModel.UnperturbedHamiltonian(n_cells; a, λ, U, isperiodic=true, φₓ) for _ in 1:3]
-
-x = Float64[]
-ψs = [ComplexF64[;;;], ComplexF64[;;;], ComplexF64[;;;]]
-fig = plot();
-for (i, bounds) in enumerate(bandbounds)
-    display(i)
-    DeltaModel.diagonalise!(hs[i], bounds)
-    x, ψs[i] = DeltaModel.make_eigenfunctions(hs[i], n_x, [1])
-    plot!(x, real.(ψs[i][:, 1, 1]) .+ hs[i].E[1, 1])
-end
-display(fig)
-
-d, pos, E = DeltaModel.compute_wanniers(hs)
-ws = Matrix{ComplexF64}(undef, 3n_cells*n_x+1, 3)
+targetband = 3
+d, pos, E = DeltaModel.compute_wanniers(h, targetband)
+ws = Matrix{ComplexF64}(undef, 3n_x+1, 3)
 fig = plot();
 for j in 1:3
-    ws[:, j] = sum(d[k, j] * ψs[k][:, 1, 1] for k = 1:3)
-    plot!(x, abs2.(ws[:, j]) .+ E[j])
+    ws[:, j] = sum(d[i, j] * ψ[1:3n_x+1, 1, i, 1] for i = 1:3)
+    plot!(x[1:3n_x+1], abs2.(ws[:, j]) .+ E[j])
 end
 scatter!(pos, E)
 
-J = [d[:, i%3+1]' * (d[:, i] .* [hs[1].E[1, 1], hs[2].E[1, 1], hs[3].E[1, 1]]) for i in 1:3]
+J = [d[:, i%3+1]' * (d[:, i] .* h.E[1, range(3(targetband-1)+1, length=3), 1]) for i in 1:3]
 
 ###### TB Hamiltonian
 
@@ -187,7 +164,7 @@ DeltaModel.diagonalise!(htb)
 
 # Energy spectrum
 
-shift = hs[3].E[1, 1] - htb.E[end, 1]
+shift = h.E[1, 3targetband, 1] - htb.E[end, 1]
 fig2 = plot();
 for r in eachrow(htb.E)
     plot!(φₓ, r .+ shift, xlabel=L"\varphi_x", ylabel="Energy", legend=false)
@@ -212,7 +189,9 @@ title!("TB: "*L"J=%$(J[1]), U=%$U")
 DeltaModel.compute_wanniers!(htb)
 fig2 = plot();
 for (iϕ, ϕ) in enumerate(φₓ)
-    scatter!((htb.w.pos[:, iϕ].+a/6).%(a*n_cells), fill(ϕ, size(htb.w.pos, 1)); marker_z=htb.w.E[:, iϕ] .+ shift, c=:coolwarm, label=false, markerstrokewidth=0)
+    for b in 1:3
+        scatter!((htb.w.pos[:, b, iϕ].+a/6).%(a*n_cells), fill(ϕ, size(htb.w.pos, 1)); marker_z=htb.w.E[:, b, iϕ] .+ shift, c=:coolwarm, label=false, markerstrokewidth=0)
+    end
 end
 plot!(minorgrid=true, xlabel=L"x", ylabel=L"\varphi", cbtitle="Energy", title="TB: "*L"J=%$(J[1]), U=%$U")
 
@@ -230,9 +209,11 @@ x = range(start=a/6, step=a/3, length=3n_cells)
 p = Progress(length(φₓ), 1)
 @gif for iϕ in eachindex(φₓ)
     fig = plot_potential(htb; U=0.5, U_title=U, lift, iϕ)
-    scatter!((htb.w.pos[:, iϕ].+a/6).%(a*n_cells), htb.w.E[:, iϕ]; label=false, markerstrokewidth=0, ylims=lims, markersize=5, c=1:3n_cells)
-    for j in 1:3n_cells
-        plot!(x, abs2.(wanniers[:, j, iϕ]) .+ htb.w.E[j, iϕ], label=false, c=j)
+    for b in 1:3
+        scatter!((htb.w.pos[:, b, iϕ].+a/6).%(a*n_cells), htb.w.E[:, b, iϕ]; label=false, markerstrokewidth=0, ylims=lims, markersize=5, c=1:n_cells)
+        for j in 1:n_cells
+            plot!(x, abs2.(wanniers[:, j, b, iϕ]) .+ htb.w.E[j, b, iϕ], label=false, c=j)
+        end
     end
     next!(p)
 end
