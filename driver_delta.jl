@@ -39,8 +39,8 @@ function plot_potential(H; U::Real, U_title::Real=U, lift::Real=0, iϕ::Union{No
     end
 end
 
-n_cells = 3
-a = 2; λ = 500; U = 3
+n_cells = 2
+a = 6; λ = 500; U = 3
 φₓ = range(0, 2π, length=61)
 h = DeltaModel.UnperturbedHamiltonian(n_cells; a, λ, U, φₓ)
 
@@ -55,7 +55,7 @@ function plot_dispersion(ε::AbstractVector; φ::Real, uh::DeltaModel.Unperturbe
     plot(ε, cos_kL, xlabel=L"\varepsilon", ylabel=L"\cos(ka)", ylims=(-4, 4), ticks=:native, xlims=(0, ε[end]),
          title=L"U=%$U, a=%$a, \lambda=%$λ, \varphi=%$(round(φ, digits=3))", titlepos=:left, label=false)
     hline!([-1, 1], c=:white, label=false)
-    vline!(((1:9) .* pi ./ (uh.a/3)).^2, c=2, label=L"(\frac{\pi n}{a/3})^2", lw=0.5) # analytical energy for a single well of width `a/3`
+    vline!(((1:30) .* pi ./ (uh.a/3)).^2, c=2, label=L"(\frac{\pi n}{a/3})^2", lw=0.5) # analytical energy for a single well of width `a/3`
 end
 
 ε = range(U, 2000, length=2000)
@@ -67,7 +67,7 @@ import IntervalRootFinding as iroots
 using IntervalArithmetic: (..)
 
 f(E) = DeltaModel.cos_ka(E; φ=0, uh=h)
-bounds = (60, 2000)
+bounds = (50, 2000)
 rts = iroots.roots(f, bounds[1]..bounds[2], iroots.Newton)
 z = [rts[i].interval.lo for i in eachindex(rts)]
 sort!(z)
@@ -91,12 +91,12 @@ savefig("spectrum.pdf")
 
 iϕ = 1
 n_x = 50
-m = 3
-x, ψ = DeltaModel.make_eigenfunctions(h, n_x, m, [iϕ])
+whichband = 16
+x, ψ = DeltaModel.make_eigenfunctions(h, n_x, whichband, [iϕ])
 fig = plot();
 for ik in 1:n_cells
     for b in 1:3
-        plot!(x, abs2.(ψ[:, ik, b, 1]) .+ h.E[ik, 3(m-1)+b, iϕ])
+        plot!(x, abs2.(ψ[:, ik, b, 1]) .+ h.E[ik, 3(whichband-1)+b, iϕ])
     end
 end
 display(fig)
@@ -106,13 +106,13 @@ trapz(ψ[:, 2, 3, 1] .* conj(ψ[:, 2, 1, 1]))
 
 # Wannier centres
 
-targetband = 3
+targetband = 16
 DeltaModel.compute_wanniers!(h, targetband)
 
 fig = plot();
 for (i, ϕ) in enumerate(φₓ)
-    for n in 1:n_cells
-        scatter!(h.w.pos[:, n, i], fill(ϕ, size(h.w.pos, 1)); marker_z=h.w.E[:, n, i], c=:coolwarm, label=false, markerstrokewidth=0)
+    for b in 1:3
+        scatter!(h.w.pos[:, b, i], fill(ϕ, size(h.w.pos, 1)); marker_z=h.w.E[:, b, i], c=:coolwarm, label=false, markerstrokewidth=0)
     end
 end
 plot!(minorgrid=true, xlabel=L"x", ylabel=L"\varphi", cbtitle="Energy",
@@ -139,7 +139,7 @@ end
 
 # calculate hopping strength for TB
 
-targetband = 3
+targetband = 16
 d, pos, E = DeltaModel.compute_wanniers(h, targetband)
 ws = Matrix{ComplexF64}(undef, 3n_x+1, 3)
 fig = plot();

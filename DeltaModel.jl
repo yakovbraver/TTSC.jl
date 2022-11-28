@@ -210,7 +210,7 @@ function compute_wanniers(uh::UnperturbedHamiltonian, targetband::Integer)
 
     X = Matrix{ComplexF64}(undef, 3, 3) # position operator
     
-    k₂ = 2π/(a)
+    k₂ = 2π/a
     iφ = 1
     ik = 1 # which value of 𝑘 to take in the `c` array; take the first since there is only one
     𝐹(x, i, j′, j) = begin
@@ -365,6 +365,124 @@ function diagonalise_kspace(h::TBHamiltonian, ka::AbstractVector{<:Real})
     for (iφ, φ) in enumerate(h.φₓ)
         for ik in eachindex(ka)
             E[3(ik-1)+1:3ik, iφ] .= eigvals(kspace_hamiltonian(h, φ, ka[ik]))
+        end
+    end
+    return E
+end
+
+
+"""
+A type representing the Floquet Hamiltonian
+    ℋ = ℎ - i∂ₜ + λₛcos²(2𝑥)cos(2𝜔𝑡) + λₗcos²(2𝑥)cos(𝜔𝑡 + 𝜑ₜ),
+where ℎ is the unperturbed Hamiltonian represented by [`UnperturbedHamiltonian`](@ref), and 𝜑ₜ = 2𝜑ₓ.
+"""
+mutable struct FloquetHamiltonian
+    uh::UnperturbedHamiltonian
+    s::Int
+    λₛ::Float64
+    λₗ::Float64
+    ω::Float64
+    pumptype::Symbol
+    E::Array{Float64, 3} # `E[i, ik, j]` = `i`th eigenvalue (Floquet quasienergy) at `j`th phase, `i = 1:maxlevel`
+    b::Array{ComplexF64, 4} # `b[:, i, ik, j]` = `i`th eigenvector at `j`th phase, `i = 1:maxlevel; j = 1:2maxlevel+1`
+    ν::Vector{Int}  # band map 𝜈(𝑚)
+end
+
+"""
+Construct a `FloquetHamiltonian` object. `minband` is the first energy band of `uh` to use when constructing the Floquet Hamiltonian matrix.
+Type of pumping is controlled via `pumptype`: `:time` for temporal, `:space` for spatial, or anything else for simultaneous space-time pumping.
+In the case of time-only pumping, it is assumed that 𝜑ₓ = 0, and hence that `uh.φₓ[1] == 0`.
+"""
+function FloquetHamiltonian(uh::UnperturbedHamiltonian; s::Integer, λₛ::Real, λₗ::Real, ω::Real, pumptype::Symbol)
+    n_levels = size(uh.E, 2)
+    ν = [ceil(Int, m/3) for m in 1:n_levels]
+    
+    E = Array{Float64, 3}(undef, n_levels, uh.N, length(uh.φₓ))
+    b = Array{ComplexF64, 4}(undef, n_levels, n_levels, uh.N, length(uh.φₓ))
+    
+    FloquetHamiltonian(uh, Int(s), Float64(λₛ), Float64(λₗ), Float64(ω), pumptype, E, b, ν)
+end
+
+"Diagonalise the Floquet Hamiltonian `fh` at each phase."
+function diagonalise!(fh::FloquetHamiltonian)
+    (;N, a, φₓ, E, c, κ) = fh.uh
+    (;s, ω, λₛ, λₗ, pumptype, ν) = fh
+
+    n_levels = size(fh.E, 1)
+
+    H = zeros(ComplexF64, n_levels, n_levels) # ℋ matrix
+
+    𝐹(x, i, ik, j′, j, iφ, k₂) = begin
+        κʲ = κ[i, ik, j, iφ]
+        κʲ′ = κ[i, ik, j′, iφ]
+        cis(-(κʲ′ + κʲ - k₂)x) / 4 * (
+            im * (c[2i-1, ik, j′, iφ] + im*c[2i, ik, j′, iφ])' * (c[2i-1, ik, j, iφ] - im*c[2i, ik, j, iφ]) / (κʲ′ + κʲ - k₂) +
+            (c[2i-1, ik, j, iφ] + im*c[2i, ik, j, iφ]) * cis(2κʲ*x) * ( 
+                (c[2i, ik, j′, iφ] - im*c[2i-1, ik, j′, iφ]) / (-κʲ′ + κʲ + k₂) +
+                (c[2i, ik, j′, iφ] + im*c[2i-1, ik, j′, iφ]) / ( κʲ′ + κʲ + k₂) * cis(-2κʲ′*x) )' +
+            (c[2i-1, ik, j′, iφ] - im*c[2i, ik, j′, iφ])' * (c[2i, ik, j, iφ] + im*c[2i-1, ik, j, iφ]) * cis(2κʲ′*x) / (κʲ′ - κʲ + k₂) )
+    end
+
+    for ik in 1:N
+        for (iφ, φ) in enumerate(φₓ)
+            for m in 1:n_levels
+                # for time-only pumping, always take the eigenenergies at the first phase, which is asssumed to correspond to 𝜑ₓ = 0
+                p = (pumptype == :time ? 1 : iφ)
+                H[m, m] = E[ik, m, p] - ν[m]*ω/s
+
+                # place the elements of the long lattice
+                for g in 1:3
+                    m′ = 3(s + ν[m] - 1) + g
+                    m′ > n_levels && break
+                    if pumptype != :time || iφ == 1 # if pumping is time-only, this must be calculated only once, at `iφ` = 1
+                        ∫cos = ComplexF64(0)
+                        for i = 1:3, k₂ in (-4, 4)
+                            ∫cos += 𝐹(i*a/3, i, ik, m′, m, iφ, k₂) - 𝐹((i-1)a/3, i, ik, m′, m, iφ, k₂)
+                        end
+                        # if pumping is space-time, then also multiply by cis(-𝜑ₜ). `φ` runs over 𝜑ₓ, and we assume the pumping protocol 𝜑ₜ = 2𝜑ₓ
+                        H[m′, m] = (pumptype == :space ? λₗ/8 * ∫cos : λₗ/8 * ∫cos * cis(-2φ))
+                    elseif pumptype == :time 
+                        H[m′, m] *= cis(-2(φₓ[iφ]-φₓ[iφ-1]))
+                    end
+                    H[m, m′] = H[m′, m]'
+                end
+                
+                # place the elements of the short lattice
+                for g in 1:3
+                    m′ = 3(2s + ν[m] - 1) + g
+                    m′ > n_levels && break
+                    if pumptype != :time || iφ == 1 # if pumping is time-only, this must be calculated only once, at `iφ` = 1
+                        ∫cos = ComplexF64(0)
+                        for i = 1:3, k₂ in (-4, 4)
+                            ∫cos += 𝐹(i*a/3, i, ik, m′, m, iφ, k₂) - 𝐹((i-1)a/3, i, ik, m′, m, iφ, k₂)
+                        end
+                        H[m′, m] = λₛ/8 * ∫cos
+                    end
+                    H[m, m′] = H[m′, m]'
+                end
+            end
+            fh.E[:, ik, iφ], fh.b[:, :, ik, iφ] = eigen(H, sortby=-)
+        end
+    end
+end
+
+"""
+Permute Floquet quasienergy levels contained in `fh.E` so that they are stored in the same order as the eigenenergies of ℎ stored in `fh.uh.E`.
+Repeat this for every phase.
+To perfrorm the sorting, first calculate `fh.uh.E - fh.ν[m]`, which is the diagonal of ℋ. If there is no perturbation, then these
+are the Floquet quasienergies. Then, sort them in descending order (as if we diagonalised the Hamiltonian) and find the permutation
+that would undo this sorting. This permutation is applied to a copy of `fh.E`.
+The procedure yields fully correct results only if `fh.E` has been calculated at zero perturbation. The perturbation may additionally change
+the order of levels, and there is no simple way of disentangling the order. The permutation is still useful in that case, but the results 
+should not be taken too literally.
+"""
+function order_floquet_levels(fh::FloquetHamiltonian)
+    E = similar(fh.E)
+    for iφ in axes(fh.E, 3)
+        for ik in axes(fh.E, 2)
+            E_diag = [fh.uh.E[ik, m, iφ] - fh.ν[m] * fh.ω/fh.s for m in axes(fh.uh.E, 2)] # Floquet energies at zero perturbation
+            invsort = sortperm(sortperm(E_diag, rev=true))  # inverse permutation, such that `sort(E_diag, rev=true)[invsort] == E_diag`
+            E[:, ik, iφ] .= fh.E[invsort, ik, iφ]
         end
     end
     return E
