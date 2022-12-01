@@ -58,7 +58,7 @@ title!(L"N=%$n_cells, a=%$a, U=%$U, \lambda=%$(h.λ)")
 # 514
 λₛ = 100; λₗ = 8; ω = 494
 s = 2
-H = DeltaModel.FloquetHamiltonian(h; s, λₛ, λₗ, ω, pumptype=:both)
+H = DeltaModel.FloquetHamiltonian(h; s, λₛ, λₗ, ω, pumptype=:space)
 
 DeltaModel.diagonalise!(H)
 
@@ -84,14 +84,32 @@ plot!(xlabel=L"\phi_x", ylabel="Quasienergy")
 # Maps of Floquet modes
 n_x = 50
 Ωt = range(0, 2π, length=40s)
-iϕ = 1
+iϕ = 15
 whichsubbands = 1:3
 x, u = DeltaModel.make_eigenfunctions(H, n_x, Ωt, [iϕ], whichsubbands)
 u_real = abs2.(u) |> real
 figs = [plot() for _ in 1:length(whichsubbands)*n_cells]
 for (f, n) in enumerate(whichsubbands)
     for ik in 1:n_cells
-        figs[n_cells*(f-1)+ik] = heatmap(x, Ωt, u_real[:, :, ik, n, iϕ]', xlabel=L"x", ylabel=L"\Omega t", c=:viridis, title="Mode n=$n, ik=$ik")
+        figs[n_cells*(f-1)+ik] = heatmap(x, Ωt, u_real[:, :, ik, n, 1]', xlabel=L"x", ylabel=L"\Omega t", c=:viridis, title="Mode n=$n, ik=$ik")
     end
+end
+plot(figs...)
+
+# Wannier centres
+targetsubbands = [1]
+DeltaModel.compute_wanniers!(H; targetsubbands)
+fig = plot();
+for (i, φ) in enumerate(φₓ)
+    scatter!(H.w.pos[:, i], fill(φ, length(targetsubbands)*n_cells); label=false, markerstrokewidth=0, c=1)
+end
+plot!(minorgrid=true, xlabel=L"x", ylabel=L"\phi_x")
+
+# Maps of Wannier functions
+iϕ = 45
+x, _, w = DeltaModel.make_wannierfunctions(H, n_x, Ωt, [iϕ])
+figs = [plot() for _ in 1:length(targetsubbands)*n_cells]
+for f in eachindex(figs)
+    figs[f] = heatmap(x, Ωt, abs2.(w[:, :, f, 1]'), xlabel=L"x", ylabel=L"\Omega t", c=:viridis, title="Wannier $f")
 end
 plot(figs...)
