@@ -51,12 +51,12 @@ plot!(xlabel=L"\phi_x", ylabel="Quasienergy")
 # Maps of Floquet modes
 x = range(0, n_cells*pi, length=50n_cells)
 Ωt = range(0, 2π, length=40s)
-iϕ = 1
+iϕ = 15
 whichstates = 1:4
 u = Bandsolvers.make_eigenfunctions(H, x, Ωt, [iϕ], whichstates) .|> abs2
 figs = [plot() for _ in eachindex(whichstates)]
 for (f, n) in enumerate(whichstates)
-    figs[f] = heatmap(x, Ωt, u[:, :, n, iϕ]', xlabel=L"x", ylabel=L"\Omega t", c=:viridis, title="Mode $n")
+    figs[f] = heatmap(x, Ωt, u[:, :, n, 1]', xlabel=L"x", ylabel=L"\Omega t", c=:viridis, title="Mode $n")
 end
 plot(figs...)
 
@@ -73,7 +73,7 @@ plot!(minorgrid=true, xlabel=L"x", ylabel=L"\phi_x")
 _, w = Bandsolvers.make_wannierfunctions(H, x, Ωt, [iϕ])
 figs = [plot() for _ in eachindex(targetlevels)]
 for f in eachindex(targetlevels)
-    figs[f] = heatmap(x, Ωt, abs2.(w[:, :, f, iϕ]'), xlabel=L"x", ylabel=L"\Omega t", c=:viridis, title="Wannier $f")
+    figs[f] = heatmap(x, Ωt, abs2.(w[:, :, f, 1]'), xlabel=L"x", ylabel=L"\Omega t", c=:viridis, title="Wannier $f")
 end
 plot(figs...)
 
@@ -117,6 +117,6 @@ whichstates = 1:3
 u = Bandsolvers.make_eigenfunctions(H, x, Ωt, [iϕ], whichstates) .|> abs2
 figs = [plot() for _ in eachindex(whichstates)]
 for (f, n) in enumerate(whichstates)
-    figs[f] = heatmap(x, Ωt, u[:, :, n, iϕ]', xlabel=L"x", ylabel=L"\Omega t", c=:viridis, title="Mode $n")
+    figs[f] = heatmap(x, Ωt, u[:, :, n, 1]', xlabel=L"x", ylabel=L"\Omega t", c=:viridis, title="Mode $n")
 end
 plot(figs...)
