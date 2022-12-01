@@ -439,10 +439,10 @@ function diagonalise!(fh::FloquetHamiltonian)
                         for i = 1:3, k₂ in (-4, 4)
                             ∫cos += 𝐹(i*a/3, i, ik, m′, m, iφ, k₂) - 𝐹((i-1)a/3, i, ik, m′, m, iφ, k₂)
                         end
-                        # if pumping is space-time, then also multiply by cis(-𝜑ₜ). `φ` runs over 𝜑ₓ, and we assume the pumping protocol 𝜑ₜ = 2𝜑ₓ
-                        H[m′, m] = (pumptype == :space ? λₗ/8 * ∫cos : λₗ/8 * ∫cos * cis(-2φ))
+                        # if pumping is space-time, then also multiply by cis(-𝜑ₜ). `φ` runs over 𝜑ₓ, and we assume the pumping protocol 𝜑ₜ = 𝜑ₓ
+                        H[m′, m] = (pumptype == :space ? λₗ/8 * ∫cos : λₗ/8 * ∫cos * cis(-φ))
                     elseif pumptype == :time 
-                        H[m′, m] *= cis(-2(φₓ[iφ]-φₓ[iφ-1]))
+                        H[m′, m] *= cis(-(φₓ[iφ]-φₓ[iφ-1]))
                     end
                     H[m, m′] = H[m′, m]'
                 end
@@ -461,7 +461,7 @@ function diagonalise!(fh::FloquetHamiltonian)
                     H[m, m′] = H[m′, m]'
                 end
             end
-            fh.E[:, ik, iφ], fh.b[:, :, ik, iφ] = eigen(H, sortby=-)
+            fh.E[:, ik, iφ], fh.b[:, :, ik, iφ] = eigen(H)
         end
     end
 end
@@ -470,7 +470,7 @@ end
 Permute Floquet quasienergy levels contained in `fh.E` so that they are stored in the same order as the eigenenergies of ℎ stored in `fh.uh.E`.
 Repeat this for every phase.
 To perfrorm the sorting, first calculate `fh.uh.E - fh.ν[m]`, which is the diagonal of ℋ. If there is no perturbation, then these
-are the Floquet quasienergies. Then, sort them in descending order (as if we diagonalised the Hamiltonian) and find the permutation
+are the Floquet quasienergies. Then, sort them in ascending order (as if we diagonalised the Hamiltonian) and find the permutation
 that would undo this sorting. This permutation is applied to a copy of `fh.E`.
 The procedure yields fully correct results only if `fh.E` has been calculated at zero perturbation. The perturbation may additionally change
 the order of levels, and there is no simple way of disentangling the order. The permutation is still useful in that case, but the results 
@@ -481,11 +481,39 @@ function order_floquet_levels(fh::FloquetHamiltonian)
     for iφ in axes(fh.E, 3)
         for ik in axes(fh.E, 2)
             E_diag = [fh.uh.E[ik, m, iφ] - fh.ν[m] * fh.ω/fh.s for m in axes(fh.uh.E, 2)] # Floquet energies at zero perturbation
-            invsort = sortperm(sortperm(E_diag, rev=true))  # inverse permutation, such that `sort(E_diag, rev=true)[invsort] == E_diag`
+            invsort = sortperm(sortperm(E_diag))  # inverse permutation, such that `sort(E_diag)[invsort] == E_diag`
             E[:, ik, iφ] .= fh.E[invsort, ik, iφ]
         end
     end
     return E
+end
+
+"""
+Construct Floquet modes at coordinates in `x` and time moments in `Ωt` for each spatial subband number in `whichsubband` at each phase number in `whichphases`.
+Return `x, u`, where `x` are the abscissas and `u[ix, it, ik, j, i]` = wavefunction corresponding to the `ik`th value of 𝑘 and `j`th spatial subband at `i`th phase at `ix`th coordinate at `it`th time moment.
+"""
+function make_eigenfunctions(fh::FloquetHamiltonian, n_x::Integer, Ωt::AbstractVector{<:Real}, whichphases::AbstractVector{<:Integer},
+                             whichsubbands::AbstractVector{<:Integer})
+    (;N, a) = fh.uh
+    x = range(0, a*N, 3N*n_x+1)
+    u = Array{ComplexF64, 5}(undef, 3N*n_x+1, length(Ωt), N, length(whichsubbands), length(whichphases))
+    n_levels = size(fh.E, 1) # number of Floquet levels; equivalently, number of levels of ℎ used for constructing ℋ
+    # Eigenfunctions of ℎ, which are mixed during construction of `u`. For time-only pumping use only eigenstates at the first phase, corresponding to 𝜑ₓ = 0
+    ψ = Array{ComplexF64, 5}(undef, 3N*n_x+1, N, 3, n_levels÷3, length(whichphases)) # ψ[ix, ik, subband, band, iφ]
+    for band in 1:n_levels÷3
+        _, ψ[:, :, :, band, :] = make_eigenfunctions(fh.uh, n_x, band, (fh.pumptype == :time ? [1] : whichphases))
+    end
+    for (i, iφ) in enumerate(whichphases)
+        p = (fh.pumptype == :time ? 1 : iφ)
+        for (j, js) in enumerate(whichsubbands)
+            for ik in 1:N
+                for (it, t) in enumerate(Ωt)
+                    u[:, it, ik, j, i] = sum(cis(-fh.ν[m]*t) * ψ[:, ik, (m-1)%3+1, fh.ν[m], p] * fh.b[m, js, ik, iφ] for m in 1:n_levels)
+                end
+            end
+        end
+    end
+    return x, u
 end
 
 end
