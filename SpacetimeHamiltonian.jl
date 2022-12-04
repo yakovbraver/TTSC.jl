@@ -20,13 +20,18 @@ mutable struct SpacetimeHamiltonian
 end
 
 """
-Construct a `SpacetimeHamiltonian` object. `min_pos` and `max_pos` are the bracketing intervals for the minimum and the maximum
-of the spatial potential. `turnpoint` is required if the potential is not symmetric, see [`turning_point_intervals`](@ref).
+Construct a `SpacetimeHamiltonian` object. Either known intervals for the turning points have to be provided (`left_tp` and `right_tp`),
+or the bracketing intervals for the minimum and the maximum (`min_pos` and `max_pos`) of the spatial potential so that the turning point
+intervals are determined automatically. In the latter case, `turnpoint` is required if the potential is not symmetric, see [`turning_point_intervals`](@ref).
 """
-function SpacetimeHamiltonian(𝐻₀::Function, 𝐻::Function, params::AbstractVector, s::Integer,
-                              min_pos::Tuple{<:Real, <:Real}, max_pos::Tuple{<:Real, <:Real}, turnpoint::Union{Real, Nothing}=nothing)
+function SpacetimeHamiltonian(𝐻₀::Function, 𝐻::Function, params::AbstractVector, s::Integer;
+                              left_tp::Union{Nothing, Tuple{Real, Real}}=nothing, right_tp::Union{Nothing, Tuple{Real, Real}}=nothing,
+                              min_pos::Union{Nothing, Tuple{Real, Real}}=nothing, max_pos::Union{Nothing, Tuple{Real, Real}}=nothing,
+                              turnpoint::Union{Real, Nothing}=nothing)
     𝑈 = x -> 𝐻₀(0.0, x, params)
-    left_tp, right_tp = turning_point_intervals(𝑈, min_pos, max_pos, turnpoint)
+    if left_tp === nothing # turning point intervals not provided, proceed to determine them
+        left_tp, right_tp = turning_point_intervals(𝑈, min_pos, max_pos, turnpoint)
+    end
     𝐸, 𝐸′, 𝐸″ = make_action_functions(𝑈, left_tp, right_tp)
     SpacetimeHamiltonian(𝐻₀, 𝐻, 𝑈, left_tp, right_tp, 𝐸, 𝐸′, 𝐸″, params, s)
 end
@@ -86,8 +91,8 @@ Return the turning points of motion with the given energy `E`. The initial guess
 tuples representing the bracketing intervals.
 """
 function turning_points(𝑈::Function, E::Real, a::Tuple{<:Real, <:Real}, b::Tuple{<:Real, <:Real})
-    x_min = Roots.find_zero(x -> 𝑈(x) - E, a, atol=1e-2, Roots.A42())
-    x_max = Roots.find_zero(x -> 𝑈(x) - E, b, atol=1e-2, Roots.A42())
+    x_min = Roots.find_zero(x -> 𝑈(x) - E, a, atol=1e-4, Roots.A42())
+    x_max = Roots.find_zero(x -> 𝑈(x) - E, b, atol=1e-4, Roots.A42())
     return x_min, x_max
 end
 
@@ -124,9 +129,8 @@ function compute_parameters(H::SpacetimeHamiltonian, perturbations::Vector{Funct
     # initial conditions; they may be chosen arbitrary as long as the total energy equals `E₀`
     x₀ = H.right_tp[1]; p₀ = 𝑝(H.𝑈, E₀, x₀); # we choose position at the minimum and calculate the momentum
     H₀_problem = HamiltonianProblem(H.𝐻₀, p₀, x₀, tspan, H.params)
-    dt=2e-4
-    # none of RKN solvers worked (https://docs.juliahub.com/DifferentialEquations/UQdwS/6.15.0/solvers/dynamical_solve/)
-    sol = DiffEq.solve(H₀_problem, DiffEq.McAte3(); dt) # McAte3 is more accurate than the automatically chosen Tsit5() 
+    dt = 2e-4
+    sol = DiffEq.solve(H₀_problem, DiffEq.McAte3(); dt)
 
     # calculate the requested Fourier coefficient for every function in `perturbations`
     coeffs = Vector{ComplexF64}(undef, length(perturbations))
@@ -205,7 +209,7 @@ function compute_IΘ(H::SpacetimeHamiltonian, I_target::Real; χ₀::Real=0, n_T
         tspan = (0.0, 1.02T_free) # take slightly more than `T_free`. Due to solver inaccuracies we might not get a full perdiod, and subsequent search will fail
         p₀ = 𝑝(H.𝑈, E[i], x₀)
         H₀_problem = HamiltonianProblem(H.𝐻₀, p₀, x₀, tspan, H.params)
-        sol = DiffEq.solve(H₀_problem, DiffEq.McAte5(); dt=2e-4)
+        sol = DiffEq.solve(H₀_problem, DiffEq.McAte3(); dt=2e-4)
 
         # Find the time point when the equilibrium point x₀ (i.e. the potential minimum) is reached.
         # The coordinate will be greater than x₀ at times in (0; t_eq) and less than x₀ at times in (t_eq; T_free).
