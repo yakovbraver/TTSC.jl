@@ -46,7 +46,7 @@ savefig("h_0-parameters.pdf")
 # sample initial conditions
 p₀ = 0.0; x₀ = 2.0;
 
-# Calculate analytical period.
+# Calculate analytical period (ZP-2.2.3.18).
 # In our case the equation of motion is
 #     𝑞″ + 2𝑉₀sin(2𝑞) = 0,
 # and we choose the initial conditions 𝑞(0) = 𝑥₀, 𝑞′(0) = 0.
@@ -61,15 +61,15 @@ T = 2 / √V₀ * Elliptic.K(m^2)
 # calculate `n_T` periods of unperturbed motion to check accuracy
 n_T = 100
 tspan = (0, n_T*T)
-H_problem = HamiltonianProblem(H.𝐻₀, p₀, x₀, tspan, H.params)
+H_problem = HamiltonianProblem(𝐻₀, p₀, x₀, tspan, params)
 sol = DiffEq.solve(H_problem, DiffEq.McAte3(); dt=2e-4)
-plot!(sol)
+plot(sol)
 vline!([i*T for i = 1:n_T], c=:white)
 
 # calculate `n_T` periods of perturbed motion to check stability
-H_problem = HamiltonianProblem(H.𝐻, p₀, x₀, tspan, H.params)
+H_problem = HamiltonianProblem(𝐻, p₀, x₀, tspan, params)
 sol = DiffEq.solve(H_problem, DiffEq.McAte3(); dt=2e-4)
-plot!(sol)
+plot(sol)
 
 ### Make a plot of the motion in the (𝐼, ϑ) phase-space in the secular approximation
 

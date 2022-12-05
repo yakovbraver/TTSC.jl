@@ -157,12 +157,13 @@ Then, transform the obtained (𝑝, 𝑥) pairs to (𝐼, ϑ) and return the res
 Transformation is performed as follows: for each pair (𝑝ᵢ, 𝑥ᵢ), the energy of the unperturbed motion is calculated as
 𝐸ᵢ = 𝐻₀(𝑝ᵢ, 𝑥ᵢ), and the energy is then converted to action using the function 𝐼(𝐸).
 To find the phase ϑᵢ, a period 𝑇ᵢ of unperturbed motion with energy 𝐸ᵢ is calculated, and the time moment 𝑡 corresponding to 
-the pair (𝑝ᵢ, 𝑥ᵢ) is found. The phase is then given by ϑᵢ = 2π𝑡/𝑇ᵢ.
+the pair (𝑝ᵢ, 𝑥ᵢ) is found. The phase is then given by ϑᵢ = 2π𝑡/𝑇ᵢ. Alternatively, a function converting the point (𝑝ᵢ, 𝑥ᵢ) to angle can be provided
+as `point_to_angle(p, x, E, T) = ...`. This is useful if analytical solution of unperturbed motion is available.
 Note that some energy 𝐸ⱼ may be such large (due to the perturbation) that the system is no longer confined to a single potential well. In that case,
 no corresponding action 𝐼(𝐸ⱼ) exists. This will happen if `I_target` is too large. In that case, an info message will be printed,
 and energies starting with 𝐸ⱼ will be ignored.
 """
-function compute_IΘ(H::SpacetimeHamiltonian, I_target::Real; χ₀::Real=0, n_T::Integer=100)
+function compute_IΘ(H::SpacetimeHamiltonian, I_target::Real; χ₀::Real=0, n_T::Integer=100, point_to_angle::Union{Function, Nothing}=nothing)
     abs(χ₀) > 1 && begin @warn "|χ₀| ≤ 1 not satisfied. Setting χ₀ to 0."; χ₀ = 0 end
     
     ω = H.params[end]
@@ -198,41 +199,48 @@ function compute_IΘ(H::SpacetimeHamiltonian, I_target::Real; χ₀::Real=0, n_T
     end
 
     I = map(x -> 𝐼(H, x), E)
-
-    # for all the equations below, the initial position is chosen to be the potential minimum
-    x₀ = H.right_tp[1]
-
-    # find phases from the coordinates
     Θ = similar(I)
-    for i in eachindex(Θ)
-        T_free = 2π / H.𝐸′(I[i]) # period of the unperturbed motion at action `I[i]`
-        tspan = (0.0, 1.02T_free) # take slightly more than `T_free`. Due to solver inaccuracies we might not get a full perdiod, and subsequent search will fail
-        p₀ = 𝑝(H.𝑈, E[i], x₀)
-        H₀_problem = HamiltonianProblem(H.𝐻₀, p₀, x₀, tspan, H.params)
-        sol = DiffEq.solve(H₀_problem, DiffEq.McAte3(); dt=2e-4)
 
-        # Find the time point when the equilibrium point x₀ (i.e. the potential minimum) is reached.
-        # The coordinate will be greater than x₀ at times in (0; t_eq) and less than x₀ at times in (t_eq; T_free).
-        t_eq = Roots.find_zero(t -> sol(t)[2] - x₀, T_free/2)
+    if point_to_angle === nothing
+        # for all the equations below, the initial position is chosen to be the potential minimum
+        x₀ = H.right_tp[1]
 
-        # If the coordinate `x[i]` is very close to potential minimum `x₀`, the momentum `p[i]` may lie just outside of the bracketing interval,
-        # causing the root finding to fail. However, in that case `p[i]` is either very close to its maximum, meaning `t = 0`,
-        # or is very close to the minimum, meaning `t = t_eq`. The two cases can be discerned by the sign of the momentum.
-        if isapprox(x[i], x₀, atol=5e-3)
-            t = p[i] > 0 ? 0.0 : t_eq
-        else
-            # use the sign of the coordinate to determine which part of the period the point (x[i]; p[i]) is in
-            bracket = x[i] > x₀ ? (0.0, t_eq) : (t_eq, T_free)
-            # Find the time corresponding to momentum `p[i]`:
-            f = t -> sol(t)[1] - p[i] # construct the to-be-minimised function
-            # Check that `bracket` is indeed a bracketing interval. This might not be the case due to various inaccuracies.
-            if prod(f.(bracket)) < 0
-                t = Roots.find_zero(f, bracket, Roots.A42(), xrtol=1e-3)
-            else # otherwise, use the midpoint of the `bracket` as a starting point.
-                t = Roots.find_zero(f, (bracket[1]+bracket[2])/2) # Note that in this case the algorithm may occasionally converge to the zero in the wrong half of the period
+        # find phases from the coordinates
+        for i in eachindex(Θ)
+            T_free = 2π / H.𝐸′(I[i]) # period of the unperturbed motion at action `I[i]`
+            tspan = (0.0, 1.02T_free) # take slightly more than `T_free`. Due to solver inaccuracies we might not get a full perdiod, and subsequent search will fail
+            p₀ = 𝑝(H.𝑈, E[i], x₀)
+            H₀_problem = HamiltonianProblem(H.𝐻₀, p₀, x₀, tspan, H.params)
+            sol = DiffEq.solve(H₀_problem, DiffEq.McAte3(); dt=2e-4)
+
+            # Find the time point when the equilibrium point x₀ (i.e. the potential minimum) is reached.
+            # The coordinate will be greater than x₀ at times in (0; t_eq) and less than x₀ at times in (t_eq; T_free).
+            t_eq = Roots.find_zero(t -> sol(t)[2] - x₀, T_free/2)
+
+            # If the coordinate `x[i]` is very close to potential minimum `x₀`, the momentum `p[i]` may lie just outside of the bracketing interval,
+            # causing the root finding to fail. However, in that case `p[i]` is either very close to its maximum, meaning `t = 0`,
+            # or is very close to the minimum, meaning `t = t_eq`. The two cases can be discerned by the sign of the momentum.
+            if isapprox(x[i], x₀, atol=5e-3)
+                t = p[i] > 0 ? 0.0 : t_eq
+            else
+                # use the sign of the coordinate to determine which part of the period the point (x[i]; p[i]) is in
+                bracket = x[i] > x₀ ? (0.0, t_eq) : (t_eq, T_free)
+                # Find the time corresponding to momentum `p[i]`:
+                f = t -> sol(t)[1] - p[i] # construct the function whose root will be searched for
+                # Check that `bracket` is indeed a bracketing interval. This might not be the case due to various inaccuracies.
+                if prod(f.(bracket)) < 0
+                    t = Roots.find_zero(f, bracket, Roots.A42(), xrtol=1e-3)
+                else # otherwise, use the midpoint of the `bracket` as a starting point.
+                    t = Roots.find_zero(f, (bracket[1]+bracket[2])/2) # Note that in this case the algorithm may occasionally converge to the zero in the wrong half of the period
+                end
             end
+            Θ[i] = 2π * t / T_free
         end
-        Θ[i] = 2π * t / T_free
+    else
+        for i in eachindex(Θ)
+            T_free = 2π / H.𝐸′(I[i]) # period of the unperturbed motion at action `I[i]`
+            Θ[i] = point_to_angle(p[i], x[i], E[i], T_free)
+        end
     end
     return I, Θ
 end
