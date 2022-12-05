@@ -10,7 +10,7 @@ mutable struct Wanniers
     targetband::Int
     E::Array{Float64, 3} # `E[j, b, i]` = mean energy of `j`th wannier of the `b`th subband (1≤b≤3) at `i`th phase
     pos::Array{Float64, 3} # `pos[j, b, i]` = position eigenvalue of `j`th wannier of the `b`th subband (1≤b≤3) at `i`th phase
-    d::Array{ComplexF64, 4} # `d[:, :, b, i]` = position eigenvectors at `i`th phase; see methods of `compute_wanniers!` for details4
+    d::Array{ComplexF64, 4} # `d[:, :, b, i]` = position eigenvectors at `i`th phase; see methods of `compute_wanniers!` for details
 end
 
 """
@@ -370,7 +370,7 @@ mutable struct FloquetWanniers
     targetsubbands::Vector{Int}
     E::Array{Float64, 2} # `E[j, i]` = mean energy of `j`th wannier at `i`th phase
     pos::Array{Float64, 2} # `pos[j, i]` = position eigenvalue of `j`th wannier at `i`th phase
-    d::Array{ComplexF64, 3} # `d[:, :, i]` = position eigenvectors at `i`th phase; see methods of `compute_wanniers!` for details4
+    d::Array{ComplexF64, 3} # `d[:, :, i]` = position eigenvectors at `i`th phase; see methods of `compute_wanniers!` for details
 end
 
 "Default-construct an empty `FloquetWanniers` object."
@@ -379,7 +379,7 @@ FloquetWanniers() = FloquetWanniers(Int[], Float64[;;], Float64[;;], ComplexF64[
 """
 A type representing the Floquet Hamiltonian
     ℋ = ℎ - i∂ₜ + λₛcos²(2𝑥)cos(2𝜔𝑡) + λₗcos²(2𝑥)cos(𝜔𝑡 + 𝜑ₜ),
-where ℎ is the unperturbed Hamiltonian represented by [`UnperturbedHamiltonian`](@ref), and 𝜑ₜ = 2𝜑ₓ.
+where ℎ is the unperturbed Hamiltonian represented by [`UnperturbedHamiltonian`](@ref), and 𝜑ₜ = 𝜑ₓ.
 """
 mutable struct FloquetHamiltonian
     uh::UnperturbedHamiltonian
@@ -496,14 +496,15 @@ end
 
 """
 Construct Floquet modes at coordinates in `x` and time moments in `Ωt` for each spatial subband number in `whichsubband` at each phase number in `whichphases`.
-Return `x, u`, where `x` are the abscissas and `u[ix, it, ik, j, i]` = wavefunction corresponding to the `ik`th value of 𝑘 and `j`th spatial subband at `i`th phase at `ix`th coordinate at `it`th time moment.
+Return `x, u`, where `x` are the abscissas and `u[ix, it, ik, j, i]` = wavefunction corresponding to the `ik`th value of 𝑘 and `j`th spatial subband
+at `whichphases[i]`th phase at `ix`th coordinate at `it`th time moment.
 """
 function make_eigenfunctions(fh::FloquetHamiltonian, n_x::Integer, Ωt::AbstractVector{<:Real}, whichphases::AbstractVector{<:Integer},
                              whichsubbands::AbstractVector{<:Integer})
     (;N, a) = fh.uh
     x = range(0, a*N, 3N*n_x+1)
     u = Array{ComplexF64, 5}(undef, 3N*n_x+1, length(Ωt), N, length(whichsubbands), length(whichphases))
-    n_levels = size(fh.E, 1) # number of Floquet levels; equivalently, number of levels of ℎ used for constructing ℋ
+    n_levels = size(fh.E, 1) # number of Floquet levels; equivalently, number of levels of ℎ
     # Eigenfunctions of ℎ, which are mixed during construction of `u`. For time-only pumping use only eigenstates at the first phase, corresponding to 𝜑ₓ = 0
     ψ = Array{ComplexF64, 5}(undef, 3N*n_x+1, N, 3, n_levels÷3, (fh.pumptype == :time ? 1 : length(whichphases))) # ψ[ix, ik, subband, band, iφ]
     for band in 1:n_levels÷3
@@ -566,7 +567,7 @@ function compute_wanniers!(fh::FloquetHamiltonian; targetsubbands::AbstractVecto
             end
         end
 
-        t = (fh.pumptype == :space ? π/5 : π/5 - iφ/length(φₓ)*π/2) # time moment at which to diagonalise the coordinate operator
+        t = (fh.pumptype == :space ? π/5 : π/5 - iφ/length(φₓ)*π) # time moment at which to diagonalise the coordinate operator
 
         for ik in 1:N,  ik′ in 1:N
             for (in, n) in enumerate(targetsubbands)
@@ -587,15 +588,15 @@ end
 
 """
 Construct Wannier functions at coordinates in `x` at each phase number in `whichphases`. All Wannier functions contained in `fh` are constructed.
-In the process, energy eigenfunctions are also constructed.
-Return `u, w`, where `w[ix, it, j, i]` = `j`th Wannier function at `i`th phase at `ix`th coordinate at `it`th time moment,
-and `u` is an array of Floquet modes in the same format.
+In the process, quasienergy eigenfunctions (Floquet modes) are also constructed.
+Return `x, u, w`, where `w[ix, it, j, i]` = `j`th Wannier function at `whichphases[i]`th phase at `ix`th coordinate at `it`th time moment,
+`u` is an array of Floquet modes (`u[ix, it, ik, j, i]`), and `x` contains the abscissas.
 """
 function make_wannierfunctions(fh::FloquetHamiltonian, n_x::Integer, Ωt::AbstractVector{<:Real}, whichphases::AbstractVector{<:Integer})
     (;N) = fh.uh
     n_subbands = length(fh.w.targetsubbands)
     n_w = n_subbands * N
-    x, u = make_eigenfunctions(fh, n_x, Ωt, whichphases, fh.w.targetsubbands) # `u[ix, it, ik, j, i]`
+    x, u = make_eigenfunctions(fh, n_x, Ωt, whichphases, fh.w.targetsubbands) # format: `u[ix, it, ik, j, i]`
     w = Array{ComplexF64, 4}(undef, length(x), length(Ωt), n_w, length(whichphases))
     for (i, iφ) in enumerate(whichphases)
         for j in 1:n_w
