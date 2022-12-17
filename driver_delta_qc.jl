@@ -6,29 +6,29 @@ include("SpacetimeHamiltonian.jl")
 
 function 𝐻₀(p, x, params)
     σ, l, λ = params
-    return p^2 + λ*exp(-σ*l/2)cosh(σ*x)
+    return p^2 + λ * exp(-σ*l/2) * cosh(σ*x)
 end
 
 function 𝐻(p, x, params, t)
     σ, l, λ, λₛ, λₗ, ω = params
-    return p^2 + λ*exp(-σ*l/2)cosh(σ*x) + 
-           λₛ * cos(2x)^2 * cos(2ω*t) + 
-           λₗ * cos(2x)^2 * cos(ω*t)
+    return p^2 + λ * exp(-σ*l/2) * cosh(σ*x) + 
+           λₛ * 𝑄ₛ(p, x) * cos(2ω*t) + 
+           λₗ * 𝑄ₗ(p, x) * cos(ω*t)
 end
 
 function 𝑄ₛ(p::Real, x::Real)
-    cos(2x)^2
+    cos(12π*x/a)
 end
 
 function 𝑄ₗ(p::Real, x::Real)
-    cos(2x)^2
+    cos(6π*x/a)
 end
 
 a = 4.0
 l = a/3
 σ = 100 / l
 λ = 500
-λₛ = 100; λₗ = 10; ω = 494
+λₛ = 10; λₗ = 5; ω = 494
 s = 2
 params = [σ, l, λ, λₛ, λₗ, ω]
 
@@ -124,8 +124,6 @@ import .Bandsolvers
 
 φₜ = range(0, 2π, length=61)
 n_cells = s
-χₛ
-χₗ
 gₗ = -2λₛ*Aₛ
 Vₗ = 2λₗ*Aₗ
 M = l^2 / 2π^2 # analytical result

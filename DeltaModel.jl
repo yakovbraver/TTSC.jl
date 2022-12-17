@@ -3,7 +3,7 @@ module DeltaModel
 using ProgressMeter: @showprogress
 import IntervalRootFinding as iroots
 using IntervalArithmetic: (..)
-using LinearAlgebra: eigvals, eigen, schur, ⋅, svd, diagm, Diagonal
+using LinearAlgebra: eigvals, eigen, schur, ⋅, svd, diagm, Diagonal, Hermitian
 
 "A type for storing the Wannier functions."
 mutable struct Wanniers
@@ -294,7 +294,7 @@ function diagonalise!(h::TBHamiltonian)
             H[1, end] = J[3]
             H[end, 1] = J[3]'
         end
-        h.E[:, i], h.c[:, :, i] = eigen(H)
+        h.E[:, i], h.c[:, :, i] = eigen(Hermitian(H))
     end
 end
 
@@ -318,7 +318,7 @@ function compute_wanniers!(h::TBHamiltonian)
             X = Diagonal([n*a/3 for n in 0:3N-1]) # position operator in coordinate representation
             for iφ in eachindex(φₓ)
                 XE = h.c[:, levels, iφ]' * X * h.c[:, levels, iφ] # position operator in energy representation
-                h.w.pos[b, :, iφ], h.w.d[:, :, b, iφ] = eigen(XE)
+                h.w.pos[b, :, iφ], h.w.d[:, :, b, iφ] = eigen(Hermitian(XE))
                 h.w.E[b, :, iφ] = [abs2.(dˣ) ⋅ h.E[levels, iφ] for dˣ in eachcol(h.w.d[:, :, b, iφ])]
             end
         end
@@ -442,11 +442,11 @@ function diagonalise!(fh::FloquetHamiltonian)
                     m′ > n_levels && break
                     if pumptype != :time || iφ == 1 # if pumping is time-only, this must be calculated only once, at `iφ` = 1
                         ∫cos = ComplexF64(0)
-                        for i = 1:3, k₂ in (-4, 4)
+                        for i = 1:3, k₂ in (-12π/a, 12π/a)
                             ∫cos += 𝐹(i*a/3, i, ik, m′, m, iφ, k₂) - 𝐹((i-1)a/3, i, ik, m′, m, iφ, k₂)
                         end
                         # if pumping is space-time, then also multiply by cis(-𝜑ₜ). `φ` runs over 𝜑ₓ, and we assume the pumping protocol 𝜑ₜ = 𝜑ₓ
-                        H[m′, m] = (pumptype == :space ? λₗ/8 * ∫cos : λₗ/8 * ∫cos * cis(-φ))
+                        H[m′, m] = (pumptype == :space ? λₗ/4 * ∫cos : λₗ/4 * ∫cos * cis(-φ))
                     elseif pumptype == :time 
                         H[m′, m] *= cis(-(φₓ[iφ]-φₓ[iφ-1]))
                     end
@@ -459,15 +459,15 @@ function diagonalise!(fh::FloquetHamiltonian)
                     m′ > n_levels && break
                     if pumptype != :time || iφ == 1 # if pumping is time-only, this must be calculated only once, at `iφ` = 1
                         ∫cos = ComplexF64(0)
-                        for i = 1:3, k₂ in (-4, 4)
+                        for i = 1:3, k₂ in (-6π/a, 6π/a)
                             ∫cos += 𝐹(i*a/3, i, ik, m′, m, iφ, k₂) - 𝐹((i-1)a/3, i, ik, m′, m, iφ, k₂)
                         end
-                        H[m′, m] = λₛ/8 * ∫cos
+                        H[m′, m] = λₛ/4 * ∫cos
                     end
                     H[m, m′] = H[m′, m]'
                 end
             end
-            fh.E[:, ik, iφ], fh.b[:, :, ik, iφ] = eigen(H)
+            fh.E[:, ik, iφ], fh.b[:, :, ik, iφ] = eigen(Hermitian(H))
         end
     end
 end

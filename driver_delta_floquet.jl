@@ -55,15 +55,13 @@ savefig("spatial-spectrum-zoom.pdf")
 
 ### Floquet Hamiltonian
 
-# λₛ = 500; λₗ = 100; ω = 485
-# 496
-# 514
-λₛ = 100; λₗ = 10; ω = 494
+λₛ = 10; λₗ = 5; ω = 494
 s = 2
-H = DeltaModel.FloquetHamiltonian(h; s, λₛ, λₗ, ω, pumptype=:time)
+pumptype=:space
+H = DeltaModel.FloquetHamiltonian(h; s, λₛ, λₗ, ω, pumptype)
 
 DeltaModel.diagonalise!(H)
-plotlyjs()
+
 skipbands = 2 # number of spatial band that have been skipped by the choice if `bounds` above
 fig = plot();
 for ik in axes(H.E, 2)
@@ -140,20 +138,8 @@ function shadecells!(fig)
 end
 
 "Return proper order of states depending on pumping type."
-function get_order(iφ; pumptype)
-    if pumptype == :both
-        if iφ < 10
-            order = [1, 2, 3, 4]
-        elseif iφ < 13
-            order = [4, 1, 2, 3]
-        elseif iφ < 31
-            order = [3, 4, 1, 2]
-        elseif iφ < 52
-            order = [4, 3, 2, 1]
-        else
-            order = [3, 4, 1, 2]
-        end
-    elseif pumptype == :space
+function get_order(iφ::Integer; pumptype::Symbol)
+    if pumptype == :space
         if iφ < 11
             order = [1, 2]
         else
@@ -161,6 +147,18 @@ function get_order(iφ; pumptype)
         end
     elseif pumptype == :time
         order = [1, 2, 3, 4]
+    else # pumptype == :both
+        if iφ < 10
+            order = [1, 2, 3, 4]
+        elseif iφ < 13
+            order = [4, 1, 2, 3]
+        elseif iφ < 32
+            order = [3, 4, 1, 2]
+        elseif iφ < 52
+            order = [4, 3, 2, 1]
+        else
+            order = [3, 4, 1, 2]
+        end
     end
     order
 end
@@ -169,7 +167,7 @@ x, _, w = DeltaModel.make_wannierfunctions(H, n_x, Ωt, 1:length(φₓ))
 p = Progress(length(φₓ), 1)
 @gif for iφ in eachindex(φₓ)
     figs = [plot() for _ in 1:length(targetsubbands)*n_cells]
-    for (f, o) in enumerate(get_order(iφ, pumptype=:time))
+    for (f, o) in enumerate(get_order(iφ; pumptype=:spacetime))
         figs[f] = heatmap(x, Ωt/π, abs2.(w[:, :, o, iφ]'), xlabel=L"x", ylabel=L"\Omega t/\pi", c=CMAP, title="Wannier $f", clims=(0, 3), xlims=(0, a*n_cells), ylims=(0, 2))
         shadecells!(figs[f])
     end
