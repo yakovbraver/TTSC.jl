@@ -3,7 +3,7 @@ module DeltaModel
 using ProgressMeter: @showprogress
 import IntervalRootFinding as iroots
 using IntervalArithmetic: (..)
-using LinearAlgebra: eigvals, eigen, schur, ⋅, svd, diagm, Diagonal, Hermitian
+using LinearAlgebra: eigvals, eigen, schur, ⋅, svd, diagm, diagind, Diagonal, Hermitian
 
 "A type for storing the Wannier functions."
 mutable struct Wanniers
@@ -604,6 +604,49 @@ function make_wannierfunctions(fh::FloquetHamiltonian, n_x::Integer, Ωt::Abstra
         end
     end
     return x, u, w
+end
+
+"""
+A type representing a 2D (time+space) tight-binding Hamiltonian 𝐻.
+"""
+mutable struct TBFloquetHamiltonian
+    N::Int
+    a::Float64
+    U::Float64
+    H::Matrix{ComplexF64}   # Hamiltonian matrix
+    isperiodic::Bool
+    φₓ::Vector{Float64}
+    E::Matrix{Float64}      # `E[i, j]` = `i`th eigenvalue at `j`th phase, `1 ≤ i ≤ 6N`, `1 ≤ j ≤ length(φₓ)`
+    c::Array{ComplexF64, 3} # `c[:, i, j]` = `i`th eigenvector at `j`th phase
+    w::FloquetWanniers 
+end
+
+"Construct a `TBFloquetHamiltonian` object."
+function TBFloquetHamiltonian(fh::FloquetHamiltonian; isperiodic::Bool)
+    (;N, φₓ) = fh.uh
+    n_φₓ = length(φₓ)
+    n_s = 6 # number of subbands of ℋ mixed
+    # Compute the off-diagonal elements of the TB Hamiltonian 𝐻 using the Wanniers of ℋ.
+    # Use only the first phase since each phase should lead to identical results.
+    H = Matrix{ComplexF64}(undef, n_s*N, n_s*N)
+    iφ = 1
+    for a = 1:n_s*N, b = a:n_s*N
+        H[b, a] = sum(fh.w.d[i, a, iφ]' * fh.w.d[i, b, iφ] * fh.E[(i-1)%n_s+1, (i-1)÷n_s+1, iφ] for i = axes(fh.w.d, 1))
+        H[a, b] = H[b, a]'
+    end
+
+    E = Matrix{Float64}(undef, n_s*N, n_φₓ)
+    c = Array{ComplexF64, 3}(undef, n_s*N, n_s*N, n_φₓ)
+    w = FloquetWanniers(Int[], Matrix{Float64}(undef, n_s*N, n_φₓ), Matrix{Float64}(undef, n_s*N, n_φₓ), Array{ComplexF64,3}(undef, 6N, 6N, n_φₓ))
+    TBFloquetHamiltonian(N, fh.uh.a, fh.uh.U, H, isperiodic, φₓ, E, c, w)
+end
+
+"Diagonalise the TB Floquet Hamiltonian `tbh` at each phase. The wannier energies `fh.w.E` are used to fill the diagonal of `tbh` at each phase."
+function diagonalise!(tbh::TBFloquetHamiltonian, fh::FloquetHamiltonian)
+    for i in eachindex(tbh.φₓ)
+        tbh.H[diagind(tbh.H)] .= fh.w.E[:, i]
+        tbh.E[:, i], tbh.c[:, :, i] = eigen(Hermitian(tbh.H))
+    end
 end
 
 end

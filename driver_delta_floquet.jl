@@ -57,7 +57,7 @@ savefig("spatial-spectrum-zoom.pdf")
 
 λₛ = 10; λₗ = 5; ω = 494
 s = 2
-pumptype=:space
+pumptype=:spacetime
 H = DeltaModel.FloquetHamiltonian(h; s, λₛ, λₗ, ω, pumptype)
 
 DeltaModel.diagonalise!(H)
@@ -175,3 +175,33 @@ p = Progress(length(φₓ), 1)
     plot(figs..., plot_title=L"\varphi_x=\varphi_t = %$(round(φₓ[iφ], sigdigits=3))")
     next!(p)
 end
+
+### Floquet TB
+
+targetsubbands = 1:6
+n_subbands = length(targetsubbands)
+DeltaModel.compute_wanniers!(H; targetsubbands)
+
+# Maps of Wannier functions
+iφ = 1
+x, _, w = DeltaModel.make_wannierfunctions(H, n_x, Ωt, [iφ])
+figs = [plot() for _ in 1:length(targetsubbands)*n_cells]
+for f in eachindex(figs)
+    figs[f] = heatmap(x, Ωt, abs2.(w[:, :, f, 1]'), xlabel=L"x", ylabel=L"\Omega t", c=:viridis, title="Wannier $f")
+end
+plot(figs...)
+savefig("wanniers.pdf")
+
+Htb = DeltaModel.TBFloquetHamiltonian(H; isperiodic=true)
+DeltaModel.diagonalise!(Htb, H)
+
+fig = plot();
+for r in eachrow(Htb.E)
+    plot!(φₓ, r)
+end
+display(fig)
+
+# (spatial, temporal)
+# tunnelling (1, 2) <- (1, 1)
+sum(H.w.d[i, 1, iφ]' * H.w.d[i, 1, iφ] * H.E[(i-1)%n_subbands+1, (i-1)÷n_subbands+1, iφ]  for i = axes(H.w.d, 1))
+H.w.E[1, iφ]
