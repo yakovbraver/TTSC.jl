@@ -57,7 +57,7 @@ savefig("spatial-spectrum-zoom.pdf")
 
 λₛ = 10; λₗ = 5; ω = 494
 s = 2
-pumptype=:spacetime
+pumptype=:space
 H = DeltaModel.FloquetHamiltonian(h; s, λₛ, λₗ, ω, pumptype)
 
 DeltaModel.diagonalise!(H)
@@ -178,6 +178,8 @@ end
 
 ### Floquet TB
 
+## Construct Wanniers of the first temporal band
+
 targetsubbands = 1:6
 n_subbands = length(targetsubbands)
 DeltaModel.compute_wanniers!(H; targetsubbands)
@@ -192,6 +194,29 @@ end
 plot(figs...)
 savefig("wanniers.pdf")
 
+# Swap wanniers to restore correct order (i.e. the same state numbering in each spatial site)
+
+function swap_wanniers!(H::DeltaModel.FloquetHamiltonian, i, j)
+    temp_E = H.w.E[i, :]
+    H.w.E[i, :] = H.w.E[j, :]
+    H.w.E[j, :] = temp_E
+    
+    temp_pos = H.w.pos[i, :]
+    H.w.pos[i, :] = H.w.pos[j, :]
+    H.w.pos[j, :] = temp_pos
+    
+    temp_d = H.w.d[:, i, :]
+    H.w.d[:, i, :] = H.w.d[:, j, :]
+    H.w.d[:, j, :] = temp_d
+    nothing
+end
+
+swap_wanniers!(H, 7, 8)
+swap_wanniers!(H, 9, 10)
+swap_wanniers!(H, 11, 12)
+
+## Construct the TB Floquet Hamiltonian
+
 Htb = DeltaModel.TBFloquetHamiltonian(H; isperiodic=true)
 DeltaModel.diagonalise!(Htb, H)
 
@@ -201,7 +226,19 @@ for r in eachrow(Htb.E)
 end
 display(fig)
 
-# (spatial, temporal)
-# tunnelling (1, 2) <- (1, 1)
-sum(H.w.d[i, 1, iφ]' * H.w.d[i, 1, iφ] * H.E[(i-1)%n_subbands+1, (i-1)÷n_subbands+1, iφ]  for i = axes(H.w.d, 1))
-H.w.E[1, iφ]
+targetsubbands = [3, 6]
+DeltaModel.compute_wanniers!(Htb; targetsubbands)
+whichphases = 1:length(φₓ)
+w = abs2.(DeltaModel.make_wannierfunctions(Htb, whichphases))
+clims = extrema(w)
+
+p = Progress(length(whichphases), 1)
+@gif for i in whichphases
+    figs = [plot() for _ in 1:length(targetsubbands)*n_cells]
+    for j in axes(w, 2)
+        figs[j] = heatmap(1:3n_cells, 1:2, reshape(w[:, j, i], (2, 3n_cells)); clims, c=CMAP, xticks=1:3n_cells, yticks=1:2,
+                          xlabel="spatial site", ylabel="temporal cell")
+    end
+    plot(figs..., plot_title=L"\varphi_x=\varphi_t = %$(round(φₓ[i], sigdigits=3))")
+    next!(p)
+end

@@ -326,7 +326,7 @@ function compute_wanniers!(h::TBHamiltonian)
 end
 
 """
-Construct Wannier functions at each phase number in `whichphases`. All Wannier functions contained in `uh` are constructed.
+Construct Wannier functions at each phase number in `whichphases`. All Wannier functions contained in `h` are constructed.
 Return `w`, where `w[:, j, b i]` = `j`th Wannier function of `b`th subband at `i`th phase.
 """
 function make_wannierfunctions(h::TBHamiltonian, whichphases::AbstractVector{<:Integer})
@@ -637,8 +637,7 @@ function TBFloquetHamiltonian(fh::FloquetHamiltonian; isperiodic::Bool)
 
     E = Matrix{Float64}(undef, n_s*N, n_φₓ)
     c = Array{ComplexF64, 3}(undef, n_s*N, n_s*N, n_φₓ)
-    w = FloquetWanniers(Int[], Matrix{Float64}(undef, n_s*N, n_φₓ), Matrix{Float64}(undef, n_s*N, n_φₓ), Array{ComplexF64,3}(undef, 6N, 6N, n_φₓ))
-    TBFloquetHamiltonian(N, fh.uh.a, fh.uh.U, H, isperiodic, φₓ, E, c, w)
+    TBFloquetHamiltonian(N, fh.uh.a, fh.uh.U, H, isperiodic, φₓ, E, c, FloquetWanniers())
 end
 
 "Diagonalise the TB Floquet Hamiltonian `tbh` at each phase. The wannier energies `fh.w.E` are used to fill the diagonal of `tbh` at each phase."
@@ -647,6 +646,62 @@ function diagonalise!(tbh::TBFloquetHamiltonian, fh::FloquetHamiltonian)
         tbh.H[diagind(tbh.H)] .= fh.w.E[:, i]
         tbh.E[:, i], tbh.c[:, :, i] = eigen(Hermitian(tbh.H))
     end
+end
+
+"Calculate Wannier vectors for the TB floquet Hamiltonian `tbh` using the quasienergy levels `targetsubbands`."
+function compute_wanniers!(tbh::TBFloquetHamiltonian; targetsubbands::AbstractVector{<:Integer})
+    (;N, a, φₓ) = tbh
+    tbh.w.targetsubbands = targetsubbands # save this because it's needed in `make_wannierfunctions`
+
+    n_w = length(targetsubbands) * N
+    E = Matrix{Float64}(undef, n_w, length(φₓ))
+    pos = Matrix{Float64}(undef, n_w, length(φₓ))
+    d = Array{ComplexF64, 3}(undef, n_w, n_w, length(φₓ))
+    tbh.w = FloquetWanniers(targetsubbands, E, pos, d)
+
+    levels = Vector{Int}(undef, N*length(targetsubbands))
+    for (i, s) in enumerate(targetsubbands)
+        levels[(i-1)*N+1:i*N] = (s-1)*N+1:s*N
+    end
+    # if tbh.isperiodic
+        X = Diagonal([cis(2π/(2N*a) * n*a/3) for n in 0:3*2N-1]) # position operator in coordinate representation
+        for iφ in eachindex(φₓ)
+            XE = tbh.c[:, levels, iφ]' * X * tbh.c[:, levels, iφ] # position operator in energy representation
+            _, d[:, :, iφ], pos_complex = schur(XE)
+            pos_real = @. mod2pi(angle(pos_complex)) / 2π * 2N*a # shift angle from [-π, π) to [0, 2π)
+            sp = sortperm(pos_real)                        # sort the eigenvalues
+            pos[:, iφ] = pos_real[sp]
+            @views Base.permutecols!!(d[:, :, iφ], sp) # sort the eigenvectors in the same way
+            E[:, iφ] = [abs2.(dˣ) ⋅ tbh.E[levels, iφ] for dˣ in eachcol(d[:, :, iφ])]
+        end
+    # else
+    #     X = Diagonal([n*a/3 for n in 0:3N-1]) # position operator in coordinate representation
+    #     for iφ in eachindex(φₓ)
+    #         XE = tbh.c[:, levels, iφ]' * X * tbh.c[:, levels, iφ] # position operator in energy representation
+    #         tbh.w.pos[b, :, iφ], tbh.w.d[:, :, b, iφ] = eigen(Hermitian(XE))
+    #         tbh.w.E[b, :, iφ] = [abs2.(dˣ) ⋅ tbh.E[levels, iφ] for dˣ in eachcol(tbh.w.d[:, :, b, iφ])]
+    #     end
+    # end
+end
+
+"""
+Construct Wannier functions at each phase number in `whichphases`. All Wannier functions contained in `thb` are constructed.
+Return `w`, where `w[:, j, i]` = `j`th Wannier function at `whichphases[i]`th phase.
+"""
+function make_wannierfunctions(tbh::TBFloquetHamiltonian, whichphases::AbstractVector{<:Integer})
+    (;N) = tbh
+    n_w = length(tbh.w.targetsubbands) * N
+    levels = Vector{Int}(undef, n_w)
+    for (i, s) in enumerate(tbh.w.targetsubbands)
+        levels[(i-1)*N+1:i*N] = (s-1)*N+1:s*N
+    end
+    w = Array{ComplexF64, 3}(undef, size(tbh.c, 1), n_w, length(whichphases))
+    for (i, iφ) in enumerate(whichphases)
+        for j in 1:n_w
+            w[:, j, i] = sum(tbh.w.d[k, j, iφ] * tbh.c[:, levels[k], iφ] for k = 1:n_w)
+        end
+    end
+    return w
 end
 
 end
