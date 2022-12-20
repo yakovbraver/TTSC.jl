@@ -459,7 +459,7 @@ function diagonalise!(fh::FloquetHamiltonian)
                     m′ > n_levels && break
                     if pumptype != :time || iφ == 1 # if pumping is time-only, this must be calculated only once, at `iφ` = 1
                         ∫cos = ComplexF64(0)
-                        for i = 1:3, k₂ in (-12π/a, 12π/a)
+                        for i = 1:3, k₂ in (-6π/a, 6π/a)
                             ∫cos += 𝐹(i*a/3, i, ik, m′, m, iφ, k₂) - 𝐹((i-1)a/3, i, ik, m′, m, iφ, k₂)
                         end
                         # if pumping is space-time, then also multiply by cis(-𝜑ₜ). `φ` runs over 𝜑ₓ, and we assume the pumping protocol 𝜑ₜ = 𝜑ₓ
@@ -476,7 +476,7 @@ function diagonalise!(fh::FloquetHamiltonian)
                     m′ > n_levels && break
                     if pumptype != :time || iφ == 1 # if pumping is time-only, this must be calculated only once, at `iφ` = 1
                         ∫cos = ComplexF64(0)
-                        for i = 1:3, k₂ in (-6π/a, 6π/a)
+                        for i = 1:3, k₂ in (-12π/a, 12π/a)
                             ∫cos += 𝐹(i*a/3, i, ik, m′, m, iφ, k₂) - 𝐹((i-1)a/3, i, ik, m′, m, iφ, k₂)
                         end
                         H[m′, m] = λₛ/4 * ∫cos
