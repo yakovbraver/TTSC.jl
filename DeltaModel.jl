@@ -376,6 +376,23 @@ end
 "Default-construct an empty `FloquetWanniers` object."
 FloquetWanniers() = FloquetWanniers(Int[], Float64[;;], Float64[;;], ComplexF64[;;;])
 
+"Swap energies, positions, and vectors of wanniers `i` and `j` at every phase."
+function swap_wanniers!(w::FloquetWanniers, i, j)
+    temp_E = w.E[i, :]
+    w.E[i, :] = w.E[j, :]
+    w.E[j, :] = temp_E
+    
+    temp_pos = w.pos[i, :]
+    w.pos[i, :] = w.pos[j, :]
+    w.pos[j, :] = temp_pos
+    
+    temp_d = w.d[:, i, :]
+    w.d[:, i, :] = w.d[:, j, :]
+    w.d[:, j, :] = temp_d
+
+    return nothing
+end
+
 """
 A type representing the Floquet Hamiltonian
     ℋ = ℎ - i∂ₜ + λₛcos²(2𝑥)cos(2𝜔𝑡) + λₗcos²(2𝑥)cos(𝜔𝑡 + 𝜑ₜ),
@@ -686,7 +703,7 @@ end
 
 """
 Construct Wannier functions at each phase number in `whichphases`. All Wannier functions contained in `thb` are constructed.
-Return `w`, where `w[:, j, i]` = `j`th Wannier function at `whichphases[i]`th phase.
+Return `w`, where `w[:, :, j, i]` = `j`th Wannier function at `whichphases[i]`th phase in the form of a 2D map (first index is temporal, second is spatial).
 """
 function make_wannierfunctions(tbh::TBFloquetHamiltonian, whichphases::AbstractVector{<:Integer})
     (;N) = tbh
@@ -695,13 +712,40 @@ function make_wannierfunctions(tbh::TBFloquetHamiltonian, whichphases::AbstractV
     for (i, s) in enumerate(tbh.w.targetsubbands)
         levels[(i-1)*N+1:i*N] = (s-1)*N+1:s*N
     end
-    w = Array{ComplexF64, 3}(undef, size(tbh.c, 1), n_w, length(whichphases))
+    w = Array{ComplexF64, 4}(undef, 2, size(tbh.c, 1)÷2, n_w, length(whichphases))
     for (i, iφ) in enumerate(whichphases)
         for j in 1:n_w
-            w[:, j, i] = sum(tbh.w.d[k, j, iφ] * tbh.c[:, levels[k], iφ] for k = 1:n_w)
+            w[:, :, j, i] = reshape(sum(tbh.w.d[k, j, iφ] * tbh.c[:, levels[k], iφ] for k = 1:n_w), (2, 3N))
         end
     end
     return w
+end
+
+"Bring the wannier functions contained in `w` to correct order for dispalying animation."
+function order_wannierfunctions!(w::Array{Float64, 4}, whichphases::AbstractVector{<:Integer})
+    n = size(w, 2) # total number of spatial sites
+    n_w = size(w, 3)
+    for i in 2:length(whichphases)
+        println("\nphase = $i")
+        for j in 1:n_w
+            println("j = $j")
+            prev_maxsite = argmax(w[:, :, j, i-1]) # find which site of the `j`th state contained the maximum at the previous phase
+            println("prev_maxsite = $prev_maxsite")
+            for k in j+1:n_w
+                maxsite = argmax(w[:, :, k, i]) # find which site of the `k`th state contains the maximum at the current phase
+                # swap wanniers if we find a state with the same maximum position, or a state whose maximum is shifted according to the pumping protocol
+                if prev_maxsite == maxsite ||
+                   maxsite - prev_maxsite == CartesianIndex(-1, -1) || maxsite - prev_maxsite == CartesianIndex(1, -1) ||
+                   maxsite - prev_maxsite == CartesianIndex(-1, n-1) || maxsite - prev_maxsite == CartesianIndex(1, n-1)
+                    temp = w[:, :, j, i]
+                    w[:, :, j, i] = w[:, :, k, i]
+                    w[:, :, k, i] = temp
+                    println("swapped $j and $k")
+                    break
+                end
+            end
+        end
+    end
 end
 
 end

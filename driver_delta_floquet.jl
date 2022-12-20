@@ -57,7 +57,7 @@ savefig("spatial-spectrum-zoom.pdf")
 
 λₛ = 10; λₗ = 5; ω = 494
 s = 2
-pumptype=:space
+pumptype = :time
 H = DeltaModel.FloquetHamiltonian(h; s, λₛ, λₗ, ω, pumptype)
 
 DeltaModel.diagonalise!(H)
@@ -128,7 +128,7 @@ CMAP = cgrad(:linear_grey_0_100_c0_n256, rev=true)
 
 function shadecells!(fig)
     fillalpha = 0.3; alpha = 0;
-    x = l/2
+    x = a/6
     for i in 0:2:6n_cells-1
         plot!(fig, [i*x, (i+1)x], [2, 2]; fillrange=1.7, fillalpha, alpha, c=GREEN)
         plot!(fig, [i*x, (i+1)x], [0.7, 0.7]; fillrange=0, fillalpha, alpha, c=GREEN)
@@ -167,7 +167,7 @@ x, _, w = DeltaModel.make_wannierfunctions(H, n_x, Ωt, 1:length(φₓ))
 p = Progress(length(φₓ), 1)
 @gif for iφ in eachindex(φₓ)
     figs = [plot() for _ in 1:length(targetsubbands)*n_cells]
-    for (f, o) in enumerate(get_order(iφ; pumptype=:spacetime))
+    for (f, o) in enumerate(get_order(iφ; pumptype))
         figs[f] = heatmap(x, Ωt/π, abs2.(w[:, :, o, iφ]'), xlabel=L"x", ylabel=L"\Omega t/\pi", c=CMAP, title="Wannier $f", clims=(0, 3), xlims=(0, a*n_cells), ylims=(0, 2))
         shadecells!(figs[f])
     end
@@ -186,6 +186,8 @@ DeltaModel.compute_wanniers!(H; targetsubbands)
 
 # Maps of Wannier functions
 iφ = 1
+n_x = 50
+Ωt = range(0, 2π, length=40s)
 x, _, w = DeltaModel.make_wannierfunctions(H, n_x, Ωt, [iφ])
 figs = [plot() for _ in 1:length(targetsubbands)*n_cells]
 for f in eachindex(figs)
@@ -194,26 +196,11 @@ end
 plot(figs...)
 savefig("wanniers.pdf")
 
-# Swap wanniers to restore correct order (i.e. the same state numbering in each spatial site)
+# Swap wanniers `i` and `j` at every phase to restore correct order (i.e. the same state numbering in each spatial site)
 
-function swap_wanniers!(H::DeltaModel.FloquetHamiltonian, i, j)
-    temp_E = H.w.E[i, :]
-    H.w.E[i, :] = H.w.E[j, :]
-    H.w.E[j, :] = temp_E
-    
-    temp_pos = H.w.pos[i, :]
-    H.w.pos[i, :] = H.w.pos[j, :]
-    H.w.pos[j, :] = temp_pos
-    
-    temp_d = H.w.d[:, i, :]
-    H.w.d[:, i, :] = H.w.d[:, j, :]
-    H.w.d[:, j, :] = temp_d
-    nothing
-end
-
-swap_wanniers!(H, 7, 8)
-swap_wanniers!(H, 9, 10)
-swap_wanniers!(H, 11, 12)
+DeltaModel.swap_wanniers!(H.w, 7, 8)
+DeltaModel.swap_wanniers!(H.w, 9, 10)
+DeltaModel.swap_wanniers!(H.w, 11, 12)
 
 ## Construct the TB Floquet Hamiltonian
 
@@ -230,15 +217,17 @@ targetsubbands = [3, 6]
 DeltaModel.compute_wanniers!(Htb; targetsubbands)
 whichphases = 1:length(φₓ)
 w = abs2.(DeltaModel.make_wannierfunctions(Htb, whichphases))
-clims = extrema(w)
+DeltaModel.order_wannierfunctions!(w, whichphases)
 
+clims = extrema(w)
 p = Progress(length(whichphases), 1)
 @gif for i in whichphases
     figs = [plot() for _ in 1:length(targetsubbands)*n_cells]
-    for j in axes(w, 2)
-        figs[j] = heatmap(1:3n_cells, 1:2, reshape(w[:, j, i], (2, 3n_cells)); clims, c=CMAP, xticks=1:3n_cells, yticks=1:2,
+    for j in axes(w, 3)
+        figs[j] = heatmap(1:3n_cells, 1:2, w[:, :, j, i]; clims, c=CMAP, xticks=1:3n_cells, yticks=1:2,
                           xlabel="spatial site", ylabel="temporal cell")
     end
-    plot(figs..., plot_title=L"\varphi_x=\varphi_t = %$(round(φₓ[i], sigdigits=3))")
+    # plot(figs..., plot_title=L"\varphi_x=\varphi_t = %$(round(φₓ[i], sigdigits=3))")
+    plot(figs..., plot_title=L"\varphi_x = %$(round(φₓ[i], sigdigits=3))")
     next!(p)
 end
