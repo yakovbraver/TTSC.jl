@@ -37,7 +37,7 @@ display(fig)
 
 # Wannier centres
 pyplot()
-Bandsolvers.compute_wanniers!(h, targetband=25)
+Bandsolvers.compute_wanniers!(h, targetband=25, mixsubbands=false)
 fig = plot();
 for (i, ϕ) in enumerate(φₓ)
     scatter!(h.w.pos[:, i], fill(ϕ, 2n_cells); marker_z=h.w.E[:, i], c=:coolwarm, label=false, markerstrokewidth=0)
@@ -58,6 +58,23 @@ p = Progress(length(φₓ), 1)
     end
     next!(p)
 end
+
+##### Tight-binding 
+
+# Compute Wanniers by mixing the subbands together
+Bandsolvers.compute_wanniers!(h, targetband=25, mixsubbands=true)
+
+x = range(0, n_cells*π, length=50n_cells)
+_, w = Bandsolvers.make_wannierfunctions(h, x, 1:length(φₓ))
+lims = (minimum(h.w.E)-0.5, maximum(h.w.E)+2)
+iφ = 1
+U = @. gₗ*cos(2x)^2 + Vₗ*cos(x + φₓ[iφ])^2
+fig = plot(x, U, label=false, ylims=lims)
+scatter!(h.w.pos[:, iφ], h.w.E[:, iφ])
+for j in axes(w, 2)
+    plot!(x, abs2.(w[:, j, iφ]) .+ h.w.E[j, iφ], label=false)
+end
+display(fig)
 
 ########## Non-periodic case
 
@@ -87,7 +104,7 @@ hline!([h.E[i, iϕ]], c=:white, ls=:dot, lw=0.5, label=false)
 plot!(x ./ π, ψ[:, 1, 1], label=false, title=ϕ_str, xlabel="z", ylabel="Energy")
 
 # Wannier centres
-Bandsolvers.compute_wanniers!(h, targetband=25)
+Bandsolvers.compute_wanniers!(h, targetband=25, mixsubbands=false)
 
 fig = plot();
 for (i, ϕ) in enumerate(φₓ)
