@@ -1,6 +1,6 @@
 module Bandsolvers
 
-using LinearAlgebra: eigen, schur, ⋅, diagm, diagind, eigvals
+using LinearAlgebra: eigen, schur, ⋅, diagm, diagind, eigvals, Diagonal, Hermitian
 
 "A type for storing the Wannier functions."
 mutable struct Wanniers
@@ -246,7 +246,7 @@ Return `ψ, w`, where `ψ[:, j, i]` = `j`th eigenfunction at `whichphases[i]`th 
 """
 function make_wannierfunctions(uh::UnperturbedHamiltonian, x::AbstractVector{<:Real}, whichphases::AbstractVector{<:Integer})
     n_w = size(uh.w.E, 1)
-    w = Array{ComplexF64, 3}(undef, length(x), n_w, length(uh.φₓ))
+    w = Array{ComplexF64, 3}(undef, length(x), n_w, length(whichphases))
     ψ = make_eigenfunctions(uh, x, whichphases, range(uh.w.minlevel, length=n_w))
     if uh.w.mixsubbands
         for (i, iφ) in enumerate(whichphases)
@@ -284,6 +284,106 @@ function make_sin_state(x::AbstractVector{<:Real}, c::AbstractVector{<:Number}; 
         @. ψ += c * sin(j/N * x)
     end
     return ψ ./ sqrt(N*π/2)
+end
+
+"""
+A type representing a tight-binding Hamiltonian 𝐻.
+"""
+mutable struct TBHamiltonian
+    N::Int
+    H::Array{ComplexF64, 3} # Hamiltonian matrix
+    isperiodic::Bool
+    φₓ::Vector{Float64}
+    E::Matrix{Float64}      # `E[i, j]` = `i`th eigenvalue at `j`th phase, `1 ≤ i ≤ 2N`, `1 ≤ j ≤ length(φₓ)`
+    c::Array{ComplexF64, 3} # `c[:, i, j]` = `i`th eigenvector at `j`th phase
+    w::Wanniers 
+end
+
+"Construct a `TBHamiltonian` object. `uh` must contain calculated Wanniers."
+function TBHamiltonian(uh::UnperturbedHamiltonian; isperiodic::Bool)
+    (;N, φₓ) = uh
+    n_φₓ = length(φₓ)
+    n_w = size(uh.w.E, 1) # number of Wanniers
+    H = Array{ComplexF64, 3}(undef, n_w, n_w, n_φₓ) # TB Hamiltonian matrix
+    # The Wannier basis vectors |𝑤ₐ⟩ = ∑ᵢ 𝑑ᵃᵢ |𝜓ᵢ⟩, constructed at the first phase
+    w = [sum(uh.w.d[i, a, 1] * uh.c[:, uh.w.minlevel+i-1, 1] for i = 1:n_w) for a in 1:n_w]
+    # Construct the Hamiltonian matrix for the unperturbed Hamiltonian
+    h = diagm(0 => ComplexF64[(2j/N)^2 / 2uh.M + (uh.gₗ + uh.Vₗ)/2 for j = -uh.maxlevel:uh.maxlevel])
+    h[diagind(h, -2N)] .= h[diagind(h, 2N)] .= uh.gₗ/4
+    # Compute elements of `H` at each phase
+    for iφ in eachindex(φₓ)
+        h[diagind(h, -N)] .= uh.Vₗ/4 * cis(+2φₓ[iφ])
+        h[diagind(h, +N)] .= uh.Vₗ/4 * cis(-2φₓ[iφ])
+        for a = 1:n_w, b = a:n_w
+            H[a, b, iφ] = w[a]' * h * w[b]
+            H[b, a, iφ] = H[a, b, iφ]'
+        end
+    end
+    E = Matrix{Float64}(undef, n_w, n_φₓ)
+    c = Array{ComplexF64, 3}(undef, n_w, n_w, n_φₓ)
+    TBHamiltonian(N, H, isperiodic, φₓ, E, c, Wanniers())
+end
+
+"Diagonalise the TB Hamiltonian `tbh` at each phase."
+function diagonalise!(tbh::TBHamiltonian)
+    for iφ in eachindex(tbh.φₓ)
+        tbh.E[:, iφ], tbh.c[:, :, iφ] = eigen(Hermitian(tbh.H[:, :, iφ]))
+    end
+end
+
+"Calculate Wannier vectors for each of the two subbands for the TB Hamiltonian `tbh`."
+function compute_wanniers!(tbh::TBHamiltonian)
+    (;N, φₓ) = tbh
+    # if tbh.isperiodic
+        # `d` fill format: `d[1:N, 1:N, i]` = eigenvectors of the lower subband,
+        #                  `d[1:N, N+1:2N, i]` = eigenvectors of the higher subband
+        d = Array{ComplexF64, 3}(undef, N, 2N, length(φₓ))
+        E = Matrix{Float64}(undef, 2N, length(φₓ))
+        pos = Matrix{Float64}(undef, 2N, length(φₓ))
+        tbh.w = Wanniers(0, Int[], false, Int[], E, pos, d)
+
+        X = Diagonal([cis(2π/(N*π) * n*π/2) for n in 0:2N-1]) # position operator in coordinate representation
+        for b in 1:2
+            levels = N*(b-1)+1:N*b
+            for iφ in eachindex(φₓ)
+                XE = tbh.c[:, levels, iφ]' * X * tbh.c[:, levels, iφ] # position operator in energy representation
+                _, d[:, levels, iφ], pos_complex = schur(XE)
+                pos_real = @. mod2pi(angle(pos_complex)) / 2π * N*π # shift angle from [-π, π) to [0, 2π)
+                sp = sortperm(pos_real)                        # sort the eigenvalues
+                pos[levels, iφ] = pos_real[sp]
+                @views Base.permutecols!!(d[:, levels, iφ], sp) # sort the eigenvectors in the same way
+                E[levels, iφ] = [abs2.(dˣ) ⋅ tbh.E[levels, iφ] for dˣ in eachcol(d[:, levels, iφ])]
+            end
+        end
+    # else
+    #     for b in 1:2
+    #         X = Diagonal([n*π/2 for n in 0:2N-1]) # position operator in coordinate representation
+    #         for iφ in eachindex(φₓ)
+    #             XE = tbh.c[:, levels, iφ]' * X * tbh.c[:, levels, iφ] # position operator in energy representation
+    #             tbh.w.pos[b, :, iφ], tbh.w.d[:, :, b, iφ] = eigen(Hermitian(XE))
+    #             tbh.w.E[b, :, iφ] = [abs2.(dˣ) ⋅ tbh.E[levels, iφ] for dˣ in eachcol(tbh.w.d[:, :, b, iφ])]
+    #         end
+    #     end
+    # end
+end
+
+"""
+Construct Wannier functions at each phase number in `whichphases`. All Wannier functions contained in `h` are constructed.
+Return `w`, where `w[:, j, i]` = `j`th Wannier function at `i`th phase.
+"""
+function make_wannierfunctions(tbh::TBHamiltonian, whichphases::AbstractVector{<:Integer})
+    (;N) = tbh
+    n_w = size(tbh.w.E, 1)
+    w = Array{ComplexF64, 3}(undef, size(tbh.c, 1), n_w, length(whichphases))
+    for (i, iφ) in enumerate(whichphases)
+        for b in 1:2
+            levels = N*(b-1)+1:N*b
+            for j in levels
+                w[:, j, i] = sum(tbh.w.d[k, j, iφ] * tbh.c[:, N*(b-1)+k, iφ] for k = 1:N)
+            end
+        end
+    end
+    return w
 end
 
 """

@@ -24,13 +24,13 @@ end
 plot!(xlabel=L"\varphi_x", ylabel="Energy", title=L"(V_S, V_L) = (%$(-gₗ), %$(-Vₗ))")
 
 # Eigenfunctions
-iϕ = 1;
+iφ = 1;
 x = range(0, n_cells*π, length=1000n_cells)
-U = @. gₗ*cos(2x)^2 + Vₗ*cos(x + φₓ[iϕ])^2
+U = @. gₗ*cos(2x)^2 + Vₗ*cos(x + φₓ[iφ])^2
 fig = plot(x ./ π, U, label=false, c=:white, lw=1)
 for i in 145:150
-    ψ = 4abs2.(Bandsolvers.make_eigenfunctions(h, x, [iϕ], [i])) .+ h.E[i, iϕ]
-    hline!([h.E[i, iϕ]], c=:white, ls=:dot, lw=0.5, label=false)
+    ψ = 4abs2.(Bandsolvers.make_eigenfunctions(h, x, [iφ], [i])) .+ h.E[i, iφ]
+    hline!([h.E[i, iφ]], c=:white, ls=:dot, lw=0.5, label=false)
     plot!(x ./ π, ψ[:, 1, 1], xlabel=L"x", ylabel="Energy", c=i, label="$i")
 end
 display(fig)
@@ -64,17 +64,59 @@ end
 # Compute Wanniers by mixing the subbands together
 Bandsolvers.compute_wanniers!(h, targetband=25, mixsubbands=true)
 
+# Plot the Wanniers
 x = range(0, n_cells*π, length=50n_cells)
 _, w = Bandsolvers.make_wannierfunctions(h, x, 1:length(φₓ))
+
 lims = (minimum(h.w.E)-0.5, maximum(h.w.E)+2)
-iφ = 1
+iφ = 2
 U = @. gₗ*cos(2x)^2 + Vₗ*cos(x + φₓ[iφ])^2
-fig = plot(x, U, label=false, ylims=lims)
-scatter!(h.w.pos[:, iφ], h.w.E[:, iφ])
+fig = plot(x, U, label=false, ylims=lims, c=:white);
+scatter!(h.w.pos[:, iφ], h.w.E[:, iφ], label=false, markerstrokewidth=0, c=1:2n_cells);
 for j in axes(w, 2)
-    plot!(x, abs2.(w[:, j, iφ]) .+ h.w.E[j, iφ], label=false)
+    plot!(x, abs2.(w[:, j, iφ]) .+ h.w.E[j, iφ], label=false, c=j)
 end
 display(fig)
+
+# Construct the TB Hamiltonian
+htb = Bandsolvers.TBHamiltonian(h, isperiodic=true)
+
+Bandsolvers.diagonalise!(htb)
+fig = plot();
+for r in eachrow(htb.E)
+    plot!(φₓ, r)
+end
+plot!(xlabel=L"\varphi_x", ylabel="Energy")
+
+# Wannier centres
+Bandsolvers.compute_wanniers!(htb)
+fig2 = plot();
+for (iϕ, ϕ) in enumerate(φₓ)
+    scatter!(htb.w.pos[:, iϕ], fill(ϕ, size(htb.w.pos, 1)); marker_z=htb.w.E[:, iϕ], c=:coolwarm, label=false, markerstrokewidth=0)
+end
+plot!(minorgrid=true, xlabel=L"x", ylabel=L"\varphi", cbtitle="Energy")
+
+plot(fig, fig2, layout=(2,1))
+savefig(fig2, "centres-tb-nonperiodic-8.pdf")
+
+# Wannier functions
+whichphases = 1:length(φₓ)
+wanniers = Bandsolvers.make_wannierfunctions(htb, whichphases)
+
+lims = (minimum(htb.w.E)-1, maximum(htb.w.E)+1)
+x_U = range(0, n_cells*π, length=1000n_cells)
+x = range(start=0, step=π/2, length=2n_cells)
+p = Progress(length(φₓ), 1)
+@gif for (i, iφ) in enumerate(whichphases)
+    U = @. gₗ*cos(2x_U)^2 + Vₗ*cos(x_U + φₓ[iφ])^2
+    plot(x_U, U, label=false, ylims=lims, c=:white);
+    scatter!(htb.w.pos[:, iφ], htb.w.E[:, iφ]; label=false, markerstrokewidth=0, ylims=lims, markersize=5, c=1:2n_cells, xlims=(0, π*n_cells))
+    for j in axes(wanniers, 2)
+        plot!(x, abs2.(wanniers[:, j, i]) .+ htb.w.E[j, iφ], label=false, c=j)
+    end
+    title!(L"\varphi_x = %$(round(φₓ[iφ], sigdigits=3))")
+    next!(p)
+end
 
 ########## Non-periodic case
 
