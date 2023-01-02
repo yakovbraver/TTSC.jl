@@ -163,24 +163,25 @@ function compute_wanniers!(uh::UnperturbedHamiltonian, targetband::Integer)
     X = Matrix{ComplexF64}(undef, N, N) # position operator
     
     k₂ = 2π/(N*a)
-    𝐹(x, i, n, j′, j, m, iφ) = begin
-        κʲ = κ[i, j, m, iφ]
-        κʲ′ = κ[i, j′, m, iφ]
-        cis((n-1)*2π*(j-j′)/N - (κʲ′ + κʲ - k₂)x) / 4 * (
-            im * (c[2i-1, j′, m, iφ] + im*c[2i, j′, m, iφ])' * (c[2i-1, j, m, iφ] - im*c[2i, j, m, iφ]) / (κʲ′ + κʲ - k₂) +
-            (c[2i-1, j, m, iφ] + im*c[2i, j, m, iφ]) * cis(2κʲ*x) * ( 
-                (c[2i, j′, m, iφ] - im*c[2i-1, j′, m, iφ]) / (-κʲ′ + κʲ + k₂) +
-                (c[2i, j′, m, iφ] + im*c[2i-1, j′, m, iφ]) / ( κʲ′ + κʲ + k₂) * cis(-2κʲ′*x) )' +
-            (c[2i-1, j′, m, iφ] - im*c[2i, j′, m, iφ])' * (c[2i, j, m, iφ] + im*c[2i-1, j, m, iφ]) * cis(2κʲ′*x) / (κʲ′ - κʲ + k₂) )
+    𝐹(x, i, n, ik′, ik, m, iφ) = begin
+        κʲ = κ[i, ik, m, iφ]
+        κʲ′ = κ[i, ik′, m, iφ]
+        cis((n-1)*2π*(ik-ik′)/N - (κʲ′ + κʲ - k₂)x) / 4 * (
+            im * (c[2i-1, ik′, m, iφ] + im*c[2i, ik′, m, iφ])' * (c[2i-1, ik, m, iφ] - im*c[2i, ik, m, iφ]) / (κʲ′ + κʲ - k₂) +
+            (c[2i-1, ik, m, iφ] + im*c[2i, ik, m, iφ]) * cis(2κʲ*x) * ( 
+                (c[2i, ik′, m, iφ] - im*c[2i-1, ik′, m, iφ]) / (-κʲ′ + κʲ + k₂) +
+                (c[2i, ik′, m, iφ] + im*c[2i-1, ik′, m, iφ]) / ( κʲ′ + κʲ + k₂) * cis(-2κʲ′*x) )' +
+            (c[2i-1, ik′, m, iφ] - im*c[2i, ik′, m, iφ])' * (c[2i, ik, m, iφ] + im*c[2i-1, ik, m, iφ]) * cis(2κʲ′*x) / (κʲ′ - κʲ + k₂) )
     end
+    
     for iφ in eachindex(φₓ)
         for b in 1:3 # for each of the 3 subbands in the target band
             m = 3(targetband-1) + b # "global" subband number
-            for j in 1:N
-                for j′ in 1:N
-                    X[j′, j] = 0
+            for ik in 1:N
+                for ik′ in 1:N
+                    X[ik′, ik] = 0
                     for n = 1:N, i = 1:3
-                        X[j′, j] += 𝐹((n-1)a + i*a/3, i, n, j′, j, m, iφ) - 𝐹((n-1)a + (i-1)a/3, i, n, j′, j, m, iφ)
+                        X[ik′, ik] += 𝐹((n-1)a + i*a/3, i, n, ik′, ik, m, iφ) - 𝐹((n-1)a + (i-1)a/3, i, n, ik′, ik, m, iφ)
                     end
                 end
             end
@@ -207,15 +208,15 @@ function compute_wanniers(uh::UnperturbedHamiltonian, targetband::Integer)
     
     k₂ = 2π/(N*a)
     iφ = 1
-    𝐹(x, i, n, ik′, ik, j′, j) = begin
-        κʲ = κ[i, ik, j, iφ]
-        κʲ′ = κ[i, ik′, j′, iφ]
+    𝐹(x, i, n, ik′, ik, m′, m) = begin
+        κʲ = κ[i, ik, m, iφ]
+        κʲ′ = κ[i, ik′, m′, iφ]
         cis((n-1)*2π*(ik-ik′)/N - (κʲ′ + κʲ - k₂)x) / 4 * (
-            im * (c[2i-1, ik′, j′, iφ] + im*c[2i, ik′, j′, iφ])' * (c[2i-1, ik, j, iφ] - im*c[2i, ik, j, iφ]) / (κʲ′ + κʲ - k₂) +
-            (c[2i-1, ik, j, iφ] + im*c[2i, ik, j, iφ]) * cis(2κʲ*x) * ( 
-                (c[2i, ik′, j′, iφ] - im*c[2i-1, ik′, j′, iφ]) / (-κʲ′ + κʲ + k₂) +
-                (c[2i, ik′, j′, iφ] + im*c[2i-1, ik′, j′, iφ]) / ( κʲ′ + κʲ + k₂) * cis(-2κʲ′*x) )' +
-            (c[2i-1, ik′, j′, iφ] - im*c[2i, ik′, j′, iφ])' * (c[2i, ik, j, iφ] + im*c[2i-1, ik, j, iφ]) * cis(2κʲ′*x) / (κʲ′ - κʲ + k₂) )
+            im * (c[2i-1, ik′, m′, iφ] + im*c[2i, ik′, m′, iφ])' * (c[2i-1, ik, m, iφ] - im*c[2i, ik, m, iφ]) / (κʲ′ + κʲ - k₂) +
+            (c[2i-1, ik, m, iφ] + im*c[2i, ik, m, iφ]) * cis(2κʲ*x) * ( 
+                (c[2i, ik′, m′, iφ] - im*c[2i-1, ik′, m′, iφ]) / (-κʲ′ + κʲ + k₂) +
+                (c[2i, ik′, m′, iφ] + im*c[2i-1, ik′, m′, iφ]) / ( κʲ′ + κʲ + k₂) * cis(-2κʲ′*x) )' +
+            (c[2i-1, ik′, m′, iφ] - im*c[2i, ik′, m′, iφ])' * (c[2i, ik, m, iφ] + im*c[2i-1, ik, m, iφ]) * cis(2κʲ′*x) / (κʲ′ - κʲ + k₂) )
     end
 
     for b in 1:3  # `b` and `b′` run over the 3 subbands
