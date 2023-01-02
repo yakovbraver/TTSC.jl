@@ -6,7 +6,6 @@ using LinearAlgebra: eigen, schur, ⋅, diagm, diagind, eigvals, Diagonal, Hermi
 mutable struct Wanniers
     minlevel::Int # number of the first energy level of ℎ to use for constructing wanniers (this is used in the unperturbed case)
     targetlevels::Vector{Int} # numbers of quasienergy levels to use for constructing wanniers (this is used in the Floquet case)
-    mixsubbands::Bool # whether the two subbands have to be mixed or treated separately (this is used in the unperturbed case)
     n_lo::Vector{Int} # number of levels in the lower subband at each phase; in non-periodic case this depends on the edge state branch position 
     E::Matrix{Float64} # `E[j, i]` = mean energy of `j`th wannier at `i`th phase
     pos::Matrix{Float64} # `pos[j, i]` = position eigenvalue of `j`th wannier at `i`th phase
@@ -14,7 +13,7 @@ mutable struct Wanniers
 end
 
 "Default-construct an empty `Wanniers` object."
-Wanniers() = Wanniers(0, Int[], false, Int[], Float64[;;], Float64[;;], ComplexF64[;;;])
+Wanniers() = Wanniers(0, Int[], Int[], Float64[;;], Float64[;;], ComplexF64[;;;])
 
 """
 A type representing the unperturbed Hamiltonian
@@ -119,7 +118,8 @@ function compute_wanniers!(uh::UnperturbedHamiltonian; targetband::Integer, mixs
         
         if mixsubbands
             d = Array{ComplexF64, 3}(undef, 2N, 2N, length(uh.φₓ))
-            uh.w = Wanniers(minlevel, Int[], mixsubbands, Int[], E, pos, d)
+            n_lo = fill(2N, length(uh.φₓ)) # treat all Wanniers as belonging to the lower subband when plotting (see `make_wannierfunctions`)
+            uh.w = Wanniers(minlevel, Int[], n_lo, E, pos, d)
 
             X = Matrix{ComplexF64}(undef, 2N, 2N) # position operator
             for i in eachindex(uh.φₓ)
@@ -139,7 +139,7 @@ function compute_wanniers!(uh::UnperturbedHamiltonian; targetband::Integer, mixs
             # `d` fill format: `d[1:N, 1:N, i]` = eigenvectors of the lower subband,
             #                  `d[1:N, N+1:2N, i]` = eigenvectors of the higher subband
             d = Array{ComplexF64, 3}(undef, N, 2N, length(uh.φₓ))
-            uh.w = Wanniers(minlevel, Int[], mixsubbands, fill(N, length(uh.φₓ)), E, pos, d)
+            uh.w = Wanniers(minlevel, Int[], fill(N, length(uh.φₓ)), E, pos, d)
 
             X = Matrix{ComplexF64}(undef, N, N) # position operator
             for i in eachindex(uh.φₓ)
@@ -170,7 +170,7 @@ function compute_wanniers!(uh::UnperturbedHamiltonian; targetband::Integer, mixs
         
         if mixsubbands
             d = Array{ComplexF64, 3}(undef, n_w, n_w, length(uh.φₓ))
-            uh.w = Wanniers(minlevel, Int[], mixsubbands, Vector{Int}(undef, length(uh.φₓ)), E, pos, d)
+            uh.w = Wanniers(minlevel, Int[], fill(n_w, length(uh.φₓ)), E, pos, d)
 
             X = Matrix{ComplexF64}(undef, n_w, n_w) # position operator
             for i in eachindex(uh.φₓ)
@@ -187,7 +187,7 @@ function compute_wanniers!(uh::UnperturbedHamiltonian; targetband::Integer, mixs
             # `d` fill format: `d[1:n_lo[i], 1:n_lo[i], i]` = eigenvectors of the lower subband,
             #                  `d[1:n_w-n_lo[i], n_lo[i]+1:n_w, i]` = eigenvectors of the higher subband
             d = Array{ComplexF64, 3}(undef, n_w÷2+1, n_w, length(uh.φₓ))
-            uh.w = Wanniers(minlevel, Int[], mixsubbands, Vector{Int}(undef, length(uh.φₓ)), E, pos, d)
+            uh.w = Wanniers(minlevel, Int[], Vector{Int}(undef, length(uh.φₓ)), E, pos, d)
             
             X = ComplexF64[;;] # position operator
             X_less = zeros(n_w÷2, n_w÷2) # position operator for a subband which does not contain the edge state branch
@@ -248,20 +248,12 @@ function make_wannierfunctions(uh::UnperturbedHamiltonian, x::AbstractVector{<:R
     n_w = size(uh.w.E, 1)
     w = Array{ComplexF64, 3}(undef, length(x), n_w, length(whichphases))
     ψ = make_eigenfunctions(uh, x, whichphases, range(uh.w.minlevel, length=n_w))
-    if uh.w.mixsubbands
-        for (i, iφ) in enumerate(whichphases)
-            for j in 1:n_w
-                w[:, j, i] = sum(uh.w.d[k, j, iφ] * ψ[:, k, i] for k = 1:n_w)
-            end
+    for (i, iφ) in enumerate(whichphases)
+        for j in 1:uh.w.n_lo[i]
+            w[:, j, i] = sum(uh.w.d[k, j, iφ] * ψ[:, k, i] for k = 1:uh.w.n_lo[i])
         end
-    else
-        for (i, iφ) in enumerate(whichphases)
-            for j in 1:uh.w.n_lo[i]
-                w[:, j, i] = sum(uh.w.d[k, j, iφ] * ψ[:, k, i] for k = 1:uh.w.n_lo[i])
-            end
-            for j in uh.w.n_lo[i]+1:n_w
-                w[:, j, i] = sum(uh.w.d[k, j, iφ] * ψ[:, uh.w.n_lo[i]+k, i] for k = 1:n_w-uh.w.n_lo[i])
-            end
+        for j in uh.w.n_lo[i]+1:n_w
+            w[:, j, i] = sum(uh.w.d[k, j, iφ] * ψ[:, uh.w.n_lo[i]+k, i] for k = 1:n_w-uh.w.n_lo[i])
         end
     end
     return ψ, w
@@ -292,22 +284,21 @@ A type representing a tight-binding Hamiltonian 𝐻.
 mutable struct TBHamiltonian
     N::Int
     H::Array{ComplexF64, 3} # Hamiltonian matrix
-    isperiodic::Bool
     φₓ::Vector{Float64}
     E::Matrix{Float64}      # `E[i, j]` = `i`th eigenvalue at `j`th phase, `1 ≤ i ≤ 2N`, `1 ≤ j ≤ length(φₓ)`
     c::Array{ComplexF64, 3} # `c[:, i, j]` = `i`th eigenvector at `j`th phase
     w::Wanniers 
 end
 
-"Construct a `TBHamiltonian` object. `uh` must contain calculated Wanniers."
-function TBHamiltonian(uh::UnperturbedHamiltonian; isperiodic::Bool)
+"Construct a `TBHamiltonian` object. `uh` must contain calculated periodic Wanniers."
+function TBHamiltonian(uh::UnperturbedHamiltonian)
     (;N, φₓ) = uh
     n_φₓ = length(φₓ)
     n_w = size(uh.w.E, 1) # number of Wanniers
     H = Array{ComplexF64, 3}(undef, n_w, n_w, n_φₓ) # TB Hamiltonian matrix
     # The Wannier basis vectors |𝑤ₐ⟩ = ∑ᵢ 𝑑ᵃᵢ |𝜓ᵢ⟩, constructed at the first phase
     w = [sum(uh.w.d[i, a, 1] * uh.c[:, uh.w.minlevel+i-1, 1] for i = 1:n_w) for a in 1:n_w]
-    # Construct the Hamiltonian matrix for the unperturbed Hamiltonian
+    # Matrix for the unperturbed Hamiltonian
     h = diagm(0 => ComplexF64[(2j/N)^2 / 2uh.M + (uh.gₗ + uh.Vₗ)/2 for j = -uh.maxlevel:uh.maxlevel])
     h[diagind(h, -2N)] .= h[diagind(h, 2N)] .= uh.gₗ/4
     # Compute elements of `H` at each phase
@@ -321,7 +312,7 @@ function TBHamiltonian(uh::UnperturbedHamiltonian; isperiodic::Bool)
     end
     E = Matrix{Float64}(undef, n_w, n_φₓ)
     c = Array{ComplexF64, 3}(undef, n_w, n_w, n_φₓ)
-    TBHamiltonian(N, H, isperiodic, φₓ, E, c, Wanniers())
+    TBHamiltonian(N, H, φₓ, E, c, Wanniers())
 end
 
 "Diagonalise the TB Hamiltonian `tbh` at each phase."
@@ -334,37 +325,26 @@ end
 "Calculate Wannier vectors for each of the two subbands for the TB Hamiltonian `tbh`."
 function compute_wanniers!(tbh::TBHamiltonian)
     (;N, φₓ) = tbh
-    # if tbh.isperiodic
-        # `d` fill format: `d[1:N, 1:N, i]` = eigenvectors of the lower subband,
-        #                  `d[1:N, N+1:2N, i]` = eigenvectors of the higher subband
-        d = Array{ComplexF64, 3}(undef, N, 2N, length(φₓ))
-        E = Matrix{Float64}(undef, 2N, length(φₓ))
-        pos = Matrix{Float64}(undef, 2N, length(φₓ))
-        tbh.w = Wanniers(0, Int[], false, Int[], E, pos, d)
+    # `d` fill format: `d[1:N, 1:N, i]` = eigenvectors of the lower subband,
+    #                  `d[1:N, N+1:2N, i]` = eigenvectors of the higher subband
+    d = Array{ComplexF64, 3}(undef, N, 2N, length(φₓ))
+    E = Matrix{Float64}(undef, 2N, length(φₓ))
+    pos = Matrix{Float64}(undef, 2N, length(φₓ))
+    tbh.w = Wanniers(0, Int[], Int[], E, pos, d)
 
-        X = Diagonal([cis(2π/(N*π) * n*π/2) for n in 0:2N-1]) # position operator in coordinate representation
-        for b in 1:2
-            levels = N*(b-1)+1:N*b
-            for iφ in eachindex(φₓ)
-                XE = tbh.c[:, levels, iφ]' * X * tbh.c[:, levels, iφ] # position operator in energy representation
-                _, d[:, levels, iφ], pos_complex = schur(XE)
-                pos_real = @. mod2pi(angle(pos_complex)) / 2π * N*π # shift angle from [-π, π) to [0, 2π)
-                sp = sortperm(pos_real)                        # sort the eigenvalues
-                pos[levels, iφ] = pos_real[sp]
-                @views Base.permutecols!!(d[:, levels, iφ], sp) # sort the eigenvectors in the same way
-                E[levels, iφ] = [abs2.(dˣ) ⋅ tbh.E[levels, iφ] for dˣ in eachcol(d[:, levels, iφ])]
-            end
+    X = Diagonal([cis(2π/(N*π) * n*π/2) for n in 0:2N-1]) # position operator in coordinate representation
+    for b in 1:2
+        levels = N*(b-1)+1:N*b
+        for iφ in eachindex(φₓ)
+            XE = tbh.c[:, levels, iφ]' * X * tbh.c[:, levels, iφ] # position operator in energy representation
+            _, d[:, levels, iφ], pos_complex = schur(XE)
+            pos_real = @. mod2pi(angle(pos_complex)) / 2π * N*π # shift angle from [-π, π) to [0, 2π)
+            sp = sortperm(pos_real)                        # sort the eigenvalues
+            pos[levels, iφ] = pos_real[sp]
+            @views Base.permutecols!!(d[:, levels, iφ], sp) # sort the eigenvectors in the same way
+            E[levels, iφ] = [abs2.(dˣ) ⋅ tbh.E[levels, iφ] for dˣ in eachcol(d[:, levels, iφ])]
         end
-    # else
-    #     for b in 1:2
-    #         X = Diagonal([n*π/2 for n in 0:2N-1]) # position operator in coordinate representation
-    #         for iφ in eachindex(φₓ)
-    #             XE = tbh.c[:, levels, iφ]' * X * tbh.c[:, levels, iφ] # position operator in energy representation
-    #             tbh.w.pos[b, :, iφ], tbh.w.d[:, :, b, iφ] = eigen(Hermitian(XE))
-    #             tbh.w.E[b, :, iφ] = [abs2.(dˣ) ⋅ tbh.E[levels, iφ] for dˣ in eachcol(tbh.w.d[:, :, b, iφ])]
-    #         end
-    #     end
-    # end
+    end
 end
 
 """
@@ -603,7 +583,7 @@ function compute_wanniers!(fh::FloquetHamiltonian; targetlevels::AbstractVector{
     E = Matrix{Float64}(undef, n_w, length(φₓ))
     pos = Matrix{Float64}(undef, n_w, length(φₓ))
     d = Array{ComplexF64, 3}(undef, n_w, n_w, length(φₓ))
-    fh.uh.w = Wanniers(0, targetlevels, false, Int[], E, pos, d)
+    fh.uh.w = Wanniers(0, targetlevels, Int[], E, pos, d)
     X = Matrix{ComplexF64}(undef, n_w, n_w) # position operator
     
     n_levels = size(fh.E, 1)
