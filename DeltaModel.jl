@@ -197,35 +197,35 @@ function compute_wanniers!(uh::UnperturbedHamiltonian, targetband::Integer)
 end
 
 """
-Calculate Wannier vectors for the unperturbed Hamiltonians `h` by mixing the states corresponding to 𝑘 = 0 in each of the 3 subbands of the `targetband`.
-Return `d, pos, E` as contained in `Wanniers` struct, except that these do not contain a separate dimension for the different 𝑘's. 
+Calculate Wannier vectors for the unperturbed Hamiltonian `h` by mixing the three subbands of the `targetband`.
+Return `d, pos, E` as contained in `Wanniers` struct, except that these do not contain a separate dimension for the different subbands. 
 """
 function compute_wanniers(uh::UnperturbedHamiltonian, targetband::Integer)
     (;N, a, c, E, κ) = uh
 
-    X = Matrix{ComplexF64}(undef, 3, 3) # position operator
+    X = zeros(ComplexF64, 3N, 3N) # position operator
     
-    k₂ = 2π/a
+    k₂ = 2π/(N*a)
     iφ = 1
-    ik = 1 # which value of 𝑘 to take in the `c` array; take the first since there is only one
-    𝐹(x, i, j′, j) = begin
+    𝐹(x, i, n, ik′, ik, j′, j) = begin
         κʲ = κ[i, ik, j, iφ]
-        κʲ′ = κ[i, ik, j′, iφ]
-        cis(-(κʲ′ + κʲ - k₂)x) / 4 * (
-            im * (c[2i-1, ik, j′, iφ] + im*c[2i, ik, j′, iφ])' * (c[2i-1, ik, j, iφ] - im*c[2i, ik, j, iφ]) / (κʲ′ + κʲ - k₂) +
+        κʲ′ = κ[i, ik′, j′, iφ]
+        cis((n-1)*2π*(ik-ik′)/N - (κʲ′ + κʲ - k₂)x) / 4 * (
+            im * (c[2i-1, ik′, j′, iφ] + im*c[2i, ik′, j′, iφ])' * (c[2i-1, ik, j, iφ] - im*c[2i, ik, j, iφ]) / (κʲ′ + κʲ - k₂) +
             (c[2i-1, ik, j, iφ] + im*c[2i, ik, j, iφ]) * cis(2κʲ*x) * ( 
-                (c[2i, ik, j′, iφ] - im*c[2i-1, ik, j′, iφ]) / (-κʲ′ + κʲ + k₂) +
-                (c[2i, ik, j′, iφ] + im*c[2i-1, ik, j′, iφ]) / ( κʲ′ + κʲ + k₂) * cis(-2κʲ′*x) )' +
-            (c[2i-1, ik, j′, iφ] - im*c[2i, ik, j′, iφ])' * (c[2i, ik, j, iφ] + im*c[2i-1, ik, j, iφ]) * cis(2κʲ′*x) / (κʲ′ - κʲ + k₂) )
+                (c[2i, ik′, j′, iφ] - im*c[2i-1, ik′, j′, iφ]) / (-κʲ′ + κʲ + k₂) +
+                (c[2i, ik′, j′, iφ] + im*c[2i-1, ik′, j′, iφ]) / ( κʲ′ + κʲ + k₂) * cis(-2κʲ′*x) )' +
+            (c[2i-1, ik′, j′, iφ] - im*c[2i, ik′, j′, iφ])' * (c[2i, ik, j, iφ] + im*c[2i-1, ik, j, iφ]) * cis(2κʲ′*x) / (κʲ′ - κʲ + k₂) )
     end
 
     for b in 1:3  # `b` and `b′` run over the 3 subbands
         m = 3(targetband-1) + b # "global" subband number
         for b′ in 1:3
             m′ = 3(targetband-1) + b′
-            X[b′, b] = 0
-            for i = 1:3
-                X[b′, b] += 𝐹(i*a/3, i, m′, m) - 𝐹((i-1)a/3, i, m′, m)
+            for ik′ in 1:N, ik in 1:N
+                for n = 1:N, i = 1:3
+                    X[N*(b′-1)+ik′, N*(b-1)+ik] += 𝐹((n-1)a + i*a/3, i, n, ik′, ik, m′, m) - 𝐹((n-1)a + (i-1)a/3, i, n, ik′, ik,  m′, m)
+                end
             end
         end
     end
@@ -234,7 +234,7 @@ function compute_wanniers(uh::UnperturbedHamiltonian, targetband::Integer)
     sp = sortperm(pos_real)          # sort the eigenvalues
     pos = pos_real[sp]
     @views Base.permutecols!!(d, sp) # sort the eigenvectors in the same way
-    E = [sum(abs2(dˣ[b]) * uh.E[ik, 3(targetband-1) + b, iφ] for b in 1:3) for dˣ in eachcol(d)]
+    E = [abs2.(dˣ) ⋅ uh.E[range(start=(iφ-1)size(uh.E, 3) + 3(targetband-1)size(uh.E, 1) + 1, length=3N)] for dˣ in eachcol(d)]
     return d, pos, E
 end
 

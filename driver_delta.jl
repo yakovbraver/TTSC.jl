@@ -6,8 +6,8 @@ theme(:dark, size=(800, 500))
 includet("DeltaModel.jl")
 import .DeltaModel
 
-"Produce an animation of potential if `iϕ == nothing`; otherwise, plot the potential at phase number `iϕ`."
-function plot_potential(H; U::Real, U_title::Real=U, lift::Real=0, iϕ::Union{Nothing, <:Real}=nothing)
+"Produce an animation of potential if `iφ == nothing`; otherwise, plot the potential at phase number `iφ`."
+function plot_potential(H; U::Real, U_title::Real=U, lift::Real=0, iφ::Union{Nothing, <:Real}=nothing)
     (;a, φₓ, N) = H
     x = Float64[]
     barriers = Float64[]
@@ -17,7 +17,7 @@ function plot_potential(H; U::Real, U_title::Real=U, lift::Real=0, iϕ::Union{No
     end
     append!(barriers, [3N*a/3 - 0.01, 3N*a/3 + 0.01])
     𝑈 = [x -> U * DeltaModel.𝑔(x; n, a) for n = 0:2]
-    if iϕ === nothing
+    if iφ === nothing
         @gif for φ in φₓ
             V = zeros(length(x))
             for n in 1:3
@@ -28,7 +28,7 @@ function plot_potential(H; U::Real, U_title::Real=U, lift::Real=0, iϕ::Union{No
             vspan!(barriers, c=:grey, label=false)
         end
     else
-        φ = φₓ[iϕ]
+        φ = φₓ[iφ]
         V = zeros(length(x))
         for n in 1:3
             V .+= 𝑈[n].(x) .* cos(φ + 2π*(n-1)/3)
@@ -39,13 +39,13 @@ function plot_potential(H; U::Real, U_title::Real=U, lift::Real=0, iϕ::Union{No
     end
 end
 
-n_cells = 2
-a = 6; λ = 500; U = 3
+n_cells = 3
+a = 4; λ = 10000; U = 1
 φₓ = range(0, 2π, length=61)
 h = DeltaModel.UnperturbedHamiltonian(n_cells; a, λ, U, φₓ)
 
 plot_potential(h; U, lift=0)
-plot_potential(h; U, iϕ=16)
+plot_potential(h; U, iφ=16)
 savefig("potential.pdf")
 
 # dispersion
@@ -67,8 +67,8 @@ import IntervalRootFinding as iroots
 using IntervalArithmetic: (..)
 
 f(E) = DeltaModel.cos_ka(E; φ=0, uh=h)
-bounds = (50, 2000)
-rts = iroots.roots(f, bounds[1]..bounds[2], iroots.Newton)
+bounds = (45, 5100)
+rts = iroots.roots(f, bounds[1]..bounds[2])
 z = [rts[i].interval.lo for i in eachindex(rts)]
 sort!(z)
 scatter!(z, zeros(length(z)))
@@ -89,14 +89,14 @@ savefig("spectrum.pdf")
 
 # eigenfunctions
 
-iϕ = 1
+iφ = 1
 n_x = 50
 whichband = 16
-x, ψ = DeltaModel.make_eigenfunctions(h, n_x, whichband, [iϕ])
+x, ψ = DeltaModel.make_eigenfunctions(h, n_x, whichband, [iφ])
 fig = plot();
 for ik in 1:n_cells
     for b in 1:3
-        plot!(x, abs2.(ψ[:, ik, b, 1]) .+ h.E[ik, 3(whichband-1)+b, iϕ])
+        plot!(x, abs2.(ψ[:, ik, b, 1]) .+ h.E[ik, 3(whichband-1)+b, iφ])
     end
 end
 display(fig)
@@ -110,9 +110,9 @@ targetband = 16
 DeltaModel.compute_wanniers!(h, targetband)
 
 fig = plot();
-for (i, ϕ) in enumerate(φₓ)
+for (i, φ) in enumerate(φₓ)
     for b in 1:3
-        scatter!(h.w.pos[:, b, i], fill(ϕ, size(h.w.pos, 1)); marker_z=h.w.E[:, b, i], c=:coolwarm, label=false, markerstrokewidth=0)
+        scatter!(h.w.pos[:, b, i], fill(φ, size(h.w.pos, 1)); marker_z=h.w.E[:, b, i], c=:coolwarm, label=false, markerstrokewidth=0)
     end
 end
 plot!(minorgrid=true, xlabel=L"x", ylabel=L"\varphi", cbtitle="Energy",
@@ -126,12 +126,12 @@ n_x = 50
 lift = minimum(h.w.E) - 1
 lims = (lift-2, maximum(h.w.E)+2)
 p = Progress(length(φₓ), 1)
-@gif for iϕ in eachindex(φₓ)
-    fig = plot_potential(h; U=0.5, U_title=U, lift, iϕ)
+@gif for iφ in eachindex(φₓ)
+    fig = plot_potential(h; U=0.5, U_title=U, lift, iφ)
     for b in 1:3
-        scatter!(h.w.pos[:, b, iϕ], h.w.E[:, b, iϕ]; label=false, markerstrokewidth=0, ylims=lims, c=1:n_cells, markersize=5)
+        scatter!(h.w.pos[:, b, iφ], h.w.E[:, b, iφ]; label=false, markerstrokewidth=0, ylims=lims, c=1:n_cells, markersize=5)
         for j in 1:n_cells
-            plot!(x, 0.5abs2.(w[:, j, b, iϕ]) .+ h.w.E[j, b, iϕ], label=false, c=j)
+            plot!(x, 0.5abs2.(w[:, j, b, iφ]) .+ h.w.E[j, b, iφ], label=false, c=j)
         end
     end
     next!(p)
@@ -140,16 +140,17 @@ end
 # calculate hopping strength for TB
 
 targetband = 16
+iφ = 1
 d, pos, E = DeltaModel.compute_wanniers(h, targetband)
-ws = Matrix{ComplexF64}(undef, 3n_x+1, 3)
+ws = Matrix{ComplexF64}(undef, length(x), 3n_cells)
 fig = plot();
-for j in 1:3
-    ws[:, j] = sum(d[i, j] * ψ[1:3n_x+1, 1, i, 1] for i = 1:3)
-    plot!(x[1:3n_x+1], abs2.(ws[:, j]) .+ E[j])
+for j in 1:3n_cells
+    ws[:, j] = sum(d[i, j] * ψ[range((iφ-1)size(ψ, 3) + (i-1)length(x) + 1, length=length(x))] for i = 1:3n_cells)
+    plot!(x, abs2.(ws[:, j]) .+ E[j], c=j)
 end
-scatter!(pos, E)
+scatter!(pos, E, c=1:3n_cells)
 
-J = [d[:, i%3+1]' * (d[:, i] .* h.E[1, range(3(targetband-1)+1, length=3), 1]) for i in 1:3]
+J = [d[:, i%3+1]' * (d[:, i] .* h.E[range(start=(iφ-1)size(h.E, 3) + 3(targetband-1)size(h.E, 1) + 1, length=3n_cells)]) for i in 1:3]
 
 ###### TB Hamiltonian
 
@@ -188,9 +189,9 @@ title!("TB: "*L"J=%$(J[1]), U=%$U")
 
 DeltaModel.compute_wanniers!(htb)
 fig2 = plot();
-for (iϕ, ϕ) in enumerate(φₓ)
+for (iφ, φ) in enumerate(φₓ)
     for b in 1:3
-        scatter!((htb.w.pos[:, b, iϕ].+a/6).%(a*n_cells), fill(ϕ, size(htb.w.pos, 1)); marker_z=htb.w.E[:, b, iϕ] .+ shift, c=:coolwarm, label=false, markerstrokewidth=0)
+        scatter!((htb.w.pos[:, b, iφ].+a/6).%(a*n_cells), fill(φ, size(htb.w.pos, 1)); marker_z=htb.w.E[:, b, iφ] .+ shift, c=:coolwarm, label=false, markerstrokewidth=0)
     end
 end
 plot!(minorgrid=true, xlabel=L"x", ylabel=L"\varphi", cbtitle="Energy", title="TB: "*L"J=%$(J[1]), U=%$U")
@@ -207,12 +208,12 @@ lift = minimum(htb.w.E) - 1
 lims = (lift-2, maximum(htb.w.E)+2)
 x = range(start=a/6, step=a/3, length=3n_cells)
 p = Progress(length(φₓ), 1)
-@gif for iϕ in eachindex(φₓ)
-    fig = plot_potential(htb; U=0.5, U_title=U, lift, iϕ)
+@gif for iφ in eachindex(φₓ)
+    fig = plot_potential(htb; U=0.5, U_title=U, lift, iφ)
     for b in 1:3
-        scatter!((htb.w.pos[:, b, iϕ].+a/6).%(a*n_cells), htb.w.E[:, b, iϕ]; label=false, markerstrokewidth=0, ylims=lims, markersize=5, c=1:n_cells)
+        scatter!((htb.w.pos[:, b, iφ].+a/6).%(a*n_cells), htb.w.E[:, b, iφ]; label=false, markerstrokewidth=0, ylims=lims, markersize=5, c=1:n_cells)
         for j in 1:n_cells
-            plot!(x, abs2.(wanniers[:, j, b, iϕ]) .+ htb.w.E[j, b, iϕ], label=false, c=j)
+            plot!(x, abs2.(wanniers[:, j, b, iφ]) .+ htb.w.E[j, b, iφ], label=false, c=j)
         end
     end
     next!(p)
