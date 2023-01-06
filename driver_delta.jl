@@ -34,7 +34,7 @@ function plot_potential(H; U::Real, U_title::Real=U, lift::Real=0, iφ::Union{No
             V .+= 𝑈[n].(x) .* cos(φ + 2π*(n-1)/3)
         end
         plot(x, V.+lift, ylims=(-1.1U, 2U).+lift, lw=2, c=:white, label=false, xlabel=L"x", ylabel="Energy",
-            title=L"a=%$a, U=%$U_title, \lambda=%$(500), \varphi=%$(round(φ, digits=3))", titlepos=:left)
+            title=L"a=%$a, U=%$U_title, \lambda=%$(λ), \varphi=%$(round(φ, digits=3))", titlepos=:left)
         vspan!(barriers, c=:grey, label=false)
     end
 end
@@ -80,12 +80,11 @@ DeltaModel.diagonalise!(h, length(z), bounds)
 fig = plot();
 for m in axes(h.E, 2)
     for ik in axes(h.E, 1)
-        plot!(φₓ, h.E[ik, m, :])
+        plot!(φₓ, h.E[ik, m, :], xlabel=L"\varphi_x")
     end
 end
-title!(L"N=%$n_cells, a=%$a, U=%$U, \lambda=%$(h.λ)")
-ylims!(346.1, 356.2)
-savefig("spectrum.pdf")
+plot!(ylims=(1797, 1799.5), legend=false, title="Full")
+savefig("full-spectrum.pdf")
 
 # eigenfunctions
 
@@ -120,9 +119,9 @@ plot!(minorgrid=true, xlabel=L"x", ylabel=L"\varphi", cbtitle="Energy",
 
 # Wannier functions
 
+n_x = 50
 x, _, w = DeltaModel.make_wannierfunctions(h, n_x, 1:length(φₓ))
 
-n_x = 50
 lift = minimum(h.w.E) - 1
 lims = (lift-2, maximum(h.w.E)+2)
 p = Progress(length(φₓ), 1)
@@ -137,41 +136,51 @@ p = Progress(length(φₓ), 1)
     next!(p)
 end
 
-# calculate hopping strength for TB
+###### TB Hamiltonian with implicit phase
 
+# Construct Wanniers at the first phase
 targetband = 16
-iφ = 1
 d, pos, E = DeltaModel.compute_wanniers(h, targetband)
 ws = Matrix{ComplexF64}(undef, length(x), 3n_cells)
 fig = plot();
 for j in 1:3n_cells
-    ws[:, j] = sum(d[i, j] * ψ[range((iφ-1)size(ψ, 3) + (i-1)length(x) + 1, length=length(x))] for i = 1:3n_cells)
+    ws[:, j] = sum(d[i, j] * ψ[range((i-1)length(x) + 1, length=length(x))] for i = 1:3n_cells)
     plot!(x, abs2.(ws[:, j]) .+ E[j], c=j)
 end
-scatter!(pos, E, c=1:3n_cells)
+scatter!(pos, E, c=1:3n_cells, markerstrokewidth=0, xlabel=L"x", ylabel="Energy", legend=false)
+savefig("tb-wanniers.pdf")
 
-J = [d[:, i%3+1]' * (d[:, i] .* h.E[range(start=(iφ-1)size(h.E, 3) + 3(targetband-1)size(h.E, 1) + 1, length=3n_cells)]) for i in 1:3]
-
-###### TB Hamiltonian
-
-n_cells = 3
-a = 2; U = 3; 
-φₓ = range(0, 2π, length=61)
-φₓ = [range(0, pi/3-0.1, length=10); range(pi/3-0.05, pi/3+0.05, length=11);
-      range(pi/3+0.1, 4pi/3-0.1, length=25); range(4pi/3-0.05, 4pi/3+0.05, length=11);
-      range(4pi/3+0.1, 2pi, length=20)]
-htb = DeltaModel.TBHamiltonian(n_cells; a, U, J, isperiodic=true, φₓ)
+# Construct and diagonalise the TB Hamiltonian
+targetband = 16
+d, pos, E = DeltaModel.compute_wanniers(h, targetband)
+htb = DeltaModel.TBHamiltonian(h; d, isperiodic=true, targetband)
 DeltaModel.diagonalise!(htb)
 
 # Energy spectrum
 
+fig = plot();
+for r in eachrow(htb.E)
+    plot!(φₓ, r, xlabel=L"\varphi_x", ylabel="Energy", legend=false)
+end
+plot!(ylims=(1797, 1799.5), title="TB")
+savefig("tb-spectrum.pdf")
+
+###### TB Hamiltonian with explicit phase
+
+# calculate hopping strengths between sites 1-2, 2-3, 3-4
+J = [d[:, i+1]' * (d[:, i] .* h.E[range((iφ-1)size(h.E, 2)size(h.E, 1) + 3(targetband-1)size(h.E, 1) + 1, length=3n_cells)]) for i in 1:3]
+# construct TB Hamiltonian using only the modulus of 𝐽₁₂
+htb = DeltaModel.SimpleTBHamiltonian(n_cells; a, U, J=fill(abs(J[1]), 3), isperiodic=true, φₓ)
+DeltaModel.diagonalise!(htb)
+
+# Energy spectrum
 shift = h.E[1, 3targetband, 1] - htb.E[end, 1]
 fig2 = plot();
 for r in eachrow(htb.E)
     plot!(φₓ, r .+ shift, xlabel=L"\varphi_x", ylabel="Energy", legend=false)
 end
-title!("non-periodic TB: "*L"J=%$(J[1]), U=%$U")
-savefig("non-periodic.pdf")
+plot!(title="Explicit TB", ylims=(1797.0, 1799.5))
+savefig("explicit-tb-spectrum.pdf")
 
 # Energy spectrum calculated using k-space representation
 
@@ -195,9 +204,6 @@ for (iφ, φ) in enumerate(φₓ)
     end
 end
 plot!(minorgrid=true, xlabel=L"x", ylabel=L"\varphi", cbtitle="Energy", title="TB: "*L"J=%$(J[1]), U=%$U")
-
-plot(fig, fig2, layout=(2,1))
-savefig(fig2, "centres-tb-nonperiodic-8.pdf")
 
 # Wannier functions
 

@@ -3,7 +3,7 @@ module DeltaModel
 using ProgressMeter: @showprogress
 import IntervalRootFinding as iroots
 using IntervalArithmetic: (..)
-using LinearAlgebra: eigvals, eigen, schur, ⋅, svd, diagm, diagind, Diagonal, Hermitian
+using LinearAlgebra: eigvals, eigen, schur, ⋅, dot, svd, diagm, diagind, Diagonal, Hermitian
 
 "A type for storing the Wannier functions."
 mutable struct Wanniers
@@ -155,25 +155,35 @@ function make_eigenfunctions(uh::UnperturbedHamiltonian, n_x::Integer, whichband
     return x, ψ
 end
 
+function 𝐹(uh, x, i, n, ik′, ik, m′, m, iφ, k₂)
+    (;κ, c, N) = uh
+    κʲ = κ[i, ik, m, iφ]
+    κʲ′ = κ[i, ik′, m′, iφ]
+    return cis((n-1)*2π*(ik-ik′)/N - (κʲ′ + κʲ - k₂)x) / 4 * (
+        im * (c[2i-1, ik′, m′, iφ] + im*c[2i, ik′, m′, iφ])' * (c[2i-1, ik, m, iφ] - im*c[2i, ik, m, iφ]) / (κʲ′ + κʲ - k₂) +
+        (c[2i-1, ik, m, iφ] + im*c[2i, ik, m, iφ]) * cis(2κʲ*x) * ( 
+            (c[2i, ik′, m′, iφ] - im*c[2i-1, ik′, m′, iφ]) / (-κʲ′ + κʲ + k₂) +
+            (c[2i, ik′, m′, iφ] + im*c[2i-1, ik′, m′, iφ]) / ( κʲ′ + κʲ + k₂) * cis(-2κʲ′*x) )' +
+        (c[2i-1, ik′, m′, iφ] - im*c[2i, ik′, m′, iφ])' * (c[2i, ik, m, iφ] + im*c[2i-1, ik, m, iφ]) * cis(2κʲ′*x) / (κʲ′ - κʲ + k₂) )
+end
+
+function 𝐺(uh, i, n, ik′, ik, m, iφ)
+    (;a, κ, c) = uh
+    κʲ = κ[i, ik, m, iφ]
+    return 1/2κʲ * sin(a*κʲ/3) * ((c[2i, ik′, m, iφ]' * c[2i, ik, m, iφ] - c[2i-1, ik′, m, iφ]' * c[2i-1, ik, m, iφ]) * cos(a*(6(n-1)+2(i-1)+1)*κʲ/3) +
+                                  (c[2i-1, ik′, m, iφ]' * c[2i, ik, m, iφ] + c[2i, ik′, m, iφ]' * c[2i-1, ik, m, iφ]) * sin(a*(6(n-1)+2(i-1)+1)*κʲ/3) ) +
+           a/6 * (c[2i-1, ik′, m, iφ]' * c[2i-1, ik, m, iφ] + c[2i, ik′, m, iφ]' * c[2i, ik, m, iφ])
+end
+
 "Calculate Wannier vectors for the unperturbed Hamiltonian `uh`."
 function compute_wanniers!(uh::UnperturbedHamiltonian, targetband::Integer)
-    (;N, a, φₓ, c, E, κ) = uh
+    (;N, a, φₓ, E) = uh
     uh.w.targetband = targetband
 
     X = Matrix{ComplexF64}(undef, N, N) # position operator
     
     k₂ = 2π/(N*a)
-    𝐹(x, i, n, ik′, ik, m, iφ) = begin
-        κʲ = κ[i, ik, m, iφ]
-        κʲ′ = κ[i, ik′, m, iφ]
-        cis((n-1)*2π*(ik-ik′)/N - (κʲ′ + κʲ - k₂)x) / 4 * (
-            im * (c[2i-1, ik′, m, iφ] + im*c[2i, ik′, m, iφ])' * (c[2i-1, ik, m, iφ] - im*c[2i, ik, m, iφ]) / (κʲ′ + κʲ - k₂) +
-            (c[2i-1, ik, m, iφ] + im*c[2i, ik, m, iφ]) * cis(2κʲ*x) * ( 
-                (c[2i, ik′, m, iφ] - im*c[2i-1, ik′, m, iφ]) / (-κʲ′ + κʲ + k₂) +
-                (c[2i, ik′, m, iφ] + im*c[2i-1, ik′, m, iφ]) / ( κʲ′ + κʲ + k₂) * cis(-2κʲ′*x) )' +
-            (c[2i-1, ik′, m, iφ] - im*c[2i, ik′, m, iφ])' * (c[2i, ik, m, iφ] + im*c[2i-1, ik, m, iφ]) * cis(2κʲ′*x) / (κʲ′ - κʲ + k₂) )
-    end
-    
+   
     for iφ in eachindex(φₓ)
         for b in 1:3 # for each of the 3 subbands in the target band
             m = 3(targetband-1) + b # "global" subband number
@@ -181,7 +191,7 @@ function compute_wanniers!(uh::UnperturbedHamiltonian, targetband::Integer)
                 for ik′ in 1:N
                     X[ik′, ik] = 0
                     for n = 1:N, i = 1:3
-                        X[ik′, ik] += 𝐹((n-1)a + i*a/3, i, n, ik′, ik, m, iφ) - 𝐹((n-1)a + (i-1)a/3, i, n, ik′, ik, m, iφ)
+                        X[ik′, ik] += 𝐹(uh, (n-1)a + i*a/3, i, n, ik′, ik, m, m, iφ, k₂) - 𝐹(uh, (n-1)a + (i-1)a/3, i, n, ik′, ik, m, m, iφ, k₂)
                     end
                 end
             end
@@ -202,30 +212,20 @@ Calculate Wannier vectors for the unperturbed Hamiltonian `h` by mixing the thre
 Return `d, pos, E` as contained in `Wanniers` struct, except that these do not contain a separate dimension for the different subbands. 
 """
 function compute_wanniers(uh::UnperturbedHamiltonian, targetband::Integer)
-    (;N, a, c, E, κ) = uh
+    (;N, a, E) = uh
 
     X = zeros(ComplexF64, 3N, 3N) # position operator
     
     k₂ = 2π/(N*a)
     iφ = 1
-    𝐹(x, i, n, ik′, ik, m′, m) = begin
-        κʲ = κ[i, ik, m, iφ]
-        κʲ′ = κ[i, ik′, m′, iφ]
-        cis((n-1)*2π*(ik-ik′)/N - (κʲ′ + κʲ - k₂)x) / 4 * (
-            im * (c[2i-1, ik′, m′, iφ] + im*c[2i, ik′, m′, iφ])' * (c[2i-1, ik, m, iφ] - im*c[2i, ik, m, iφ]) / (κʲ′ + κʲ - k₂) +
-            (c[2i-1, ik, m, iφ] + im*c[2i, ik, m, iφ]) * cis(2κʲ*x) * ( 
-                (c[2i, ik′, m′, iφ] - im*c[2i-1, ik′, m′, iφ]) / (-κʲ′ + κʲ + k₂) +
-                (c[2i, ik′, m′, iφ] + im*c[2i-1, ik′, m′, iφ]) / ( κʲ′ + κʲ + k₂) * cis(-2κʲ′*x) )' +
-            (c[2i-1, ik′, m′, iφ] - im*c[2i, ik′, m′, iφ])' * (c[2i, ik, m, iφ] + im*c[2i-1, ik, m, iφ]) * cis(2κʲ′*x) / (κʲ′ - κʲ + k₂) )
-    end
 
     for b in 1:3  # `b` and `b′` run over the 3 subbands
         m = 3(targetband-1) + b # "global" subband number
         for b′ in 1:3
             m′ = 3(targetband-1) + b′
-            for ik′ in 1:N, ik in 1:N
-                for n = 1:N, i = 1:3
-                    X[N*(b′-1)+ik′, N*(b-1)+ik] += 𝐹((n-1)a + i*a/3, i, n, ik′, ik, m′, m) - 𝐹((n-1)a + (i-1)a/3, i, n, ik′, ik,  m′, m)
+            for ik in 1:N, ik′ in 1:N
+                for n in 1:N, i in 1:3
+                    X[N*(b′-1)+ik′, N*(b-1)+ik] += 𝐹(uh, (n-1)a + i*a/3, i, n, ik′, ik, m′, m, iφ, k₂) - 𝐹(uh, (n-1)a + (i-1)a/3, i, n, ik′, ik,  m′, m, iφ, k₂)
                 end
             end
         end
@@ -235,7 +235,7 @@ function compute_wanniers(uh::UnperturbedHamiltonian, targetband::Integer)
     sp = sortperm(pos_real)          # sort the eigenvalues
     pos = pos_real[sp]
     @views Base.permutecols!!(d, sp) # sort the eigenvectors in the same way
-    E = [abs2.(dˣ) ⋅ uh.E[range(start=(iφ-1)size(uh.E, 3) + 3(targetband-1)size(uh.E, 1) + 1, length=3N)] for dˣ in eachcol(d)]
+    E = [abs2.(dˣ) ⋅ uh.E[range((iφ-1)size(uh.E, 2)size(uh.E, 1) + 3(targetband-1)size(uh.E, 1) + 1, length=3N)] for dˣ in eachcol(d)]
     return d, pos, E
 end
 
@@ -258,12 +258,14 @@ function make_wannierfunctions(uh::UnperturbedHamiltonian, n_x::Integer, whichph
     return x, ψ, w
 end
 
+abstract type AbstractTBHamiltonian end
+
 """
 A type representing the tight-binding Hamiltonian
     hₜ = ∑ⱼ 𝐽₁𝑏⁺ⱼ𝑎ⱼ + 𝐽₂𝑐⁺ⱼ𝑏ⱼ + 𝐽₃𝑎⁺ⱼ₊₁𝑐ⱼ + h.c.
          + 𝑈 ∑ⱼ 𝑎⁺ⱼ𝑎ⱼcos(𝜑ₓ) + 𝑏⁺ⱼ𝑏ⱼcos(𝜑ₓ + 2π/3) + 𝑐⁺ⱼ𝑐ⱼcos(𝜑ₓ + 4π/3)
 """
-mutable struct TBHamiltonian
+mutable struct SimpleTBHamiltonian <: AbstractTBHamiltonian
     N::Int # number of lattice cells
     a::Float64
     U::Float64
@@ -275,17 +277,17 @@ mutable struct TBHamiltonian
     w::Wanniers 
 end
 
-"Construct a `TBHamiltonian` object."
-function TBHamiltonian(n_cells::Integer; a::Real, U::Real, J::Vector{<:Number}, isperiodic::Bool, φₓ::AbstractVector{<:Real})
+"Construct a `SimpleTBHamiltonian` object."
+function SimpleTBHamiltonian(n_cells::Integer; a::Real, U::Real, J::Vector{<:Number}, isperiodic::Bool, φₓ::AbstractVector{<:Real})
     E = Matrix{Float64}(undef, 3n_cells, length(φₓ))
     c = Array{ComplexF64, 3}(undef, 3n_cells, 3n_cells, length(φₓ))
     w = Wanniers(0, Array{Float64,3}(undef, n_cells, 3, length(φₓ)), Array{Float64,3}(undef, n_cells, 3, length(φₓ)),
                  Array{ComplexF64,4}(undef, n_cells, n_cells, 3, length(φₓ)))
-    TBHamiltonian(Int(n_cells), Float64(a), Float64(U), ComplexF64.(J), isperiodic, collect(Float64, φₓ), E, c, w)
+    SimpleTBHamiltonian(Int(n_cells), Float64(a), Float64(U), ComplexF64.(J), isperiodic, collect(Float64, φₓ), E, c, w)
 end
 
 "Diagonalise the TB Hamiltonian `h` at each phase."
-function diagonalise!(h::TBHamiltonian)
+function diagonalise!(h::SimpleTBHamiltonian)
     (;N, U, J, isperiodic, φₓ) = h
     for (i, φ) in enumerate(φₓ)
         diag = repeat([U*cos(φ), U*cos(φ+2π/3), U*cos(φ+4π/3)], N)
@@ -299,53 +301,9 @@ function diagonalise!(h::TBHamiltonian)
     end
 end
 
-"Calculate Wannier vectors for each of the three subbands for the TB Hamiltonian `h`."
-function compute_wanniers!(h::TBHamiltonian)
-    (;N, a, φₓ) = h
-    for b in 1:3
-        levels = N*(b-1)+1:N*b
-        if h.isperiodic
-            X = Diagonal([cis(2π/(N*a) * n*a/3) for n in 0:3N-1]) # position operator in coordinate representation
-            for iφ in eachindex(φₓ)
-                XE = h.c[:, levels, iφ]' * X * h.c[:, levels, iφ] # position operator in energy representation
-                _, h.w.d[:, :, b, iφ], pos_complex = schur(XE)
-                pos_real = @. mod2pi(angle(pos_complex)) / 2π * N*a # shift angle from [-π, π) to [0, 2π)
-                sp = sortperm(pos_real)                        # sort the eigenvalues
-                h.w.pos[:, b, iφ] = pos_real[sp]
-                @views Base.permutecols!!(h.w.d[:, :, b, iφ], sp) # sort the eigenvectors in the same way
-                h.w.E[:, b, iφ] = [abs2.(dˣ) ⋅ h.E[levels, iφ] for dˣ in eachcol(h.w.d[:, :, b, iφ])]
-            end
-        else
-            X = Diagonal([n*a/3 for n in 0:3N-1]) # position operator in coordinate representation
-            for iφ in eachindex(φₓ)
-                XE = h.c[:, levels, iφ]' * X * h.c[:, levels, iφ] # position operator in energy representation
-                h.w.pos[b, :, iφ], h.w.d[:, :, b, iφ] = eigen(Hermitian(XE))
-                h.w.E[b, :, iφ] = [abs2.(dˣ) ⋅ h.E[levels, iφ] for dˣ in eachcol(h.w.d[:, :, b, iφ])]
-            end
-        end
-    end
-end
-
-"""
-Construct Wannier functions at each phase number in `whichphases`. All Wannier functions contained in `h` are constructed.
-Return `w`, where `w[:, j, b i]` = `j`th Wannier function of `b`th subband at `i`th phase.
-"""
-function make_wannierfunctions(h::TBHamiltonian, whichphases::AbstractVector{<:Integer})
-    (;N) = h
-    w = Array{ComplexF64, 4}(undef, size(h.c, 1), N, 3, length(whichphases))
-    for (i, iφ) in enumerate(whichphases)
-        for b in 1:3
-            for j in 1:N
-                w[:, j, b, i] = sum(h.w.d[k, j, b, iφ] * h.c[:, N*(b-1)+k, iφ] for k = 1:N)
-            end
-        end
-    end
-    return w
-end
-
-"Return the 𝑘-space Hamiltonian matrix for `h` at the given phase `φ` and at 𝑘𝑎 = `ka`."
-function kspace_hamiltonian(h::TBHamiltonian, φ::Real, ka::Real)
-    (;U, J) = h
+"Return the 𝑘-space Hamiltonian matrix for `tbh` at the given phase `φ` and at 𝑘𝑎 = `ka`."
+function kspace_hamiltonian(tbh::SimpleTBHamiltonian, φ::Real, ka::Real)
+    (;U, J) = tbh
     [U*cos(φ)        J[1]'         J[3]cis(-ka)
      J[1]            U*cos(φ+2π/3) J[2]'
      (J[3]cis(-ka))' J[2]          U*cos(φ+4π/3)]
@@ -356,14 +314,119 @@ Diagonalise the TB Hamiltonian `h` in 𝑘-space at each phase for the values of
 Return the matrix of eigenenergies `E`, where `E[:, i]` is the energy at `i`th phase.
 In `E`, rows 1:3 corresopnd to `ka[1]`, rows 4:6 correspond to `ka[2]`, and so on.
 """
-function diagonalise_kspace(h::TBHamiltonian, ka::AbstractVector{<:Real})
-    E = Matrix{Float64}(undef, 3length(ka), length(h.φₓ))
-    for (iφ, φ) in enumerate(h.φₓ)
+function diagonalise_kspace(tbh::SimpleTBHamiltonian, ka::AbstractVector{<:Real})
+    E = Matrix{Float64}(undef, 3length(ka), length(tbh.φₓ))
+    for (iφ, φ) in enumerate(tbh.φₓ)
         for ik in eachindex(ka)
-            E[3(ik-1)+1:3ik, iφ] .= eigvals(kspace_hamiltonian(h, φ, ka[ik]))
+            E[3(ik-1)+1:3ik, iφ] .= eigvals(kspace_hamiltonian(tbh, φ, ka[ik]))
         end
     end
     return E
+end
+
+mutable struct TBHamiltonian <: AbstractTBHamiltonian
+    N::Int # number of lattice cells
+    a::Float64
+    H::Array{ComplexF64, 3} # Hamiltonian matrix
+    isperiodic::Bool
+    φₓ::Vector{Float64}
+    E::Matrix{Float64}      # `E[i, j]` = `i`th eigenvalue at `j`th phase, `i` ∈ [1, `3N`], `j` ∈ [1, `length(φₓ)`]
+    c::Array{ComplexF64, 3} # `c[:, i, j]` = `i`th eigenvector at `j`th phase
+    w::Wanniers 
+end
+
+"Construct a `TBHamiltonian` object. `uh` must contain calculated periodic Wanniers."
+function TBHamiltonian(uh::UnperturbedHamiltonian; d::Matrix{ComplexF64}, isperiodic::Bool, targetband::Integer)
+    (;a, N, U, φₓ) = uh
+    n_φₓ = length(φₓ)
+    n_w = size(d, 1) # number of Wanniers
+    H = Array{ComplexF64, 3}(undef, n_w, n_w, n_φₓ) # TB Hamiltonian matrix
+
+    iφ₀ = 1
+
+    H₀ = d' * (d .* uh.E[range((iφ₀-1)size(uh.E, 2)size(uh.E, 1) + N*3(targetband-1) + 1, length=n_w)]) # in brackets, element-wise multiply each column of `d` by a range from `uh.E`
+
+    ψ∑ψ = Matrix{ComplexF64}(undef, n_w, n_w)
+
+    for (iφ, φ) in enumerate(φₓ)
+        ψ∑ψ .= 0
+        for b in 1:3  # `b` and `b′` run over the 3 subbands
+            m = 3(targetband-1) + b # "global" subband number
+            for b′ in 1:3
+                m′ = 3(targetband-1) + b′
+                for ik in 1:N, ik′ in 1:N
+                    if m′ == m && (ik′ == ik || ik′ + ik == N + 2) # if true, then uh.E[ik′, m′, iφ] == uh.E[ik, m, iφ]
+                        for n in 1:N
+                            ψ∑ψ[N*(b′-1)+ik′, N*(b-1)+ik] += sum(𝐺(uh, r, n, ik′, ik, m, iφ₀) * (cos(φ + 2π*(r-1)/3) - cos(φₓ[iφ₀] + 2π*(r-1)/3)) for r in 1:3) * cis((n-1)*2π*(ik-ik′)/N)
+                        end
+                    else
+                        for n in 1:N, r in 1:3
+                            ψ∑ψ[N*(b′-1)+ik′, N*(b-1)+ik] += (𝐹(uh, (n-1)a + r*a/3, r, n, ik′, ik, m′, m, iφ₀, 0) - 𝐹(uh, (n-1)a + (r-1)a/3, r, n, ik′, ik, m′, m, iφ₀, 0)) *
+                                                             (cos(φ + 2π*(r-1)/3) - cos(φₓ[iφ₀] + 2π*(r-1)/3))
+                        end
+                    end
+                end
+            end
+        end
+        H[:, :, iφ] = H₀ + U * d' * ψ∑ψ * d
+    end
+
+    E = Matrix{Float64}(undef, n_w, n_φₓ)
+    c = Array{ComplexF64, 3}(undef, n_w, n_w, n_φₓ)
+    w = Wanniers(0, Array{Float64,3}(undef, N, 3, length(φₓ)), Array{Float64,3}(undef, N, 3, length(φₓ)),
+                 Array{ComplexF64,4}(undef, N, N, 3, length(φₓ)))
+    TBHamiltonian(N, a, H, isperiodic, φₓ, E, c, w)
+end
+
+"Diagonalise the TB Hamiltonian `tbh` at each phase."
+function diagonalise!(tbh::TBHamiltonian)
+    for iφ in eachindex(tbh.φₓ)
+        tbh.E[:, iφ], tbh.c[:, :, iφ] = eigen(Hermitian(tbh.H[:, :, iφ]))
+    end
+end
+
+"Calculate Wannier vectors for each of the three subbands for the TB Hamiltonian `h`."
+function compute_wanniers!(tbh::AbstractTBHamiltonian)
+    (;N, a, φₓ) = tbh
+    for b in 1:3
+        levels = N*(b-1)+1:N*b
+        if tbh.isperiodic
+            X = Diagonal([cis(2π/(N*a) * n*a/3) for n in 0:3N-1]) # position operator in coordinate representation
+            for iφ in eachindex(φₓ)
+                XE = tbh.c[:, levels, iφ]' * X * tbh.c[:, levels, iφ] # position operator in energy representation
+                _, tbh.w.d[:, :, b, iφ], pos_complex = schur(XE)
+                pos_real = @. mod2pi(angle(pos_complex)) / 2π * N*a # shift angle from [-π, π) to [0, 2π)
+                sp = sortperm(pos_real)                        # sort the eigenvalues
+                tbh.w.pos[:, b, iφ] = pos_real[sp]
+                @views Base.permutecols!!(tbh.w.d[:, :, b, iφ], sp) # sort the eigenvectors in the same way
+                tbh.w.E[:, b, iφ] = [abs2.(dˣ) ⋅ tbh.E[levels, iφ] for dˣ in eachcol(tbh.w.d[:, :, b, iφ])]
+            end
+        else
+            X = Diagonal([n*a/3 for n in 0:3N-1]) # position operator in coordinate representation
+            for iφ in eachindex(φₓ)
+                XE = tbh.c[:, levels, iφ]' * X * tbh.c[:, levels, iφ] # position operator in energy representation
+                tbh.w.pos[b, :, iφ], tbh.w.d[:, :, b, iφ] = eigen(Hermitian(XE))
+                tbh.w.E[b, :, iφ] = [abs2.(dˣ) ⋅ tbh.E[levels, iφ] for dˣ in eachcol(tbh.w.d[:, :, b, iφ])]
+            end
+        end
+    end
+end
+
+"""
+Construct Wannier functions at each phase number in `whichphases`. All Wannier functions contained in `h` are constructed.
+Return `w`, where `w[:, j, b i]` = `j`th Wannier function of `b`th subband at `i`th phase.
+"""
+function make_wannierfunctions(tbh::AbstractTBHamiltonian, whichphases::AbstractVector{<:Integer})
+    (;N) = tbh
+    w = Array{ComplexF64, 4}(undef, size(tbh.c, 1), N, 3, length(whichphases))
+    for (i, iφ) in enumerate(whichphases)
+        for b in 1:3
+            for j in 1:N
+                w[:, j, b, i] = sum(tbh.w.d[k, j, b, iφ] * tbh.c[:, N*(b-1)+k, iφ] for k in 1:N)
+            end
+        end
+    end
+    return w
 end
 
 "A type for storing the Wannier functions."
@@ -429,23 +492,13 @@ end
 
 "Diagonalise the Floquet Hamiltonian `fh` at each phase."
 function diagonalise!(fh::FloquetHamiltonian)
-    (;N, a, φₓ, E, c, κ) = fh.uh
+    (;N, a, φₓ, E) = fh.uh
     (;s, ω, λₛ, λₗ, pumptype, ν) = fh
 
     n_levels = size(fh.E, 1)
+    n = 1 # cell number passed to `𝐹` -- any number is OK since `ik′ == ik` here
 
     H = zeros(ComplexF64, n_levels, n_levels) # ℋ matrix
-
-    𝐹(x, i, ik, j′, j, iφ, k₂) = begin
-        κʲ = κ[i, ik, j, iφ]
-        κʲ′ = κ[i, ik, j′, iφ]
-        cis(-(κʲ′ + κʲ - k₂)x) / 4 * (
-            im * (c[2i-1, ik, j′, iφ] + im*c[2i, ik, j′, iφ])' * (c[2i-1, ik, j, iφ] - im*c[2i, ik, j, iφ]) / (κʲ′ + κʲ - k₂) +
-            (c[2i-1, ik, j, iφ] + im*c[2i, ik, j, iφ]) * cis(2κʲ*x) * ( 
-                (c[2i, ik, j′, iφ] - im*c[2i-1, ik, j′, iφ]) / (-κʲ′ + κʲ + k₂) +
-                (c[2i, ik, j′, iφ] + im*c[2i-1, ik, j′, iφ]) / ( κʲ′ + κʲ + k₂) * cis(-2κʲ′*x) )' +
-            (c[2i-1, ik, j′, iφ] - im*c[2i, ik, j′, iφ])' * (c[2i, ik, j, iφ] + im*c[2i-1, ik, j, iφ]) * cis(2κʲ′*x) / (κʲ′ - κʲ + k₂) )
-    end
 
     for ik in 1:N
         for (iφ, φ) in enumerate(φₓ)
@@ -461,7 +514,7 @@ function diagonalise!(fh::FloquetHamiltonian)
                     if pumptype != :time || iφ == 1 # if pumping is time-only, this must be calculated only once, at `iφ` = 1
                         ∫cos = ComplexF64(0)
                         for i = 1:3, k₂ in (-6π/a, 6π/a)
-                            ∫cos += 𝐹(i*a/3, i, ik, m′, m, iφ, k₂) - 𝐹((i-1)a/3, i, ik, m′, m, iφ, k₂)
+                            ∫cos += 𝐹(fh.uh, i*a/3, i, n, ik, ik, m′, m, iφ, k₂) - 𝐹(fh.uh, (i-1)a/3, i, n, ik, ik, m′, m, iφ, k₂)
                         end
                         # if pumping is space-time, then also multiply by cis(-𝜑ₜ). `φ` runs over 𝜑ₓ, and we assume the pumping protocol 𝜑ₜ = 𝜑ₓ
                         H[m′, m] = (pumptype == :space ? λₗ/4 * ∫cos : λₗ/4 * ∫cos * cis(-φ))
@@ -478,7 +531,7 @@ function diagonalise!(fh::FloquetHamiltonian)
                     if pumptype != :time || iφ == 1 # if pumping is time-only, this must be calculated only once, at `iφ` = 1
                         ∫cos = ComplexF64(0)
                         for i = 1:3, k₂ in (-12π/a, 12π/a)
-                            ∫cos += 𝐹(i*a/3, i, ik, m′, m, iφ, k₂) - 𝐹((i-1)a/3, i, ik, m′, m, iφ, k₂)
+                            ∫cos += 𝐹(fh.uh, i*a/3, i, n, ik, ik, m′, m, iφ, k₂) - 𝐹(fh.uh, (i-1)a/3, i, n, ik, ik, m′, m, iφ, k₂)
                         end
                         H[m′, m] = λₛ/4 * ∫cos
                     end
@@ -545,7 +598,7 @@ end
 Calculate Wannier vectors for the Floquet Hamiltonian `fh` using the quasienergy levels `targetsubbands`.
 """
 function compute_wanniers!(fh::FloquetHamiltonian; targetsubbands::AbstractVector{<:Integer})
-    (;N, a, φₓ, c, κ) = fh.uh
+    (;N, a, φₓ) = fh.uh
 
     fh.w.targetsubbands = targetsubbands # save this because it's needed in `make_wannierfunctions`
 
@@ -563,16 +616,6 @@ function compute_wanniers!(fh::FloquetHamiltonian; targetsubbands::AbstractVecto
     expik = Array{ComplexF64, 4}(undef, n_levels, n_levels, N, N)
 
     k₂ = 2π/(N*a)
-    𝐹(x, i, n, j′, j, m′, m, iφ) = begin
-        κʲ = κ[i, j, m, iφ]
-        κʲ′ = κ[i, j′, m′, iφ]
-        cis((n-1)*2π*(j-j′)/N - (κʲ′ + κʲ - k₂)x) / 4 * (
-            im * (c[2i-1, j′, m′, iφ] + im*c[2i, j′, m′, iφ])' * (c[2i-1, j, m, iφ] - im*c[2i, j, m, iφ]) / (κʲ′ + κʲ - k₂) +
-            (c[2i-1, j, m, iφ] + im*c[2i, j, m, iφ]) * cis(2κʲ*x) * ( 
-                (c[2i, j′, m′, iφ] - im*c[2i-1, j′, m′, iφ]) / (-κʲ′ + κʲ + k₂) +
-                (c[2i, j′, m′, iφ] + im*c[2i-1, j′, m′, iφ]) / ( κʲ′ + κʲ + k₂) * cis(-2κʲ′*x) )' +
-            (c[2i-1, j′, m′, iφ] - im*c[2i, j′, m′, iφ])' * (c[2i, j, m, iφ] + im*c[2i-1, j, m, iφ]) * cis(2κʲ′*x) / (κʲ′ - κʲ + k₂) )
-    end
 
     for iφ in eachindex(φₓ)
         # if pumping is time-only, then `expik` must be calculated only at the first iteration, thereby using `c`'s at 𝜑ₓ = 0
@@ -580,7 +623,7 @@ function compute_wanniers!(fh::FloquetHamiltonian; targetsubbands::AbstractVecto
             for ik in 1:N,  ik′ in 1:N,  m in 1:n_levels,  m′ in 1:n_levels
                 expik[m′, m, ik′, ik] = 0
                 for n = 1:N, i = 1:3
-                    expik[m′, m, ik′, ik] += 𝐹((n-1)a + i*a/3, i, n, ik′, ik, m′, m, iφ) - 𝐹((n-1)a + (i-1)a/3, i, n, ik′, ik, m′, m, iφ)
+                    expik[m′, m, ik′, ik] += 𝐹(fh.uh, (n-1)a + i*a/3, i, n, ik′, ik, m′, m, iφ, k₂) - 𝐹(fh.uh, (n-1)a + (i-1)a/3, i, n, ik′, ik, m′, m, iφ, k₂)
                 end
             end
         end
@@ -727,11 +770,8 @@ function order_wannierfunctions!(w::Array{Float64, 4}, whichphases::AbstractVect
     n = size(w, 2) # total number of spatial sites
     n_w = size(w, 3)
     for i in 2:length(whichphases)
-        println("\nphase = $i")
         for j in 1:n_w
-            println("j = $j")
             prev_maxsite = argmax(w[:, :, j, i-1]) # find which site of the `j`th state contained the maximum at the previous phase
-            println("prev_maxsite = $prev_maxsite")
             for k in j+1:n_w
                 maxsite = argmax(w[:, :, k, i]) # find which site of the `k`th state contains the maximum at the current phase
                 # swap wanniers if we find a state with the same maximum position, or a state whose maximum is shifted according to the pumping protocol
@@ -741,7 +781,6 @@ function order_wannierfunctions!(w::Array{Float64, 4}, whichphases::AbstractVect
                     temp = w[:, :, j, i]
                     w[:, :, j, i] = w[:, :, k, i]
                     w[:, :, k, i] = temp
-                    println("swapped $j and $k")
                     break
                 end
             end
