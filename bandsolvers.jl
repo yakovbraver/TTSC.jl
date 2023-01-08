@@ -279,7 +279,7 @@ function make_sin_state(x::AbstractVector{<:Real}, c::AbstractVector{<:Number}; 
 end
 
 """
-A type representing a tight-binding Hamiltonian 𝐻.
+A type representing a tight-binding Hamiltonian.
 """
 mutable struct TBHamiltonian
     N::Int
@@ -292,23 +292,22 @@ end
 
 "Construct a `TBHamiltonian` object. `uh` must contain calculated periodic Wanniers."
 function TBHamiltonian(uh::UnperturbedHamiltonian)
-    (;N, φₓ) = uh
+    (;N, gₗ, Vₗ, φₓ) = uh
     n_φₓ = length(φₓ)
     n_w = size(uh.w.E, 1) # number of Wanniers
     H = Array{ComplexF64, 3}(undef, n_w, n_w, n_φₓ) # TB Hamiltonian matrix
-    # The Wannier basis vectors |𝑤ₐ⟩ = ∑ᵢ 𝑑ᵃᵢ |𝜓ᵢ⟩, constructed at the first phase
-    w = [sum(uh.w.d[i, a, 1] * uh.c[:, uh.w.minlevel+i-1, 1] for i = 1:n_w) for a in 1:n_w]
-    # Matrix for the unperturbed Hamiltonian
-    h = diagm(0 => ComplexF64[(2j/N)^2 / 2uh.M + (uh.gₗ + uh.Vₗ)/2 for j = -uh.maxlevel:uh.maxlevel])
-    h[diagind(h, -2N)] .= h[diagind(h, 2N)] .= uh.gₗ/4
+    iφ₀ = 1 # phase index at which to take the Wanniers -- any choice is OK
+    # Matrix of Wannier basis vectors |𝑤ₐ⟩ = ∑ᵢ 𝑑ᵃᵢ |𝜓ᵢ⟩
+    w = uh.c[:, range(uh.w.minlevel, length=n_w), iφ₀] * uh.w.d[:, :, iφ₀]
+    
+    # Matrix of the unperturbed Hamiltonian
+    h = diagm(0 => ComplexF64[(2j/N)^2 / 2uh.M + (gₗ + Vₗ)/2 for j = -uh.maxlevel:uh.maxlevel])
+    h[diagind(h, -2N)] .= h[diagind(h, 2N)] .= gₗ/4
     # Compute elements of `H` at each phase
-    for iφ in eachindex(φₓ)
-        h[diagind(h, -N)] .= uh.Vₗ/4 * cis(+2φₓ[iφ])
-        h[diagind(h, +N)] .= uh.Vₗ/4 * cis(-2φₓ[iφ])
-        for a = 1:n_w, b = a:n_w
-            H[a, b, iφ] = w[a]' * h * w[b]
-            H[b, a, iφ] = H[a, b, iφ]'
-        end
+    for (iφ, φ) in enumerate(φₓ)
+        h[diagind(h, -N)] .= Vₗ/4 * cis(+2φ)
+        h[diagind(h, +N)] .= Vₗ/4 * cis(-2φ)
+        H[:, :, iφ] = w' * h * w
     end
     E = Matrix{Float64}(undef, n_w, n_φₓ)
     c = Array{ComplexF64, 3}(undef, n_w, n_w, n_φₓ)

@@ -61,7 +61,8 @@ end
 
 ##### Tight-binding 
 
-# Compute Wanniers by mixing the subbands together
+# Compute Wanniers by mixing the two subbands of `targetband` together. Wanniers are construced at all phases,
+# even though we need them at only one phase when constructing the TB Hamiltonian.
 Bandsolvers.compute_wanniers!(h, targetband=25, mixsubbands=true)
 
 # Plot the Wanniers
