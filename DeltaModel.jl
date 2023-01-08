@@ -155,11 +155,11 @@ function make_eigenfunctions(uh::UnperturbedHamiltonian, n_x::Integer, whichband
     return x, ψ
 end
 
-function 𝐹(uh, x, i, n, ik′, ik, m′, m, iφ, k₂)
-    (;κ, c, N) = uh
+function 𝐹(uh, x, i, ik′, ik, m′, m, iφ, k₂)
+    (;κ, c) = uh
     κʲ = κ[i, ik, m, iφ]
     κʲ′ = κ[i, ik′, m′, iφ]
-    return cis((n-1)*2π*(ik-ik′)/N - (κʲ′ + κʲ - k₂)x) / 4 * (
+    return -cis(-(κʲ′ + κʲ - k₂)x) / 4 * (
         im * (c[2i-1, ik′, m′, iφ] + im*c[2i, ik′, m′, iφ])' * (c[2i-1, ik, m, iφ] - im*c[2i, ik, m, iφ]) / (κʲ′ + κʲ - k₂) +
         (c[2i-1, ik, m, iφ] + im*c[2i, ik, m, iφ]) * cis(2κʲ*x) * ( 
             (c[2i, ik′, m′, iφ] - im*c[2i-1, ik′, m′, iφ]) / (-κʲ′ + κʲ + k₂) +
@@ -167,11 +167,11 @@ function 𝐹(uh, x, i, n, ik′, ik, m′, m, iφ, k₂)
         (c[2i-1, ik′, m′, iφ] - im*c[2i, ik′, m′, iφ])' * (c[2i, ik, m, iφ] + im*c[2i-1, ik, m, iφ]) * cis(2κʲ′*x) / (κʲ′ - κʲ + k₂) )
 end
 
-function 𝐺(uh, i, n, ik′, ik, m, iφ)
+function 𝐺(uh, i, ik′, ik, m, iφ)
     (;a, κ, c) = uh
     κʲ = κ[i, ik, m, iφ]
-    return 1/2κʲ * sin(a*κʲ/3) * ((c[2i, ik′, m, iφ]' * c[2i, ik, m, iφ] - c[2i-1, ik′, m, iφ]' * c[2i-1, ik, m, iφ]) * cos(a*(6(n-1)+2(i-1)+1)*κʲ/3) +
-                                  (c[2i-1, ik′, m, iφ]' * c[2i, ik, m, iφ] + c[2i, ik′, m, iφ]' * c[2i-1, ik, m, iφ]) * sin(a*(6(n-1)+2(i-1)+1)*κʲ/3) ) +
+    return 1/2κʲ * sin(a*κʲ/3) * ((c[2i, ik′, m, iφ]' * c[2i, ik, m, iφ] - c[2i-1, ik′, m, iφ]' * c[2i-1, ik, m, iφ]) * cos(a*(2(i-1)+1)*κʲ/3) +
+                                  (c[2i-1, ik′, m, iφ]' * c[2i, ik, m, iφ] + c[2i, ik′, m, iφ]' * c[2i-1, ik, m, iφ]) * sin(a*(2(i-1)+1)*κʲ/3) ) +
            a/6 * (c[2i-1, ik′, m, iφ]' * c[2i-1, ik, m, iφ] + c[2i, ik′, m, iφ]' * c[2i, ik, m, iφ])
 end
 
@@ -186,19 +186,19 @@ function compute_wanniers!(uh::UnperturbedHamiltonian, targetband::Integer)
    
     for iφ in eachindex(φₓ)
         for b in 1:3 # for each of the 3 subbands in the target band
+            X .= 0
             m = 3(targetband-1) + b # "global" subband number
             for ik in 1:N
-                for ik′ in 1:N
-                    X[ik′, ik] = 0
-                    for n = 1:N, i = 1:3
-                        X[ik′, ik] += 𝐹(uh, (n-1)a + i*a/3, i, n, ik′, ik, m, m, iφ, k₂) - 𝐹(uh, (n-1)a + (i-1)a/3, i, n, ik′, ik, m, m, iφ, k₂)
-                    end
+                ik′ = ik % N + 1
+                for i = 1:3
+                    X[ik′, ik] += 𝐹(uh, i*a/3, i, ik′, ik, m, m, iφ, k₂) - 𝐹(uh, (i-1)a/3, i, ik′, ik, m, m, iφ, k₂)
                 end
+                X[ik′, ik] *= N
             end
             # `eigen` does not guarantee orthogonality of eigenvectors in case of degeneracies for `X` unitary, so use `schur`
             # (although a degeneracy of coordinates eigenvalues is unlikely here)
             _, uh.w.d[:, :, b, iφ], pos_complex = schur(X)
-            pos_real = @. (angle(pos_complex) + pi) / k₂ # shift angle from [-π, π) to [0, 2π)
+            pos_real =  @. mod2pi(angle(pos_complex)) / k₂ # shift angle from [-π, π) to [0, 2π)
             sp = sortperm(pos_real)                         # sort the eigenvalues
             uh.w.pos[:, b, iφ] = pos_real[sp]
             @views Base.permutecols!!(uh.w.d[:, :, b, iφ], sp) # sort the eigenvectors in the same way
@@ -223,15 +223,17 @@ function compute_wanniers(uh::UnperturbedHamiltonian, targetband::Integer)
         m = 3(targetband-1) + b # "global" subband number
         for b′ in 1:3
             m′ = 3(targetband-1) + b′
-            for ik in 1:N, ik′ in 1:N
-                for n in 1:N, i in 1:3
-                    X[N*(b′-1)+ik′, N*(b-1)+ik] += 𝐹(uh, (n-1)a + i*a/3, i, n, ik′, ik, m′, m, iφ, k₂) - 𝐹(uh, (n-1)a + (i-1)a/3, i, n, ik′, ik,  m′, m, iφ, k₂)
+            for ik in 1:N
+                ik′ = ik % N + 1
+                for i in 1:3
+                    X[N*(b′-1)+ik′, N*(b-1)+ik] += 𝐹(uh, i*a/3, i, ik′, ik, m′, m, iφ, k₂) - 𝐹(uh, (i-1)a/3, i, ik′, ik,  m′, m, iφ, k₂)
                 end
+                X[N*(b′-1)+ik′, N*(b-1)+ik] *= N
             end
         end
     end
     _, d, pos_complex = schur(X)
-    pos_real = @. (angle(pos_complex) + pi) / k₂ # shift angle from [-π, π) to [0, 2π)
+    pos_real = @. mod2pi(angle(pos_complex)) / k₂ # shift angle from [-π, π) to [0, 2π)
     sp = sortperm(pos_real)          # sort the eigenvalues
     pos = pos_real[sp]
     @views Base.permutecols!!(d, sp) # sort the eigenvectors in the same way
@@ -354,17 +356,16 @@ function TBHamiltonian(uh::UnperturbedHamiltonian; d::Matrix{ComplexF64}, isperi
             m = 3(targetband-1) + b # "global" subband number
             for b′ in 1:3
                 m′ = 3(targetband-1) + b′
-                for ik in 1:N, ik′ in 1:N
-                    if m′ == m && (ik′ == ik || ik′ + ik == N + 2) # if true, then uh.E[ik′, m′, iφ] == uh.E[ik, m, iφ]
-                        for n in 1:N
-                            ψ∑ψ[N*(b′-1)+ik′, N*(b-1)+ik] += sum(𝐺(uh, r, n, ik′, ik, m, iφ₀) * (cos(φ + 2π*(r-1)/3) - cos(φₓ[iφ₀] + 2π*(r-1)/3)) for r in 1:3) * cis((n-1)*2π*(ik-ik′)/N)
-                        end
+                for ik in 1:N
+                    if m′ == m
+                        ψ∑ψ[N*(b′-1)+ik, N*(b-1)+ik] = sum(𝐺(uh, r, ik, ik, m, iφ₀) * (cos(φ + 2π*(r-1)/3) - cos(φₓ[iφ₀] + 2π*(r-1)/3)) for r in 1:3)
                     else
-                        for n in 1:N, r in 1:3
-                            ψ∑ψ[N*(b′-1)+ik′, N*(b-1)+ik] += (𝐹(uh, (n-1)a + r*a/3, r, n, ik′, ik, m′, m, iφ₀, 0) - 𝐹(uh, (n-1)a + (r-1)a/3, r, n, ik′, ik, m′, m, iφ₀, 0)) *
-                                                             (cos(φ + 2π*(r-1)/3) - cos(φₓ[iφ₀] + 2π*(r-1)/3))
+                        for r in 1:3
+                            ψ∑ψ[N*(b′-1)+ik, N*(b-1)+ik] += (𝐹(uh, r*a/3, r, ik, ik, m′, m, iφ₀, 0) - 𝐹(uh, (r-1)a/3, r, ik, ik, m′, m, iφ₀, 0)) *
+                                                            (cos(φ + 2π*(r-1)/3) - cos(φₓ[iφ₀] + 2π*(r-1)/3))
                         end
                     end
+                    ψ∑ψ[N*(b′-1)+ik, N*(b-1)+ik] *= N
                 end
             end
         end

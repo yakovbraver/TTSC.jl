@@ -41,7 +41,7 @@ end
 
 n_cells = 3
 a = 4; λ = 10000; U = 1
-φₓ = range(0, 2π, length=61)
+φₓ = range(0, 2π, length=31)
 h = DeltaModel.UnperturbedHamiltonian(n_cells; a, λ, U, φₓ)
 
 plot_potential(h; U, lift=0)
@@ -100,7 +100,7 @@ for ik in 1:n_cells
 end
 display(fig)
 
-trapz(f) = ( sum(f) + (f[1] + f[end]) / 2 ) * x[2]-x[1]
+trapz(f) = ( sum(f) - (f[1] + f[end]) / 2 ) * x[2]-x[1]
 trapz(ψ[:, 2, 3, 1] .* conj(ψ[:, 2, 1, 1]))
 
 # Wannier centres
@@ -151,19 +151,20 @@ scatter!(pos, E, c=1:3n_cells, markerstrokewidth=0, xlabel=L"x", ylabel="Energy"
 savefig("tb-wanniers.pdf")
 
 # Construct and diagonalise the TB Hamiltonian
-targetband = 16
-d, pos, E = DeltaModel.compute_wanniers(h, targetband)
 htb = DeltaModel.TBHamiltonian(h; d, isperiodic=true, targetband)
 DeltaModel.diagonalise!(htb)
 
 # Energy spectrum
-
 fig = plot();
 for r in eachrow(htb.E)
     plot!(φₓ, r, xlabel=L"\varphi_x", ylabel="Energy", legend=false)
 end
 plot!(ylims=(1797, 1799.5), title="TB")
 savefig("tb-spectrum.pdf")
+
+plot(φₓ, real(htb.H[1, 1, :]))
+plot!(φₓ, real(htb.H[2, 2, :]))
+plot!(φₓ, real(htb.H[3, 3, :]))
 
 ###### TB Hamiltonian with explicit phase
 
