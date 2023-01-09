@@ -1,6 +1,6 @@
 module Bandsolvers
 
-using LinearAlgebra: eigen, schur, ⋅, diagm, diagind, eigvals, Diagonal, Hermitian
+using LinearAlgebra: eigen, schur, diagm, diagind, eigvals, Diagonal, Hermitian
 
 "A type for storing the Wannier functions."
 mutable struct Wanniers
@@ -59,11 +59,10 @@ function diagonalise!(uh::UnperturbedHamiltonian)
     sortby = M > 0 ? (+) : (-) # eigenvalue sorting; for 𝑀 < 0 we use descending sorting
     if uh.isperiodic
         h = diagm(0 => ComplexF64[(2j/N)^2 / 2M + (gₗ + Vₗ)/2 for j = -maxlevel:maxlevel])
-        h[diagind(h, -2N)] .= h[diagind(h, 2N)] .= gₗ/4
-        for (i, ϕ) in enumerate(uh.φₓ)
-            h[diagind(h, -N)] .= Vₗ/4 * cis(+2ϕ)
-            h[diagind(h, +N)] .= Vₗ/4 * cis(-2ϕ)
-            f = eigen(h; sortby)
+        h[diagind(h, 2N)] .= gₗ/4
+        for (i, φ) in enumerate(uh.φₓ)
+            h[diagind(h, +N)] .= Vₗ/4 * cis(-2φ)
+            f = eigen(Hermitian(h); sortby)
             uh.E[:, i] = f.values[1:maxlevel]
             uh.c[:, :, i] = f.vectors[:, 1:maxlevel]
         end
@@ -71,32 +70,32 @@ function diagonalise!(uh::UnperturbedHamiltonian)
         X(j′, j) = 16N*j*j′ / (π*((j-j′)^2-(2N)^2)*((j+j′)^2-(2N)^2))
         n_j = 2maxlevel + 1
         h = zeros(n_j, n_j)
-        for (i, ϕ) in enumerate(uh.φₓ)
+        for (i, φ) in enumerate(uh.φₓ)
             for j in 1:n_j
-                for j′ in j:n_j
+                for j′ in 1:j
                     val = 0.0
                     if isodd(j′ + j)
-                        val += Vₗ/2 * X(j′, j) * sin(2ϕ)
+                        val += Vₗ/2 * X(j′, j) * sin(2φ)
                     else
                         # check diagonals "\"
                         if j′ == j
                             val += (gₗ + Vₗ)/2 + (j / N)^2 / 2M
                         elseif j′ == j - 2N || j′ == j + 2N
-                            val += Vₗ * cos(2ϕ) / 4
+                            val += Vₗ * cos(2φ) / 4
                         elseif j′ == j - 4N || j′ == j + 4N
                             val += gₗ/4
                         end
                         # check anti-diagonals "/"
                         if j′ == -j - 2N || j′ == -j + 2N
-                            val += -Vₗ * cos(2ϕ) / 4
+                            val += -Vₗ * cos(2φ) / 4
                         elseif j′ == -j - 4N || j′ == -j + 4N
                             val += -gₗ/4
                         end
                     end
-                    h[j′, j] = h[j, j′] = val # push the element to the conjugate positions
+                    h[j′, j] = val # push the element to the conjugate positions
                 end
             end
-            f = eigen(h; sortby)
+            f = eigen(Hermitian(h); sortby)
             uh.E[:, i] = f.values[1:maxlevel]
             uh.c[:, :, i] = f.vectors[:, 1:maxlevel]
         end
@@ -133,7 +132,7 @@ function compute_wanniers!(uh::UnperturbedHamiltonian; targetband::Integer, mixs
                 sp = sortperm(pos_real)                 # sort the eigenvalues
                 pos[:, i] = pos_real[sp]
                 @views Base.permutecols!!(d[:, :, i], sp)    # sort the eigenvectors in the same way
-                E[:, i] = [abs2.(dˣ) ⋅ uh.E[range(minlevel, length=2N), i] for dˣ in eachcol(d[:, :, i])]
+                E[:, i] = transpose(uh.E[range(minlevel, length=2N), i]) * abs2.(d[:, :, i])
             end
         else
             # `d` fill format: `d[1:N, 1:N, i]` = eigenvectors of the lower subband,
@@ -157,11 +156,11 @@ function compute_wanniers!(uh::UnperturbedHamiltonian; targetband::Integer, mixs
                     sp = sortperm(pos_real)                 # sort the eigenvalues
                     pos[window, i] = pos_real[sp]
                     @views Base.permutecols!!(d[:, window, i], sp)    # sort the eigenvectors in the same way
-                    E[window, i] = [abs2.(dˣ) ⋅ uh.E[range(minlevel+o, length=N), i] for dˣ in eachcol(d[:, window, i])]
+                    E[window, i] = transpose(uh.E[range(minlevel+o, length=N), i]) * abs2.(d[:, window, i])
                 end
             end
         end
-    else
+    else # if !uh.isperiodic
         n_w = isodd(targetband) ? 2N-1 : 2N+1 # total number of wanniers to construct; this is the number of levels in the target band
         E = Matrix{Float64}(undef, n_w, length(uh.φₓ))
         pos = Matrix{Float64}(undef, n_w, length(uh.φₓ))
@@ -180,8 +179,8 @@ function compute_wanniers!(uh::UnperturbedHamiltonian; targetband::Integer, mixs
                                                                                  for j′ = (iseven(j) ? 1 : 2):2:n_j) for j = 1:n_j)
                     end
                 end
-                uh.w.pos[:, i], uh.w.d[:, :, i] = eigen(X)
-                uh.w.E[:, i] = [dˣ.^2 ⋅ uh.E[range(minlevel, length=n_w), i] for dˣ in eachcol(uh.w.d[:, :, i])]
+                uh.w.pos[:, i], uh.w.d[:, :, i] = eigen(Hermitian(X))
+                uh.w.E[:, i] = transpose(uh.E[range(minlevel, length=n_w), i]) * abs2.(uh.w.d[:, :, i])
             end
         else
             # `d` fill format: `d[1:n_lo[i], 1:n_lo[i], i]` = eigenvectors of the lower subband,
@@ -205,8 +204,8 @@ function compute_wanniers!(uh::UnperturbedHamiltonian; targetband::Integer, mixs
                                                                                  for j′ = (iseven(j) ? 1 : 2):2:n_j) for j = 1:n_j)
                     end
                 end
-                uh.w.pos[1:n_lo, i], uh.w.d[1:n_lo, 1:n_lo, i] = eigen(X)
-                uh.w.E[1:n_lo, i] = [dˣ.^2 ⋅ uh.E[range(minlevel, length=n_lo), i] for dˣ in eachcol(uh.w.d[1:n_lo, 1:n_lo, i])]
+                uh.w.pos[1:n_lo, i], uh.w.d[1:n_lo, 1:n_lo, i] = eigen(Hermitian(X))
+                uh.w.E[1:n_lo, i] = transpose(uh.E[range(minlevel, length=n_lo), i]) * abs2.(uh.w.d[1:n_lo, 1:n_lo, i])
 
                 # Higher band
                 X = up ? X_more : X_less
@@ -217,8 +216,8 @@ function compute_wanniers!(uh::UnperturbedHamiltonian; targetband::Integer, mixs
                                                                                  for j′ = (iseven(j) ? 1 : 2):2:n_j) for j = 1:n_j)
                     end
                 end
-                uh.w.pos[n_lo+1:n_w, i], uh.w.d[1:n_hi, n_lo+1:n_w, i] = eigen(X)
-                uh.w.E[n_lo+1:n_w, i] = [dˣ.^2 ⋅ uh.E[range(minlevel+n_lo, length=n_hi), i] for dˣ in eachcol(uh.w.d[1:n_hi, n_lo+1:n_w, i])]
+                uh.w.pos[n_lo+1:n_w, i], uh.w.d[1:n_hi, n_lo+1:n_w, i] = eigen(Hermitian(X))
+                uh.w.E[n_lo+1:n_w, i] = transpose(uh.E[range(minlevel+n_lo, length=n_hi), i]) * abs2.(uh.w.d[1:n_hi, n_lo+1:n_w, i])
             end
         end
     end
@@ -231,9 +230,9 @@ Return `ψ`, where `ψ[:, j, i]` = `j`th eigenfunction at `whichphases[i]`th pha
 function make_eigenfunctions(uh::UnperturbedHamiltonian, x::AbstractVector{<:Real}, whichphases::AbstractVector{<:Integer}, whichstates::AbstractVector{<:Integer})
     ψ = Array{ComplexF64,3}(undef, length(x), length(whichstates), length(whichphases))
     make_state = uh.isperiodic ? make_exp_state : make_sin_state
-    for (i, iϕ) in enumerate(whichphases)
+    for (i, iφ) in enumerate(whichphases)
         for (j, js) in enumerate(whichstates)
-            @views ψ[:, j, i] = make_state(x, uh.c[:, js, iϕ]; N=uh.N)
+            @views ψ[:, j, i] = make_state(x, uh.c[:, js, iφ]; N=uh.N)
         end
     end
     return ψ
@@ -249,12 +248,11 @@ function make_wannierfunctions(uh::UnperturbedHamiltonian, x::AbstractVector{<:R
     w = Array{ComplexF64, 3}(undef, length(x), n_w, length(whichphases))
     ψ = make_eigenfunctions(uh, x, whichphases, range(uh.w.minlevel, length=n_w))
     for (i, iφ) in enumerate(whichphases)
-        for j in 1:uh.w.n_lo[i]
-            w[:, j, i] = sum(uh.w.d[k, j, iφ] * ψ[:, k, i] for k = 1:uh.w.n_lo[i])
-        end
-        for j in uh.w.n_lo[i]+1:n_w
-            w[:, j, i] = sum(uh.w.d[k, j, iφ] * ψ[:, uh.w.n_lo[i]+k, i] for k = 1:n_w-uh.w.n_lo[i])
-        end
+        window = 1:uh.w.n_lo[i]
+        w[:, window, i] = ψ[:, window, i] * uh.w.d[window, window, iφ]
+        window = uh.w.n_lo[i]+1:n_w 
+        window2 = 1:n_w-uh.w.n_lo[i]
+        w[:, window, i] = ψ[:, window, i] * uh.w.d[window2, window, iφ]
     end
     return ψ, w
 end
@@ -341,7 +339,7 @@ function compute_wanniers!(tbh::TBHamiltonian)
             sp = sortperm(pos_real)                        # sort the eigenvalues
             pos[levels, iφ] = pos_real[sp]
             @views Base.permutecols!!(d[:, levels, iφ], sp) # sort the eigenvectors in the same way
-            E[levels, iφ] = [abs2.(dˣ) ⋅ tbh.E[levels, iφ] for dˣ in eachcol(d[:, levels, iφ])]
+            E[levels, iφ] = transpose(tbh.E[levels, iφ]) * abs2.(d[:, levels, iφ])
         end
     end
 end
@@ -357,9 +355,7 @@ function make_wannierfunctions(tbh::TBHamiltonian, whichphases::AbstractVector{<
     for (i, iφ) in enumerate(whichphases)
         for b in 1:2
             levels = N*(b-1)+1:N*b
-            for j in levels
-                w[:, j, i] = sum(tbh.w.d[k, j, iφ] * tbh.c[:, N*(b-1)+k, iφ] for k = 1:N)
-            end
+            w[:, levels, i] = tbh.c[:, range(N*(b-1)+1, length=N), iφ] * tbh.w.d[:, levels, iφ]
         end
     end
     return w
@@ -431,7 +427,7 @@ function diagonalise!(fh::FloquetHamiltonian)
 
     n_levels = fh.uh.maxlevel - fh.minlevel + 1 # number of levels of spatial Hamiltonian to use for constructing ℋ
 
-    H = zeros(ComplexF64, n_levels, n_levels) # ℋ matrix
+    H = zeros(ComplexF64, n_levels, n_levels) # ℋ matrix, will only fill the lower triangle
 
     ∑cc(m′, m, i) = if fh.uh.isperiodic
         sum( (                 c[j+2N, m′, i])' * c[j, m, i] for j = 1:2N ) +
@@ -445,7 +441,7 @@ function diagonalise!(fh::FloquetHamiltonian)
     end
 
     if fh.uh.isperiodic
-        for (i, ϕ) in enumerate(φₓ)
+        for (i, φ) in enumerate(φₓ)
             # `m` and `m′` number the levels of ℎ
             # `e` and `e′` number the elements of `H`
             for m in fh.minlevel:fh.uh.maxlevel
@@ -461,12 +457,11 @@ function diagonalise!(fh::FloquetHamiltonian)
                     e′ = m′ - fh.minlevel + 1
                     e′ > n_levels && break
                     if pumptype != :time || i == 1 # if pumping is time-only, this must be calculated only once, at `i` = 1
-                        # if pumping is space-time, then also multiply by cis(-𝜑ₜ). `ϕ` runs over 𝜑ₓ, and we assume the pumping protocol 𝜑ₜ = 2𝜑ₓ
-                        H[e′, e] = (pumptype == :space ? λₗ/8 * ∑cc(m′, m, i) : λₗ/8 * ∑cc(m′, m, i) * cis(-2ϕ))
+                        # if pumping is space-time, then also multiply by cis(-𝜑ₜ). `φ` runs over 𝜑ₓ, and we assume the pumping protocol 𝜑ₜ = 2𝜑ₓ
+                        H[e′, e] = (pumptype == :space ? λₗ/8 * ∑cc(m′, m, i) : λₗ/8 * ∑cc(m′, m, i) * cis(-2φ))
                     elseif pumptype == :time 
                         H[e′, e] *= cis(-2(φₓ[i]-φₓ[i-1]))
                     end
-                    H[e, e′] = H[e′, e]'
                 end
                 
                 # place the elements of the short lattice
@@ -477,13 +472,12 @@ function diagonalise!(fh::FloquetHamiltonian)
                     if pumptype != :time || i == 1 # if pumping is time-only, this must be calculated only once, at `i` = 1
                         H[e′, e] = -λₛ/8 * ∑cc(m′, m, i)
                     end
-                    H[e, e′] = H[e′, e]'
                 end
             end
-            fh.E[:, i], fh.b[:, :, i] = eigen(H, sortby=-)
+            fh.E[:, i], fh.b[:, :, i] = eigen(Hermitian(H, :L), sortby=-)
         end
     else
-        for (i, ϕ) in enumerate(φₓ)
+        for (i, φ) in enumerate(φₓ)
             bs1 = 2N - 1
             bs2 = 2N + 1
             pattern = [fill(bs1, bs1); fill(bs2, bs2)]
@@ -506,12 +500,11 @@ function diagonalise!(fh::FloquetHamiltonian)
                     e′ > n_levels && break
                     m′ = e′ + fh.minlevel - 1 
                     if pumptype != :time || i == 1 # if pumping is time-only, this must be calculated only once, at `i` = 1
-                        # if pumping is space-time, then also multiply by cis(-𝜑ₜ). `ϕ` runs over 𝜑ₓ, and we assume the pumping protocol 𝜑ₜ = 2𝜑ₓ
-                        H[e′, e] = (pumptype == :space ? λₗ/8 * ∑cc(m′, m, i) : λₗ/8 * ∑cc(m′, m, i) * cis(-2ϕ))
+                        # if pumping is space-time, then also multiply by cis(-𝜑ₜ). `φ` runs over 𝜑ₓ, and we assume the pumping protocol 𝜑ₜ = 2𝜑ₓ
+                        H[e′, e] = (pumptype == :space ? λₗ/8 * ∑cc(m′, m, i) : λₗ/8 * ∑cc(m′, m, i) * cis(-2φ))
                     elseif pumptype == :time 
                         H[e′, e] *= cis(-2(φₓ[i]-φₓ[i-1]))
                     end
-                    H[e, e′] = H[e′, e]'
                 end
                 
                 # place the elements of the short lattice
@@ -522,10 +515,9 @@ function diagonalise!(fh::FloquetHamiltonian)
                     if pumptype != :time || i == 1 # if pumping is time-only, this must be calculated only once, at `i` = 1
                         H[e′, e] = -λₛ/8 * ∑cc(m′, m, i)
                     end
-                    H[e, e′] = H[e′, e]'
                 end
             end
-            fh.E[:, i], fh.b[:, :, i] = eigen(H, sortby=-)
+            fh.E[:, i], fh.b[:, :, i] =  eigen(Hermitian(H, :L), sortby=-)
         end
     end
 end
@@ -618,7 +610,7 @@ function compute_wanniers!(fh::FloquetHamiltonian; targetlevels::AbstractVector{
         sp = sortperm(pos_real)         # sort the eigenvalues
         pos[:, i] = pos_real[sp]
         @views Base.permutecols!!(d[:, :, i], sp) # sort the eigenvectors in the same way
-        E[:, i] = [abs2.(dˣ) ⋅ fh.E[targetlevels, i] for dˣ in eachcol(d[:, :, i])]
+        E[:, i] = transpose(fh.E[targetlevels, i]) * abs2.(d[:, :, i])
     end
 end
 

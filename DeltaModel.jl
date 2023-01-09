@@ -202,7 +202,7 @@ function compute_wanniers!(uh::UnperturbedHamiltonian, targetband::Integer)
             sp = sortperm(pos_real)                         # sort the eigenvalues
             uh.w.pos[:, b, iφ] = pos_real[sp]
             @views Base.permutecols!!(uh.w.d[:, :, b, iφ], sp) # sort the eigenvectors in the same way
-            uh.w.E[:, b, iφ] = [abs2.(dˣ) ⋅ E[:, m, iφ] for dˣ in eachcol(uh.w.d[:, :, b, iφ])]
+            uh.w.E[:, b, iφ] = transpose(E[:, m, iφ]) * abs2.(uh.w.d[:, :, b, iφ])
         end
     end
 end
@@ -231,13 +231,13 @@ function compute_wanniers(uh::UnperturbedHamiltonian; iφ₀::Integer=1, targetb
             end
         end
     end
-    _, d, pos_complex = schur(X)
+    _, d, pos_complex = schur(X) 
     pos_real = @. mod2pi(angle(pos_complex)) / k₂ # shift angle from [-π, π) to [0, 2π)
     sp = sortperm(pos_real)          # sort the eigenvalues
     pos = pos_real[sp]
     @views Base.permutecols!!(d, sp) # sort the eigenvectors in the same way
-    E = [abs2.(dˣ) ⋅ uh.E[range((iφ₀-1)size(uh.E, 2)size(uh.E, 1) + 3(targetband-1)size(uh.E, 1) + 1, length=3N)] for dˣ in eachcol(d)]
-    return d, pos, E
+    E = transpose(uh.E[range((iφ₀-1)size(uh.E, 2)size(uh.E, 1) + 3(targetband-1)size(uh.E, 1) + 1, length=3N)]) * abs2.(d)
+    return d, pos, vec(E) # materialise `E`
 end
 
 """
@@ -251,9 +251,7 @@ function make_wannierfunctions(uh::UnperturbedHamiltonian, n_x::Integer, whichph
     w = similar(ψ)
     for (i, iφ) in enumerate(whichphases)
         for b in 1:3
-            for j in 1:uh.N
-                w[:, j, b, i] = sum(uh.w.d[p, j, b, iφ] * ψ[:, p, b, i] for p = 1:uh.N)
-            end
+            w[:, :, b, i] = ψ[:, :, b, i] * uh.w.d[:, :, b, iφ]
         end
     end
     return x, ψ, w
@@ -388,7 +386,7 @@ function diagonalise!(tbh::TBHamiltonian)
     end
 end
 
-"Calculate Wannier vectors for each of the three subbands for the TB Hamiltonian `h`."
+"Calculate Wannier vectors for each of the three subbands for the TB Hamiltonian `tbh`."
 function compute_wanniers!(tbh::AbstractTBHamiltonian)
     (;N, a, φₓ) = tbh
     for b in 1:3
@@ -402,14 +400,14 @@ function compute_wanniers!(tbh::AbstractTBHamiltonian)
                 sp = sortperm(pos_real)                        # sort the eigenvalues
                 tbh.w.pos[:, b, iφ] = pos_real[sp]
                 @views Base.permutecols!!(tbh.w.d[:, :, b, iφ], sp) # sort the eigenvectors in the same way
-                tbh.w.E[:, b, iφ] = [abs2.(dˣ) ⋅ tbh.E[levels, iφ] for dˣ in eachcol(tbh.w.d[:, :, b, iφ])]
+                tbh.w.E[:, b, iφ] = transpose(tbh.E[levels, iφ]) * abs2.(tbh.w.d[:, :, b, iφ])
             end
         else
             X = Diagonal([n*a/3 for n in 0:3N-1]) # position operator in coordinate representation
             for iφ in eachindex(φₓ)
                 XE = tbh.c[:, levels, iφ]' * X * tbh.c[:, levels, iφ] # position operator in energy representation
-                tbh.w.pos[b, :, iφ], tbh.w.d[:, :, b, iφ] = eigen(Hermitian(XE))
-                tbh.w.E[b, :, iφ] = [abs2.(dˣ) ⋅ tbh.E[levels, iφ] for dˣ in eachcol(tbh.w.d[:, :, b, iφ])]
+                tbh.w.pos[:, b, iφ], tbh.w.d[:, :, b, iφ] = eigen(Hermitian(XE))
+                tbh.w.E[:, b, iφ] = transpose(tbh.E[levels, iφ]) * abs2.(tbh.w.d[:, :, b, iφ])
             end
         end
     end
@@ -424,9 +422,7 @@ function make_wannierfunctions(tbh::AbstractTBHamiltonian, whichphases::Abstract
     w = Array{ComplexF64, 4}(undef, size(tbh.c, 1), N, 3, length(whichphases))
     for (i, iφ) in enumerate(whichphases)
         for b in 1:3
-            for j in 1:N
-                w[:, j, b, i] = sum(tbh.w.d[k, j, b, iφ] * tbh.c[:, N*(b-1)+k, iφ] for k in 1:N)
-            end
+            w[:, :, b, i] = tbh.c[:, range(N*(b-1)+1, length=N), iφ] * tbh.w.d[:, :, b, iφ]
         end
     end
     return w

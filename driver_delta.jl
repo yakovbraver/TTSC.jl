@@ -1,4 +1,7 @@
 using Plots, LaTeXStrings, ProgressMeter
+import IntervalRootFinding as iroots
+using IntervalArithmetic: (..)
+
 plotlyjs()
 pyplot()
 theme(:dark, size=(800, 500))
@@ -62,9 +65,6 @@ end
 plot_dispersion(ε; φ=φₓ[1], uh=h)
 xlims!(340, 360)
 savefig("dispersion.pdf")
-
-import IntervalRootFinding as iroots
-using IntervalArithmetic: (..)
 
 f(E) = DeltaModel.cos_ka(E; φ=0, uh=h)
 bounds = (45, 5100)
@@ -141,7 +141,7 @@ function plot_wanniercentres(htb::DeltaModel.AbstractTBHamiltonian)
     plot();
     for (iφ, φ) in enumerate(φₓ)
         for b in 1:3
-            scatter!((htb.w.pos[:, b, iφ].+a/6).%(a*n_cells), fill(φ, size(htb.w.pos, 1)); marker_z=htb.w.E[:, b, iφ], c=:coolwarm, label=false, markerstrokewidth=0)
+            scatter!((htb.w.pos[:, b, iφ].+a/6).%(a*htb.N), fill(φ, size(htb.w.pos, 1)); marker_z=htb.w.E[:, b, iφ], c=:coolwarm, label=false, markerstrokewidth=0)
         end
     end
     plot!(minorgrid=true, xlabel=L"x", ylabel=L"\varphi_x", cbtitle="Energy")
@@ -151,13 +151,13 @@ function plot_pumping(htb::DeltaModel.AbstractTBHamiltonian)
     wanniers = DeltaModel.make_wannierfunctions(htb, 1:length(φₓ))
     lift = minimum(htb.w.E) - 1
     lims = (lift-2, maximum(htb.w.E)+2)
-    x = range(start=a/6, step=a/3, length=3n_cells)
+    x = range(start=a/6, step=a/3, length=3htb.N)
     p = Progress(length(φₓ), 1)
     @gif for iφ in eachindex(φₓ)
         fig = plot_potential(htb; U=0.5, U_title=U, lift, iφ)
         for b in 1:3
-            scatter!((htb.w.pos[:, b, iφ].+a/6).%(a*n_cells), htb.w.E[:, b, iφ]; label=false, markerstrokewidth=0, ylims=lims, markersize=5, c=1:n_cells)
-            for j in 1:n_cells
+            scatter!((htb.w.pos[:, b, iφ].+a/6).%(a*htb.N), htb.w.E[:, b, iφ]; label=false, markerstrokewidth=0, ylims=lims, markersize=5, c=1:htb.N)
+            for j in 1:htb.N
                 plot!(x, abs2.(wanniers[:, j, b, iφ]) .+ htb.w.E[j, b, iφ], label=false, c=j)
             end
         end
@@ -209,7 +209,7 @@ plot_pumping(htb)
 iφ = 1
 J = [d[:, i+1]' * (d[:, i] .* h.E[range((iφ-1)size(h.E, 2)size(h.E, 1) + 3(targetband-1)size(h.E, 1) + 1, length=3n_cells)]) for i in 1:3]
 # construct TB Hamiltonian using only the modulus of 𝐽₁₂
-htb = DeltaModel.SimpleTBHamiltonian(n_cells; a, U, J=fill(abs(J[1]), 3), isperiodic=true, φₓ)
+htb = DeltaModel.SimpleTBHamiltonian(8; a, U, J=fill(abs(J[1]), 3), isperiodic=false, φₓ)
 DeltaModel.diagonalise!(htb)
 
 # Energy spectrum
