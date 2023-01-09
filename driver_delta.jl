@@ -114,8 +114,7 @@ for (i, φ) in enumerate(φₓ)
         scatter!(h.w.pos[:, b, i], fill(φ, size(h.w.pos, 1)); marker_z=h.w.E[:, b, i], c=:coolwarm, label=false, markerstrokewidth=0)
     end
 end
-plot!(minorgrid=true, xlabel=L"x", ylabel=L"\varphi", cbtitle="Energy",
-      title=L"N=%$n_cells, U=%$U, a=%$a, \lambda=%$λ")
+plot!(minorgrid=true, xlabel=L"x", ylabel=L"\varphi_x", cbtitle="Energy", title=L"N=%$n_cells, U=%$U, a=%$a, \lambda=%$λ")
 
 # Wannier functions
 
@@ -138,9 +137,40 @@ end
 
 ###### TB Hamiltonian with implicit phase
 
-# Construct Wanniers at the first phase
+function plot_wanniercentres(htb::DeltaModel.AbstractTBHamiltonian)
+    plot();
+    for (iφ, φ) in enumerate(φₓ)
+        for b in 1:3
+            scatter!((htb.w.pos[:, b, iφ].+a/6).%(a*n_cells), fill(φ, size(htb.w.pos, 1)); marker_z=htb.w.E[:, b, iφ], c=:coolwarm, label=false, markerstrokewidth=0)
+        end
+    end
+    plot!(minorgrid=true, xlabel=L"x", ylabel=L"\varphi_x", cbtitle="Energy")
+end
+
+function plot_pumping(htb::DeltaModel.AbstractTBHamiltonian)
+    wanniers = DeltaModel.make_wannierfunctions(htb, 1:length(φₓ))
+    lift = minimum(htb.w.E) - 1
+    lims = (lift-2, maximum(htb.w.E)+2)
+    x = range(start=a/6, step=a/3, length=3n_cells)
+    p = Progress(length(φₓ), 1)
+    @gif for iφ in eachindex(φₓ)
+        fig = plot_potential(htb; U=0.5, U_title=U, lift, iφ)
+        for b in 1:3
+            scatter!((htb.w.pos[:, b, iφ].+a/6).%(a*n_cells), htb.w.E[:, b, iφ]; label=false, markerstrokewidth=0, ylims=lims, markersize=5, c=1:n_cells)
+            for j in 1:n_cells
+                plot!(x, abs2.(wanniers[:, j, b, iφ]) .+ htb.w.E[j, b, iφ], label=false, c=j)
+            end
+        end
+        next!(p)
+    end
+end
+
+# Construct Wanniers at a single phase (any phase is OK)
+iφ₀ = 1
 targetband = 16
-d, pos, E = DeltaModel.compute_wanniers(h, targetband)
+d, pos, E = DeltaModel.compute_wanniers(h; targetband, iφ₀)
+n_x = 50
+x, ψ = DeltaModel.make_eigenfunctions(h, n_x, targetband, [iφ₀])
 ws = Matrix{ComplexF64}(undef, length(x), 3n_cells)
 fig = plot();
 for j in 1:3n_cells
@@ -166,9 +196,17 @@ plot(φₓ, real(htb.H[1, 1, :]))
 plot!(φₓ, real(htb.H[2, 2, :]))
 plot!(φₓ, real(htb.H[3, 3, :]))
 
+# Wannier centres
+DeltaModel.compute_wanniers!(htb)
+plot_wanniercentres(htb)
+
+# Pumping animation
+plot_pumping(htb)
+
 ###### TB Hamiltonian with explicit phase
 
-# calculate hopping strengths between sites 1-2, 2-3, 3-4
+# calculate hopping strengths between sites 1-2, 2-3, 3-4 at a single phase
+iφ = 1
 J = [d[:, i+1]' * (d[:, i] .* h.E[range((iφ-1)size(h.E, 2)size(h.E, 1) + 3(targetband-1)size(h.E, 1) + 1, length=3n_cells)]) for i in 1:3]
 # construct TB Hamiltonian using only the modulus of 𝐽₁₂
 htb = DeltaModel.SimpleTBHamiltonian(n_cells; a, U, J=fill(abs(J[1]), 3), isperiodic=true, φₓ)
@@ -176,9 +214,11 @@ DeltaModel.diagonalise!(htb)
 
 # Energy spectrum
 shift = h.E[1, 3targetband, 1] - htb.E[end, 1]
+htb.w.E .+= shift # shift to actual energies which are not accounted for in the model
+htb.E .+= shift
 fig2 = plot();
 for r in eachrow(htb.E)
-    plot!(φₓ, r .+ shift, xlabel=L"\varphi_x", ylabel="Energy", legend=false)
+    plot!(φₓ, r, xlabel=L"\varphi_x", ylabel="Energy", legend=false)
 end
 plot!(title="Explicit TB", ylims=(1797.0, 1799.5))
 savefig("explicit-tb-spectrum.pdf")
@@ -193,35 +233,11 @@ for ik in eachindex(ka)
         plot!(φₓ, E[3(ik-1)+m, :], label=L"m = %$m, k=%$(round(ka[ik], digits=3))")
     end
 end
-title!("TB: "*L"J=%$(J[1]), U=%$U")
+title!("TB: "*L"J=%$(abs(J[1])), U=%$U")
 
 # Wannier centres
-
 DeltaModel.compute_wanniers!(htb)
-fig2 = plot();
-for (iφ, φ) in enumerate(φₓ)
-    for b in 1:3
-        scatter!((htb.w.pos[:, b, iφ].+a/6).%(a*n_cells), fill(φ, size(htb.w.pos, 1)); marker_z=htb.w.E[:, b, iφ] .+ shift, c=:coolwarm, label=false, markerstrokewidth=0)
-    end
-end
-plot!(minorgrid=true, xlabel=L"x", ylabel=L"\varphi", cbtitle="Energy", title="TB: "*L"J=%$(J[1]), U=%$U")
+plot_wanniercentres(htb)
 
-# Wannier functions
-
-wanniers = DeltaModel.make_wannierfunctions(htb, 1:length(φₓ))
-htb.w.E .+= shift
-
-lift = minimum(htb.w.E) - 1
-lims = (lift-2, maximum(htb.w.E)+2)
-x = range(start=a/6, step=a/3, length=3n_cells)
-p = Progress(length(φₓ), 1)
-@gif for iφ in eachindex(φₓ)
-    fig = plot_potential(htb; U=0.5, U_title=U, lift, iφ)
-    for b in 1:3
-        scatter!((htb.w.pos[:, b, iφ].+a/6).%(a*n_cells), htb.w.E[:, b, iφ]; label=false, markerstrokewidth=0, ylims=lims, markersize=5, c=1:n_cells)
-        for j in 1:n_cells
-            plot!(x, abs2.(wanniers[:, j, b, iφ]) .+ htb.w.E[j, b, iφ], label=false, c=j)
-        end
-    end
-    next!(p)
-end
+# Pumping animation
+plot_pumping(htb)

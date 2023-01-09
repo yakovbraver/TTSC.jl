@@ -208,16 +208,15 @@ function compute_wanniers!(uh::UnperturbedHamiltonian, targetband::Integer)
 end
 
 """
-Calculate Wannier vectors for the unperturbed Hamiltonian `h` by mixing the three subbands of the `targetband`.
-Return `d, pos, E` as contained in `Wanniers` struct, except that these do not contain a separate dimension for the different subbands. 
+Calculate Wannier vectors for the unperturbed Hamiltonian `h` at phase `iφ₀` by mixing the three subbands of the `targetband`.
+Return `d, pos, E` as contained in `Wanniers` struct, except that these do not contain a separate dimension for the different subbands.
 """
-function compute_wanniers(uh::UnperturbedHamiltonian, targetband::Integer)
+function compute_wanniers(uh::UnperturbedHamiltonian; iφ₀::Integer=1, targetband::Integer)
     (;N, a, E) = uh
 
     X = zeros(ComplexF64, 3N, 3N) # position operator
     
     k₂ = 2π/(N*a)
-    iφ = 1
 
     for b in 1:3  # `b` and `b′` run over the 3 subbands
         m = 3(targetband-1) + b # "global" subband number
@@ -226,7 +225,7 @@ function compute_wanniers(uh::UnperturbedHamiltonian, targetband::Integer)
             for ik in 1:N
                 ik′ = ik % N + 1
                 for i in 1:3
-                    X[N*(b′-1)+ik′, N*(b-1)+ik] += 𝐹(uh, i*a/3, i, ik′, ik, m′, m, iφ, k₂) - 𝐹(uh, (i-1)a/3, i, ik′, ik,  m′, m, iφ, k₂)
+                    X[N*(b′-1)+ik′, N*(b-1)+ik] += 𝐹(uh, i*a/3, i, ik′, ik, m′, m, iφ₀, k₂) - 𝐹(uh, (i-1)a/3, i, ik′, ik,  m′, m, iφ₀, k₂)
                 end
                 X[N*(b′-1)+ik′, N*(b-1)+ik] *= N
             end
@@ -237,7 +236,7 @@ function compute_wanniers(uh::UnperturbedHamiltonian, targetband::Integer)
     sp = sortperm(pos_real)          # sort the eigenvalues
     pos = pos_real[sp]
     @views Base.permutecols!!(d, sp) # sort the eigenvectors in the same way
-    E = [abs2.(dˣ) ⋅ uh.E[range((iφ-1)size(uh.E, 2)size(uh.E, 1) + 3(targetband-1)size(uh.E, 1) + 1, length=3N)] for dˣ in eachcol(d)]
+    E = [abs2.(dˣ) ⋅ uh.E[range((iφ₀-1)size(uh.E, 2)size(uh.E, 1) + 3(targetband-1)size(uh.E, 1) + 1, length=3N)] for dˣ in eachcol(d)]
     return d, pos, E
 end
 
@@ -337,14 +336,12 @@ mutable struct TBHamiltonian <: AbstractTBHamiltonian
     w::Wanniers 
 end
 
-"Construct a `TBHamiltonian` object. `uh` must contain calculated periodic Wanniers."
-function TBHamiltonian(uh::UnperturbedHamiltonian; d::Matrix{ComplexF64}, isperiodic::Bool, targetband::Integer)
+"Construct a `TBHamiltonian` for the `targetband` of unperturbed Hamiltonian `uh`. `d` is a matrix of Wannier vectors construced at phase `iφ₀`."
+function TBHamiltonian(uh::UnperturbedHamiltonian; d::Matrix{ComplexF64}, iφ₀::Integer=1, isperiodic::Bool, targetband::Integer)
     (;a, N, U, φₓ) = uh
     n_φₓ = length(φₓ)
     n_w = size(d, 1) # number of Wanniers
     H = Array{ComplexF64, 3}(undef, n_w, n_w, n_φₓ) # TB Hamiltonian matrix
-
-    iφ₀ = 1
 
     H₀ = d' * (d .* uh.E[range((iφ₀-1)size(uh.E, 2)size(uh.E, 1) + N*3(targetband-1) + 1, length=n_w)]) # in brackets, element-wise multiply each column of `d` by a range from `uh.E`
 
