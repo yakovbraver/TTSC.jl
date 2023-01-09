@@ -495,9 +495,8 @@ function diagonalise!(fh::FloquetHamiltonian)
     (;s, ω, λₛ, λₗ, pumptype, ν) = fh
 
     n_levels = size(fh.E, 1)
-    n = 1 # cell number passed to `𝐹` -- any number is OK since `ik′ == ik` here
 
-    H = zeros(ComplexF64, n_levels, n_levels) # ℋ matrix
+    H = zeros(ComplexF64, n_levels, n_levels) # ℋ matrix, will only fill the lower triangle
 
     for ik in 1:N
         for (iφ, φ) in enumerate(φₓ)
@@ -513,14 +512,13 @@ function diagonalise!(fh::FloquetHamiltonian)
                     if pumptype != :time || iφ == 1 # if pumping is time-only, this must be calculated only once, at `iφ` = 1
                         ∫cos = ComplexF64(0)
                         for i = 1:3, k₂ in (-6π/a, 6π/a)
-                            ∫cos += 𝐹(fh.uh, i*a/3, i, n, ik, ik, m′, m, iφ, k₂) - 𝐹(fh.uh, (i-1)a/3, i, n, ik, ik, m′, m, iφ, k₂)
+                            ∫cos += 𝐹(fh.uh, i*a/3, i, ik, ik, m′, m, iφ, k₂) - 𝐹(fh.uh, (i-1)a/3, i, ik, ik, m′, m, iφ, k₂)
                         end
                         # if pumping is space-time, then also multiply by cis(-𝜑ₜ). `φ` runs over 𝜑ₓ, and we assume the pumping protocol 𝜑ₜ = 𝜑ₓ
                         H[m′, m] = (pumptype == :space ? λₗ/4 * ∫cos : λₗ/4 * ∫cos * cis(-φ))
                     elseif pumptype == :time 
                         H[m′, m] *= cis(-(φₓ[iφ]-φₓ[iφ-1]))
                     end
-                    H[m, m′] = H[m′, m]'
                 end
                 
                 # place the elements of the short lattice
@@ -530,14 +528,13 @@ function diagonalise!(fh::FloquetHamiltonian)
                     if pumptype != :time || iφ == 1 # if pumping is time-only, this must be calculated only once, at `iφ` = 1
                         ∫cos = ComplexF64(0)
                         for i = 1:3, k₂ in (-12π/a, 12π/a)
-                            ∫cos += 𝐹(fh.uh, i*a/3, i, n, ik, ik, m′, m, iφ, k₂) - 𝐹(fh.uh, (i-1)a/3, i, n, ik, ik, m′, m, iφ, k₂)
+                            ∫cos += 𝐹(fh.uh, i*a/3, i, ik, ik, m′, m, iφ, k₂) - 𝐹(fh.uh, (i-1)a/3, i, ik, ik, m′, m, iφ, k₂)
                         end
                         H[m′, m] = λₛ/4 * ∫cos
                     end
-                    H[m, m′] = H[m′, m]'
                 end
             end
-            fh.E[:, ik, iφ], fh.b[:, :, ik, iφ] = eigen(Hermitian(H))
+            fh.E[:, ik, iφ], fh.b[:, :, ik, iφ] = eigen(Hermitian(H, :L))
         end
     end
 end
@@ -599,8 +596,6 @@ Calculate Wannier vectors for the Floquet Hamiltonian `fh` using the quasienergy
 function compute_wanniers!(fh::FloquetHamiltonian; targetsubbands::AbstractVector{<:Integer})
     (;N, a, φₓ) = fh.uh
 
-    fh.w.targetsubbands = targetsubbands # save this because it's needed in `make_wannierfunctions`
-
     n_w = length(targetsubbands) * N
     E = Matrix{Float64}(undef, n_w, length(φₓ))
     pos = Matrix{Float64}(undef, n_w, length(φₓ))
@@ -619,10 +614,13 @@ function compute_wanniers!(fh::FloquetHamiltonian; targetsubbands::AbstractVecto
     for iφ in eachindex(φₓ)
         # if pumping is time-only, then `expik` must be calculated only at the first iteration, thereby using `c`'s at 𝜑ₓ = 0
         if fh.pumptype != :time || iφ == 1
-            for ik in 1:N,  ik′ in 1:N,  m in 1:n_levels,  m′ in 1:n_levels
-                expik[m′, m, ik′, ik] = 0
-                for n = 1:N, i = 1:3
-                    expik[m′, m, ik′, ik] += 𝐹(fh.uh, (n-1)a + i*a/3, i, n, ik′, ik, m′, m, iφ, k₂) - 𝐹(fh.uh, (n-1)a + (i-1)a/3, i, n, ik′, ik, m′, m, iφ, k₂)
+            expik .= 0
+            for ik in 1:N
+                ik′ = ik % N + 1
+                for m in 1:n_levels,  m′ in 1:n_levels
+                    for i = 1:3
+                        expik[m′, m, ik′, ik] += 𝐹(fh.uh, i*a/3, i, ik′, ik, m′, m, iφ, k₂) - 𝐹(fh.uh, (i-1)a/3, i, ik′, ik, m′, m, iφ, k₂)
+                    end
                 end
             end
         end
@@ -638,7 +636,7 @@ function compute_wanniers!(fh::FloquetHamiltonian; targetsubbands::AbstractVecto
             end
         end
         _, d[:, :, iφ], pos_complex = schur(X)
-        pos_real = @. (angle(pos_complex) + pi) / k₂ # shift angle from [-π, π) to [0, 2π)
+        pos_real = @. mod2pi(angle(pos_complex)) / k₂ # shift angle from [-π, π) to [0, 2π)
         sp = sortperm(pos_real)         # sort the eigenvalues
         pos[:, iφ] = pos_real[sp]
         @views Base.permutecols!!(d[:, :, iφ], sp) # sort the eigenvectors in the same way
