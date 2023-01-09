@@ -8,8 +8,8 @@ using LinearAlgebra: eigvals, eigen, schur, ⋅, dot, svd, diagm, diagind, Diago
 "A type for storing the Wannier functions."
 mutable struct Wanniers
     targetband::Int
-    E::Array{Float64, 3} # `E[j, b, i]` = mean energy of `j`th wannier of the `b`th subband (1≤b≤3) at `i`th phase
-    pos::Array{Float64, 3} # `pos[j, b, i]` = position eigenvalue of `j`th wannier of the `b`th subband (1≤b≤3) at `i`th phase
+    E::Array{Float64, 3} # `E[j, b, i]` = mean energy of `j`th wannier of the `b`th subband (1 ≤ b ≤ 3) at `i`th phase
+    pos::Array{Float64, 3} # `pos[j, b, i]` = position eigenvalue of `j`th wannier of the `b`th subband (1 ≤ b ≤ 3) at `i`th phase
     d::Array{ComplexF64, 4} # `d[:, :, b, i]` = position eigenvectors at `i`th phase; see methods of `compute_wanniers!` for details
 end
 
@@ -155,6 +155,7 @@ function make_eigenfunctions(uh::UnperturbedHamiltonian, n_x::Integer, whichband
     return x, ψ
 end
 
+"A helper function for calculating ∫𝜓̄ᵢexp(i𝑥)𝜓ⱼ d𝑥."
 function 𝐹(uh, x, i, ik′, ik, m′, m, iφ, k₂)
     (;κ, c) = uh
     κʲ = κ[i, ik, m, iφ]
@@ -167,6 +168,7 @@ function 𝐹(uh, x, i, ik′, ik, m′, m, iφ, k₂)
         (c[2i-1, ik′, m′, iφ] - im*c[2i, ik′, m′, iφ])' * (c[2i, ik, m, iφ] + im*c[2i-1, ik, m, iφ]) * cis(2κʲ′*x) / (κʲ′ - κʲ + k₂) )
 end
 
+"A helper function for calculating ∫𝜓̄ᵢ𝜓ⱼ d𝑥."
 function 𝐺(uh, i, ik′, ik, m, iφ)
     (;a, κ, c) = uh
     κʲ = κ[i, ik, m, iφ]
@@ -195,8 +197,6 @@ function compute_wanniers!(uh::UnperturbedHamiltonian, targetband::Integer)
                 end
                 X[ik′, ik] *= N
             end
-            # `eigen` does not guarantee orthogonality of eigenvectors in case of degeneracies for `X` unitary, so use `schur`
-            # (although a degeneracy of coordinates eigenvalues is unlikely here)
             _, uh.w.d[:, :, b, iφ], pos_complex = schur(X)
             pos_real =  @. mod2pi(angle(pos_complex)) / k₂ # shift angle from [-π, π) to [0, 2π)
             sp = sortperm(pos_real)                         # sort the eigenvalues
@@ -259,12 +259,13 @@ function make_wannierfunctions(uh::UnperturbedHamiltonian, n_x::Integer, whichph
     return x, ψ, w
 end
 
+"Abstract supertype of the tight-binding Hamiltonians."
 abstract type AbstractTBHamiltonian end
 
 """
 A type representing the tight-binding Hamiltonian
-    hₜ = ∑ⱼ 𝐽₁𝑏⁺ⱼ𝑎ⱼ + 𝐽₂𝑐⁺ⱼ𝑏ⱼ + 𝐽₃𝑎⁺ⱼ₊₁𝑐ⱼ + h.c.
-         + 𝑈 ∑ⱼ 𝑎⁺ⱼ𝑎ⱼcos(𝜑ₓ) + 𝑏⁺ⱼ𝑏ⱼcos(𝜑ₓ + 2π/3) + 𝑐⁺ⱼ𝑐ⱼcos(𝜑ₓ + 4π/3)
+    ℎₜ(𝜑ₓ) = ∑ⱼ 𝐽₁𝑏⁺ⱼ𝑎ⱼ + 𝐽₂𝑐⁺ⱼ𝑏ⱼ + 𝐽₃𝑎⁺ⱼ₊₁𝑐ⱼ + h.c.
+             + 𝑈 ∑ⱼ 𝑎⁺ⱼ𝑎ⱼcos(𝜑ₓ) + 𝑏⁺ⱼ𝑏ⱼcos(𝜑ₓ + 2π/3) + 𝑐⁺ⱼ𝑐ⱼcos(𝜑ₓ + 4π/3)
 """
 mutable struct SimpleTBHamiltonian <: AbstractTBHamiltonian
     N::Int # number of lattice cells
@@ -273,7 +274,7 @@ mutable struct SimpleTBHamiltonian <: AbstractTBHamiltonian
     J::Vector{ComplexF64}
     isperiodic::Bool
     φₓ::Vector{Float64}
-    E::Matrix{Float64}      # `E[i, j]` = `i`th eigenvalue at `j`th phase, `i` ∈ [1, `3N`], `j` ∈ [1, `length(φₓ)`]
+    E::Matrix{Float64}      # `E[i, j]` = `i`th eigenvalue at `j`th phase, 1 ≤ i ≤ 3N, 1 ≤ j ≤ length(φₓ)
     c::Array{ComplexF64, 3} # `c[:, i, j]` = `i`th eigenvector at `j`th phase
     w::Wanniers 
 end
@@ -287,9 +288,9 @@ function SimpleTBHamiltonian(n_cells::Integer; a::Real, U::Real, J::Vector{<:Num
     SimpleTBHamiltonian(Int(n_cells), Float64(a), Float64(U), ComplexF64.(J), isperiodic, collect(Float64, φₓ), E, c, w)
 end
 
-"Diagonalise the TB Hamiltonian `h` at each phase."
-function diagonalise!(h::SimpleTBHamiltonian)
-    (;N, U, J, isperiodic, φₓ) = h
+"Diagonalise the TB Hamiltonian `tbh` at each phase."
+function diagonalise!(tbh::SimpleTBHamiltonian)
+    (;N, U, J, isperiodic, φₓ) = tbh
     for (i, φ) in enumerate(φₓ)
         diag = repeat([U*cos(φ), U*cos(φ+2π/3), U*cos(φ+4π/3)], N)
         J_diag = [repeat(J, N-1); J[1:2]]
@@ -298,7 +299,7 @@ function diagonalise!(h::SimpleTBHamiltonian)
             H[1, end] = J[3]
             H[end, 1] = J[3]'
         end
-        h.E[:, i], h.c[:, :, i] = eigen(Hermitian(H))
+        tbh.E[:, i], tbh.c[:, :, i] = eigen(Hermitian(H))
     end
 end
 
@@ -311,7 +312,7 @@ function kspace_hamiltonian(tbh::SimpleTBHamiltonian, φ::Real, ka::Real)
 end
 
 """
-Diagonalise the TB Hamiltonian `h` in 𝑘-space at each phase for the values of 𝑘𝑎 in `ka`.
+Diagonalise the TB Hamiltonian `tbh` in 𝑘-space at each phase for the values of 𝑘𝑎 in `ka`.
 Return the matrix of eigenenergies `E`, where `E[:, i]` is the energy at `i`th phase.
 In `E`, rows 1:3 corresopnd to `ka[1]`, rows 4:6 correspond to `ka[2]`, and so on.
 """
@@ -325,13 +326,17 @@ function diagonalise_kspace(tbh::SimpleTBHamiltonian, ka::AbstractVector{<:Real}
     return E
 end
 
+""" 
+A type representing a general tight-binding Hamiltonian
+    ℎₜ(𝜑ₓ) = ∑ᵢⱼ 𝐽ᵢⱼ(𝜑ₓ)𝑎⁺ᵢ𝑎ⱼ
+"""
 mutable struct TBHamiltonian <: AbstractTBHamiltonian
     N::Int # number of lattice cells
     a::Float64
     H::Array{ComplexF64, 3} # Hamiltonian matrix
     isperiodic::Bool
     φₓ::Vector{Float64}
-    E::Matrix{Float64}      # `E[i, j]` = `i`th eigenvalue at `j`th phase, `i` ∈ [1, `3N`], `j` ∈ [1, `length(φₓ)`]
+    E::Matrix{Float64}      # `E[i, j]` = `i`th eigenvalue at `j`th phase, 1 ≤ i ≤ 3N, 1 ≤ j ≤ length(φₓ)
     c::Array{ComplexF64, 3} # `c[:, i, j]` = `i`th eigenvector at `j`th phase
     w::Wanniers 
 end
@@ -411,7 +416,7 @@ function compute_wanniers!(tbh::AbstractTBHamiltonian)
 end
 
 """
-Construct Wannier functions at each phase number in `whichphases`. All Wannier functions contained in `h` are constructed.
+Construct Wannier functions at each phase number in `whichphases`. All Wannier functions contained in `tbh` are constructed.
 Return `w`, where `w[:, j, b i]` = `j`th Wannier function of `b`th subband at `i`th phase.
 """
 function make_wannierfunctions(tbh::AbstractTBHamiltonian, whichphases::AbstractVector{<:Integer})
@@ -427,7 +432,7 @@ function make_wannierfunctions(tbh::AbstractTBHamiltonian, whichphases::Abstract
     return w
 end
 
-"A type for storing the Wannier functions."
+"A type for storing the Floquet Wannier functions."
 mutable struct FloquetWanniers
     targetsubbands::Vector{Int}
     E::Array{Float64, 2} # `E[j, i]` = mean energy of `j`th wannier at `i`th phase
