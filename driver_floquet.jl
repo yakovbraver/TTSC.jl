@@ -2,7 +2,7 @@ using Plots, LaTeXStrings, ProgressMeter
 plotlyjs()
 theme(:dark, size=(800, 600))
 
-includet("bandsolvers.jl")
+include("bandsolvers.jl")
 import .Bandsolvers
 
 l = 1

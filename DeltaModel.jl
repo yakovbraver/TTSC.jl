@@ -155,7 +155,7 @@ function make_eigenfunctions(uh::UnperturbedHamiltonian, n_x::Integer, whichband
     return x, ψ
 end
 
-"A helper function for calculating ∫𝜓̄ᵢexp(i𝑥)𝜓ⱼ d𝑥."
+"A helper function for calculating ∫𝜓̄ᵢexp(i𝑥𝑘₂)𝜓ⱼ d𝑥."
 function 𝐹(uh, x, i, ik′, ik, m′, m, iφ, k₂)
     (;κ, c) = uh
     κʲ = κ[i, ik, m, iφ]
@@ -593,7 +593,7 @@ end
 """
 Calculate Wannier vectors for the Floquet Hamiltonian `fh` using the quasienergy levels `targetsubbands`.
 """
-function compute_wanniers!(fh::FloquetHamiltonian; targetsubbands::AbstractVector{<:Integer})
+function compute_wanniers!(fh::FloquetHamiltonian; targetsubbands::AbstractVector{<:Integer}, xe)
     (;N, a, φₓ) = fh.uh
 
     n_w = length(targetsubbands) * N
@@ -621,11 +621,12 @@ function compute_wanniers!(fh::FloquetHamiltonian; targetsubbands::AbstractVecto
                     for i = 1:3
                         expik[m′, m, ik′, ik] += 𝐹(fh.uh, i*a/3, i, ik′, ik, m′, m, iφ, k₂) - 𝐹(fh.uh, (i-1)a/3, i, ik′, ik, m′, m, iφ, k₂)
                     end
+                    expik[m′, m, ik′, ik] *= N
                 end
             end
         end
 
-        t = (fh.pumptype == :space ? π/5 : π/5 - iφ/length(φₓ)*π) # time moment at which to diagonalise the coordinate operator
+        t = (fh.pumptype == :space ? xe : xe - iφ/length(φₓ)*π) # time moment at which to diagonalise the coordinate operator
 
         for ik in 1:N,  ik′ in 1:N
             for (in, n) in enumerate(targetsubbands)
@@ -670,8 +671,7 @@ A type representing a 2D (time+space) tight-binding Hamiltonian 𝐻.
 mutable struct TBFloquetHamiltonian
     N::Int
     a::Float64
-    U::Float64
-    H::Matrix{ComplexF64}   # Hamiltonian matrix
+    H::Array{ComplexF64, 3} # Hamiltonian matrix
     isperiodic::Bool
     φₓ::Vector{Float64}
     E::Matrix{Float64}      # `E[i, j]` = `i`th eigenvalue at `j`th phase, `1 ≤ i ≤ 6N`, `1 ≤ j ≤ length(φₓ)`
@@ -680,36 +680,66 @@ mutable struct TBFloquetHamiltonian
 end
 
 "Construct a `TBFloquetHamiltonian` object."
-function TBFloquetHamiltonian(fh::FloquetHamiltonian; isperiodic::Bool)
-    (;N, φₓ) = fh.uh
+function TBFloquetHamiltonian(fh::FloquetHamiltonian, d::Matrix{ComplexF64}; N::Integer, iφ₀::Integer, isperiodic::Bool, targetband::Integer, pumptype::Symbol)
+    (;a, U, φₓ) = fh.uh
+    (;s, λₗ, ν) = fh
     n_φₓ = length(φₓ)
-    n_s = 6 # number of subbands of ℋ mixed
-    # Compute the off-diagonal elements of the TB Hamiltonian 𝐻 using the Wanniers of ℋ.
-    # Use only the first phase since each phase should lead to identical results.
-    H = Matrix{ComplexF64}(undef, n_s*N, n_s*N)
-    iφ = 1
-    for a = 1:n_s*N, b = a:n_s*N
-        H[b, a] = sum(fh.w.d[i, a, iφ]' * fh.w.d[i, b, iφ] * fh.E[(i-1)%n_s+1, (i-1)÷n_s+1, iφ] for i = axes(fh.w.d, 1))
-        H[a, b] = H[b, a]'
+    n_w = 4 * 3 # number of temporal sites * number of spatial sites
+    H = Array{ComplexF64, 3}(undef, n_w, n_w, n_φₓ)
+
+    n_m = size(fh.E, 1) # number of levels of ℎ considered
+    Ψ = Matrix{ComplexF64}(undef, n_m, n_m)
+
+    ik = 1
+    H₀ = d' * (d .* fh.E[range(n_w*(targetband-1) + 1, length=n_w), ik, iφ₀]) # in brackets, element-wise multiply each column of `d` by a range from `fh.E`
+    b = fh.b[:, range(n_w*(targetband-1) + 1, length=n_w), ik, iφ₀] # a view for convenience
+
+    for (iφ, φ) in enumerate(φₓ)
+        for m in 1:n_m # `m` is the subband index of ℎ
+            for m′ in 1:n_m
+                Ψ[m′, m] = 0
+                if pumptype != :time # if pumping is not time-only, account for the change of the spatial phase
+                    if m′ == m
+                        Ψ[m′, m] += U * sum(𝐺(fh.uh, r, ik, ik, m, iφ₀) * (cos(φ + 2π*(r-1)/3) - cos(2π*(r-1)/3)) for r in 1:3)
+                    elseif ν[m] == ν[m′]
+                        for r in 1:3
+                            Ψ[m′, m] += U * (𝐹(fh.uh, r*a/3, r, ik, ik, m′, m, iφ₀, 0) - 𝐹(fh.uh, (r-1)a/3, r, ik, ik, m′, m, iφ₀, 0)) *
+                                            (cos(φ + 2π*(r-1)/3) - cos(2π*(r-1)/3))
+                        end
+                    end
+                end
+                if pumptype != :space # if pumping is not space-only, account for the change of the temporal phase
+                    if ν[m] == ν[m′] + s
+                        e = cis(φ)
+                    elseif ν[m] == ν[m′] - s
+                        e = cis(-φ)
+                    else
+                        continue
+                    end
+                    for r = 1:3, k₂ in (-6π/a, 6π/a)
+                        Ψ[m′, m] += λₗ/4 * (e - 1) * ( 𝐹(fh.uh, r*a/3, r, ik, ik, m′, m, iφ₀, k₂) - 𝐹(fh.uh, (r-1)a/3, r, ik, ik, m′, m, iφ₀, k₂) )
+                    end
+                end
+            end
+        end
+        H[:, :, iφ] = H₀ + d' * b' * Ψ * b * d
     end
 
-    E = Matrix{Float64}(undef, n_s*N, n_φₓ)
-    c = Array{ComplexF64, 3}(undef, n_s*N, n_s*N, n_φₓ)
-    TBFloquetHamiltonian(N, fh.uh.a, fh.uh.U, H, isperiodic, φₓ, E, c, FloquetWanniers())
+    E = Matrix{Float64}(undef, n_w, n_φₓ)
+    c = Array{ComplexF64, 3}(undef, n_w, n_w, n_φₓ)
+    TBFloquetHamiltonian(N, a, H, isperiodic, φₓ, E, c, FloquetWanniers())
 end
 
 "Diagonalise the TB Floquet Hamiltonian `tbh` at each phase. The wannier energies `fh.w.E` are used to fill the diagonal of `tbh` at each phase."
-function diagonalise!(tbh::TBFloquetHamiltonian, fh::FloquetHamiltonian)
+function diagonalise!(tbh::TBFloquetHamiltonian)
     for i in eachindex(tbh.φₓ)
-        tbh.H[diagind(tbh.H)] .= fh.w.E[:, i]
-        tbh.E[:, i], tbh.c[:, :, i] = eigen(Hermitian(tbh.H))
+        tbh.E[:, i], tbh.c[:, :, i] = eigen(Hermitian(tbh.H[:, :, i]))
     end
 end
 
 "Calculate Wannier vectors for the TB floquet Hamiltonian `tbh` using the quasienergy levels `targetsubbands`."
 function compute_wanniers!(tbh::TBFloquetHamiltonian; targetsubbands::AbstractVector{<:Integer})
     (;N, a, φₓ) = tbh
-    tbh.w.targetsubbands = targetsubbands # save this because it's needed in `make_wannierfunctions`
 
     n_w = length(targetsubbands) * N
     E = Matrix{Float64}(undef, n_w, length(φₓ))
