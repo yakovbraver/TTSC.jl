@@ -1,6 +1,6 @@
 module Bandsolvers
 
-using LinearAlgebra: eigen, schur, diagm, diagind, eigvals, Diagonal, Hermitian
+using LinearAlgebra: eigen, schur, diagm, diagind, eigvals, ⋅, Diagonal, Hermitian
 
 "A type for storing the Wannier functions."
 mutable struct Wanniers
@@ -630,6 +630,77 @@ function make_wannierfunctions(fh::FloquetHamiltonian, x::AbstractVector{<:Real}
         end
     end
     return u, w
+end
+
+"""
+A type representing 2D (time+space) tight-binding Hamiltonian.
+"""
+mutable struct TBFloquetHamiltonian
+    N::Int
+    H::Array{ComplexF64, 3} # Hamiltonian matrix
+    φₓ::Vector{Float64}
+    pumptype::Symbol
+    E::Matrix{Float64}      # `E[i, j]` = `i`th eigenvalue at `j`th phase
+    c::Array{ComplexF64, 3} # `c[:, i, j]` = `i`th eigenvector at `j`th phase
+    w::Wanniers 
+end
+
+"""
+Construct a `TBFloquetHamiltonian` object using the temporal band `targetband`.
+`fh` must contain calculated periodic Wanniers; `pumptype` may or may not coincide with `fh.pumptype`.
+"""
+function TBFloquetHamiltonian(fh::FloquetHamiltonian; targetband::Integer, pumptype::Symbol)
+    (;N, c, Vₗ, φₓ) = fh.uh
+    (;s, λₗ, ν) = fh
+    n_φₓ = length(φₓ)
+    n_w = 4 * 2N # number of Wanniers
+    H = Array{ComplexF64, 3}(undef, n_w, n_w, n_φₓ) # TB Hamiltonian matrix
+    
+    iφ₀ = 1 # phase index at which to take the Wanniers -- any choice should work, but we assume `iφ₀ = 1` below
+    
+    n_m = size(fh.E, 1) # number of levels of ℎ considered
+    Ψ = Matrix{ComplexF64}(undef, n_m, n_m)
+    
+    d = fh.uh.w.d[:, :, iφ₀]
+    b = fh.b[:, range(n_w*(targetband-1) + 1, length=n_w), iφ₀] # a view for convenience
+    H₀ = d' * (d .* fh.E[range(n_w*(targetband-1) + 1, length=n_w), iφ₀]) # in brackets, element-wise multiply each column of `d` by a range from `fh.E`
+
+    for (iφ, φ) in enumerate(φₓ)
+        for m in 1:n_m # `m` is the subband index of ℎ
+            for m′ in 1:n_m
+                Ψ[m′, m] = 0
+                if pumptype != :time # if pumping is not time-only, account for the change of the spatial phase
+                    if ν[m] == ν[m′]
+                        @views Ψ[m′, m] += Vₗ / 4 * ( (c[1+N:end, m′, iφ₀] ⋅ c[1:end-N, m, iφ₀]) * (cis(+2φ) - 1) +
+                                                      (c[1:end-N, m′, iφ₀] ⋅ c[1+N:end, m, iφ₀]) * (cis(-2φ) - 1) )
+                    end
+                end
+                if pumptype != :space # if pumping is not space-only, account for the change of the temporal phase
+                    if ν[m] == ν[m′] + s
+                        e = cis(+2φ) # we assume 𝜑ₜ = 2𝜑ₓ, hence the two
+                    elseif ν[m] == ν[m′] - s
+                        e = cis(-2φ)
+                    else
+                        continue
+                    end
+                    @views Ψ[m′, m] += λₗ/8 * (e - 1) * ( (c[1+2N:end, m′, iφ₀] ⋅ c[1:end-2N, m, iφ₀]) +
+                                                          (c[1:end-2N, m′, iφ₀] ⋅ c[1+2N:end, m, iφ₀]) )
+                end
+            end
+        end
+        H[:, :, iφ] = H₀ + d' * b' * Ψ * b * d
+    end
+
+    E = Matrix{Float64}(undef, n_w, n_φₓ)
+    cc = Array{ComplexF64, 3}(undef, n_w, n_w, n_φₓ)
+    TBFloquetHamiltonian(N, H, φₓ, pumptype, E, cc, Wanniers())
+end
+
+"Diagonalise the TB Floquet Hamiltonian `tbh` at each phase."
+function diagonalise!(tbh::TBFloquetHamiltonian)
+    for iφ in eachindex(tbh.φₓ)
+        tbh.E[:, iφ], tbh.c[:, :, iφ] = eigen(Hermitian(tbh.H[:, :, iφ]))
+    end
 end
 
 end

@@ -2,7 +2,7 @@ using Plots, LaTeXStrings, ProgressMeter
 plotlyjs()
 theme(:dark, size=(800, 600))
 
-include("bandsolvers.jl")
+includet("bandsolvers.jl")
 import .Bandsolvers
 
 l = 1
@@ -76,6 +76,34 @@ for f in eachindex(targetlevels)
     figs[f] = heatmap(x, Ωt, abs2.(w[:, :, f, 1]'), xlabel=L"x", ylabel=L"\Omega t", c=:viridis, title="Wannier $f")
 end
 plot(figs...)
+
+### TB Floquet Hamiltonian
+
+# Construct the Wanniers
+targetlevels = 1:4*2n_cells
+Bandsolvers.compute_wanniers!(H; targetlevels)
+
+# Plot the Wanniers
+x = range(0, n_cells*pi, length=50n_cells)
+Ωt = range(0, 2π, length=40s)
+iϕ = 1
+_, w = Bandsolvers.make_wannierfunctions(H, x, Ωt, [iϕ])
+figs = [plot() for _ in eachindex(targetlevels)]
+for f in eachindex(targetlevels)
+    figs[f] = heatmap(x, Ωt, abs2.(w[:, :, f, 1]'), xlabel=L"x", ylabel=L"\Omega t", c=:viridis, title="Wannier $f")
+end
+plot(figs...)
+
+# Construct and diagonalise TB Hamiltonian
+Htb = Bandsolvers.TBFloquetHamiltonian(H; targetband=1, pumptype=:space)
+Bandsolvers.diagonalise!(Htb)
+
+# Quasienergy spectrum
+fig = plot();
+for r in eachrow(Htb.E)
+    plot!(φₓ, r, label=false)
+end
+plot!(xlabel=L"\varphi_x", ylabel="Quasienergy", title="TB")
 
 ########## Non-periodic case
 
