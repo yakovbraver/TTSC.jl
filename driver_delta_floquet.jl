@@ -55,9 +55,9 @@ savefig("spatial-spectrum-zoom.pdf")
 
 ### Floquet Hamiltonian
 
-λₛ = 40; λₗ = 20; ω = 498
+λₛ = 10; λₗ = 5; ω = 494
 s = 2
-pumptype = :time
+pumptype = :space
 H = DeltaModel.FloquetHamiltonian(h; s, λₛ, λₗ, ω, pumptype)
 
 DeltaModel.diagonalise!(H)
@@ -163,9 +163,7 @@ p = Progress(length(φₓ), 1)
         figs[f] = heatmap(x, Ωt/π, abs2.(w[:, :, o, iφ]'), xlabel=L"x", ylabel=L"\Omega t/\pi", c=CMAP, title="Wannier $f", clims=(0, 3), xlims=(0, a*n_cells), ylims=(0, 2))
         shadecells!(figs[f])
     end
-    # plot(figs..., plot_title="φ = $(round(φₓ[iφ], sigdigits=3))")
     # plot(figs..., plot_title=L"\varphi_x=\varphi_t = %$(round(φₓ[iφ], sigdigits=3))")
-    plot(figs..., plot_title=L"\varphi_t = %$(round(φₓ[iφ], sigdigits=3))")
     next!(p)
 end
 
@@ -176,14 +174,13 @@ end
 targetsubbands = 1:12
 n_subbands = length(targetsubbands)
 
-xe = 0.25pi
-DeltaModel.compute_wanniers!(H; targetsubbands, xe)
+DeltaModel.compute_wanniers!(H; targetsubbands, Ωt=0.35π)
 
 # Maps of Wannier functions
 iφ = 1
 n_x = 50
 Ωt = range(0, 2π, length=40s)
-x, _, w = DeltaModel.make_wannierfunctions(H, n_x, Ωt, [1, 31])
+x, _, w = DeltaModel.make_wannierfunctions(H, n_x, Ωt, [1])
 figs = [plot() for _ in 1:length(targetsubbands)*n_cells]
 # figs = [plot() for _ in 1:4]
 for f in eachindex(figs)
@@ -193,9 +190,7 @@ for f in eachindex(figs)
     figs[f] = heatmap(x, Ωt, abs2.(w[:, :, f, 2]'), xlabel=L"x", ylabel=L"\Omega t", c=CMAP, title="Wannier $f")
 end
 plot(figs...)
-savefig("all-wanniers-24.png")
-
-w2 = w[:, :, ]
+savefig("all-wanniers-12.png")
 
 # Construct a copy of `H.w.d` describing `2n_subbands*n_cells` Wannier states by selecting wanniers at 𝜑ₓ = 0 and π.
 d = Matrix{ComplexF64}(undef, n_subbands*n_cells, 2n_subbands*n_cells)
@@ -240,16 +235,15 @@ f(E) = DeltaModel.cos_ka(E; φ=0, uh=h)
 bounds = (45, 5100)
 rts = iroots.roots(f, bounds[1]..bounds[2])
 DeltaModel.diagonalise!(h, length(rts), bounds)
-H = DeltaModel.FloquetHamiltonian(h; s, λₛ, λₗ, ω, pumptype=:time)
+H = DeltaModel.FloquetHamiltonian(h; s, λₛ, λₗ, ω, pumptype=:space)
 DeltaModel.diagonalise!(H)
 
 targetsubbands = 1:12
 n_subbands = length(targetsubbands)
 
-xe = 0pi
-DeltaModel.compute_wanniers!(H; targetsubbands, xe)
+DeltaModel.compute_wanniers!(H; targetsubbands, Ωt=0.3π)
 
-Htb = DeltaModel.TBFloquetHamiltonian(H, H.w.d[:, :, 1]; N=n_cells, iφ₀=1, isperiodic=true, targetband=1, pumptype=:time)
+Htb = DeltaModel.TBFloquetHamiltonian(H, H.w.d[:, :, 1]; N=n_cells, iφ₀=1, isperiodic=true, targetband=1, pumptype=:space)
 
 DeltaModel.diagonalise!(Htb)
 
@@ -258,41 +252,58 @@ fig = plot();
 for r in eachrow(Htb.E)
     plot!(φₓ, r .- ω/s*skipbands)
 end
-display(fig)
+plot!(xlabel=L"\varphi_t", ylabel="Quasienergy", title="TB", legend=false, ylims=(-2752, -2728))
 
 skipbands = 2 # number of spatial bands that have been skipped by the choice if `bounds` above
 fig = plot();
 for ik in axes(H.E, 2)
     for m in axes(H.E, 1)
-        plot!(φₓ, H.E[m, ik, :] .- ω/s*skipbands, c=m)
+        plot!(φₓ, H.E[m, ik, :] .- ω/s*skipbands, c=1)
     end
 end
-plot!(title=L"\omega=%$ω, \lambda_S=%$λₛ, \lambda_L=%$λₗ", ticks=:native)
+plot!(xlabel=L"\varphi_t", ylabel="Quasienergy", legend=false, ylims=(-2752, -2728))
 
-
-targetsubbands = [3, 6]
+targetsubbands = [5, 6]
 DeltaModel.compute_wanniers!(Htb; targetsubbands)
 whichphases = 1:length(φₓ)
 w = abs2.(DeltaModel.make_wannierfunctions(Htb, whichphases))
 
-DeltaModel.order_wannierfunctions!(w, whichphases)
+"Return proper order of states depending on pumping type."
+function get_order_tb(iφ::Integer; pumptype::Symbol)
+    if pumptype == :time
+        if iφ < 17
+            order = [1, 2]
+        elseif iφ < 20
+            order = [2, 1]
+        elseif iφ < 28
+            order = [1, 2]
+        else
+            order = [2, 1]
+        end
+    else
+        if iφ < 5
+            order = [1, 2]
+        elseif iφ < 16
+            order = [2, 1]
+        elseif iφ < 27
+            order = [1, 2]
+        else
+            order = [2, 1]
+        end
+    end
+    order
+end
 
 clims = extrema(w)
 n_t = size(Htb.H, 1) ÷ 3n_cells # number of temporal sites
 p = Progress(length(whichphases), 1)
-@gif for i in whichphases
+@gif for iφ in whichphases
     figs = [plot() for _ in 1:length(targetsubbands)*n_cells]
-    for j in axes(w, 3)
-        figs[j] = heatmap(1:3n_cells, 1:n_t, w[:, :, j, i]; clims, c=CMAP, xticks=1:3n_cells, yticks=1:n_t,
-                          xlabel="spatial site", ylabel="temporal site", title="Wannier $j")
+    for (f, o) in enumerate(get_order_tb(iφ; pumptype=:space))
+        figs[f] = heatmap(1:3n_cells, 1:n_t, w[:, :, o, iφ]; clims, c=CMAP, xticks=1:3n_cells, yticks=1:n_t,
+                          xlabel="spatial site", ylabel="temporal site", title="Wannier $f")
     end
     # plot(figs..., plot_title=L"\varphi_x=\varphi_t = %$(round(φₓ[i], sigdigits=3))")
-    plot(figs..., plot_title=L"\varphi_t = %$(round(φₓ[i], sigdigits=3))")
+    plot(figs..., plot_title=L"\varphi_t = %$(round(φₓ[iφ], sigdigits=3))")
     next!(p)
 end
-
-using LinearAlgebra: diagind
-M = abs.(Htb.H[:, :, 31])
-M[diagind(M)] .= 0
-heatmap(1:size(M, 1), 1:size(M, 1), M; yaxis=:flip, c=CMAP, xticks=1:size(M, 1), yticks=1:size(M, 1))
-savefig("tb-hamiltonian-four-1.pdf")

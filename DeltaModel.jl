@@ -346,7 +346,7 @@ function TBHamiltonian(uh::UnperturbedHamiltonian; d::Matrix{ComplexF64}, iφ₀
     n_w = size(d, 1) # number of Wanniers
     H = Array{ComplexF64, 3}(undef, n_w, n_w, n_φₓ) # TB Hamiltonian matrix
 
-    H₀ = d' * (d .* uh.E[range((iφ₀-1)size(uh.E, 2)size(uh.E, 1) + N*3(targetband-1) + 1, length=n_w)]) # in brackets, element-wise multiply each column of `d` by a range from `uh.E`
+    H₀ = d' * Diagonal(uh.E[range((iφ₀-1)size(uh.E, 2)size(uh.E, 1) + N*3(targetband-1) + 1, length=n_w)]) * d
 
     ψ∑ψ = Matrix{ComplexF64}(undef, n_w, n_w)
 
@@ -592,8 +592,9 @@ end
 
 """
 Calculate Wannier vectors for the Floquet Hamiltonian `fh` using the quasienergy levels `targetsubbands`.
+`Ωt` is the time moment at which to diagonalise the coordinate operator.
 """
-function compute_wanniers!(fh::FloquetHamiltonian; targetsubbands::AbstractVector{<:Integer}, xe)
+function compute_wanniers!(fh::FloquetHamiltonian; targetsubbands::AbstractVector{<:Integer}, Ωt::AbstractFloat=π/5)
     (;N, a, φₓ) = fh.uh
 
     n_w = length(targetsubbands) * N
@@ -618,7 +619,7 @@ function compute_wanniers!(fh::FloquetHamiltonian; targetsubbands::AbstractVecto
             for ik in 1:N
                 ik′ = ik % N + 1
                 for m in 1:n_levels,  m′ in 1:n_levels
-                    for i = 1:3
+                    for i in 1:3
                         expik[m′, m, ik′, ik] += 𝐹(fh.uh, i*a/3, i, ik′, ik, m′, m, iφ, k₂) - 𝐹(fh.uh, (i-1)a/3, i, ik′, ik, m′, m, iφ, k₂)
                     end
                     expik[m′, m, ik′, ik] *= N
@@ -626,13 +627,13 @@ function compute_wanniers!(fh::FloquetHamiltonian; targetsubbands::AbstractVecto
             end
         end
 
-        t = (fh.pumptype == :space ? xe : xe - iφ/length(φₓ)*π) # time moment at which to diagonalise the coordinate operator
+        fh.pumptype != :space && (Ωt -= (iφ-1)/length(φₓ)*π)
 
         for ik in 1:N,  ik′ in 1:N
             for (in, n) in enumerate(targetsubbands)
                 for (in′, n′) in enumerate(targetsubbands)
                     X[in′+(ik′-1)*n_subbands, in+(ik-1)*n_subbands] = sum(fh.b[m, n, ik, iφ] * sum(fh.b[m′, n′, ik′, iφ]' * expik[m′, m, ik′, ik] *
-                                                                          cis((fh.ν[m′] - fh.ν[m]) * t) for m′ in 1:n_levels) for m in 1:n_levels)
+                                                                          cis((fh.ν[m′] - fh.ν[m]) * Ωt) for m′ in 1:n_levels) for m in 1:n_levels)
                 end
             end
         end
@@ -666,7 +667,7 @@ function make_wannierfunctions(fh::FloquetHamiltonian, n_x::Integer, Ωt::Abstra
 end
 
 """
-A type representing a 2D (time+space) tight-binding Hamiltonian 𝐻.
+A type representing a 2D (time+space) tight-binding Hamiltonian.
 """
 mutable struct TBFloquetHamiltonian
     N::Int
@@ -691,7 +692,7 @@ function TBFloquetHamiltonian(fh::FloquetHamiltonian, d::Matrix{ComplexF64}; N::
     Ψ = Matrix{ComplexF64}(undef, n_m, n_m)
 
     ik = 1
-    H₀ = d' * (d .* fh.E[range(n_w*(targetband-1) + 1, length=n_w), ik, iφ₀]) # in brackets, element-wise multiply each column of `d` by a range from `fh.E`
+    H₀ = d' * Diagonal(fh.E[range(n_w*(targetband-1) + 1, length=n_w), ik, iφ₀]) * d
     b = fh.b[:, range(n_w*(targetband-1) + 1, length=n_w), ik, iφ₀] # a view for convenience
 
     for (iφ, φ) in enumerate(φₓ)
@@ -710,7 +711,7 @@ function TBFloquetHamiltonian(fh::FloquetHamiltonian, d::Matrix{ComplexF64}; N::
                 end
                 if pumptype != :space # if pumping is not space-only, account for the change of the temporal phase
                     if ν[m] == ν[m′] + s
-                        e = cis(φ)
+                        e = cis(+φ)
                     elseif ν[m] == ν[m′] - s
                         e = cis(-φ)
                     else
@@ -742,6 +743,7 @@ function compute_wanniers!(tbh::TBFloquetHamiltonian; targetsubbands::AbstractVe
     (;N, a, φₓ) = tbh
 
     n_w = length(targetsubbands) * N
+    n_t = 4 # number of temporal sites
     E = Matrix{Float64}(undef, n_w, length(φₓ))
     pos = Matrix{Float64}(undef, n_w, length(φₓ))
     d = Array{ComplexF64, 3}(undef, n_w, n_w, length(φₓ))
@@ -752,12 +754,12 @@ function compute_wanniers!(tbh::TBFloquetHamiltonian; targetsubbands::AbstractVe
         levels[(i-1)*N+1:i*N] = (s-1)*N+1:s*N
     end
     # if tbh.isperiodic
-        X = Diagonal([cis(2π/(2N*a) * n*a/3) for n in 0:3*2N-1]) # position operator in coordinate representation
+        X = Diagonal([cis(2π/(n_t*N*a) * n*a/3) for n in 0:3*n_t*N-1]) # position operator in coordinate representation
         for iφ in eachindex(φₓ)
             XE = tbh.c[:, levels, iφ]' * X * tbh.c[:, levels, iφ] # position operator in energy representation
             _, d[:, :, iφ], pos_complex = schur(XE)
-            pos_real = @. mod2pi(angle(pos_complex)) / 2π * 2N*a # shift angle from [-π, π) to [0, 2π)
-            sp = sortperm(pos_real)                        # sort the eigenvalues
+            pos_real = @. mod2pi(angle(pos_complex)) / 2π * n_t*N*a # shift angle from [-π, π) to [0, 2π)
+            sp = sortperm(pos_real)                    # sort the eigenvalues
             pos[:, iφ] = pos_real[sp]
             @views Base.permutecols!!(d[:, :, iφ], sp) # sort the eigenvectors in the same way
             E[:, iφ] = [abs2.(dˣ) ⋅ tbh.E[levels, iφ] for dˣ in eachcol(d[:, :, iφ])]
@@ -783,10 +785,11 @@ function make_wannierfunctions(tbh::TBFloquetHamiltonian, whichphases::AbstractV
     for (i, s) in enumerate(tbh.w.targetsubbands)
         levels[(i-1)*N+1:i*N] = (s-1)*N+1:s*N
     end
-    w = Array{ComplexF64, 4}(undef, 2, size(tbh.c, 1)÷2, n_w, length(whichphases))
+    n_t = 4 # number of temporal sites
+    w = Array{ComplexF64, 4}(undef, n_t, size(tbh.c, 1)÷n_t, n_w, length(whichphases))
     for (i, iφ) in enumerate(whichphases)
         for j in 1:n_w
-            w[:, :, j, i] = reshape(sum(tbh.w.d[k, j, iφ] * tbh.c[:, levels[k], iφ] for k = 1:n_w), (2, 3N))
+            w[:, :, j, i] = reshape(sum(tbh.w.d[k, j, iφ] * tbh.c[:, levels[k], iφ] for k = 1:n_w), (n_t, 3N))
         end
     end
     return w
