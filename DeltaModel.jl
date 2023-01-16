@@ -156,25 +156,32 @@ function make_eigenfunctions(uh::UnperturbedHamiltonian, n_x::Integer, whichband
 end
 
 "A helper function for calculating ∫𝜓̄ᵢexp(i𝑥𝑘₂)𝜓ⱼ d𝑥."
-function 𝐹(uh, x, i, ik′, ik, m′, m, iφ, k₂)
-    (;κ, c) = uh
-    κʲ = κ[i, ik, m, iφ]
-    κʲ′ = κ[i, ik′, m′, iφ]
-    return -cis(-(κʲ′ + κʲ - k₂)x) / 4 * (
-        im * (c[2i-1, ik′, m′, iφ] + im*c[2i, ik′, m′, iφ])' * (c[2i-1, ik, m, iφ] - im*c[2i, ik, m, iφ]) / (κʲ′ + κʲ - k₂) +
-        (c[2i-1, ik, m, iφ] + im*c[2i, ik, m, iφ]) * cis(2κʲ*x) * ( 
-            (c[2i, ik′, m′, iφ] - im*c[2i-1, ik′, m′, iφ]) / (-κʲ′ + κʲ + k₂) +
-            (c[2i, ik′, m′, iφ] + im*c[2i-1, ik′, m′, iφ]) / ( κʲ′ + κʲ + k₂) * cis(-2κʲ′*x) )' +
-        (c[2i-1, ik′, m′, iφ] - im*c[2i, ik′, m′, iφ])' * (c[2i, ik, m, iφ] + im*c[2i-1, ik, m, iφ]) * cis(2κʲ′*x) / (κʲ′ - κʲ + k₂) )
+function 𝐹(uh::UnperturbedHamiltonian, i::Integer, ik′::Integer, ik::Integer, m′::Integer, m::Integer, iφ::Integer, k₂::Real)
+    (;κ, c, a) = uh
+    κᵐ  = κ[i, ik, m, iφ]
+    κᵐ′ = κ[i, ik′, m′, iφ]
+    A  = c[2i-1, ik, m, iφ]
+    A′ = c[2i-1, ik′, m′, iφ]
+    B  = c[2i, ik, m, iφ]
+    B′ = c[2i, ik′, m′, iφ]
+    F(x) = -cis(-(κᵐ′ + κᵐ - k₂)x)/4 * ( im * (A′ + im*B′)' * (A - im*B) / (κᵐ′ + κᵐ - k₂) +
+            (A + im*B) * cis(2κᵐ*x) * ( (B′ - im*A′)/(-κᵐ′ + κᵐ + k₂) + (B′ + im*A′)/(κᵐ′ + κᵐ + k₂)*cis(-2κᵐ′*x) )' +
+            (A′ - im*B′)' * (B + im*A) * cis(2κᵐ′*x) / (κᵐ′ - κᵐ + k₂) )
+    return F(i*a/3) - F((i-1)*a/3)
 end
 
 "A helper function for calculating ∫𝜓̄ᵢ𝜓ⱼ d𝑥."
-function 𝐺(uh, i, ik′, ik, m, iφ)
+function 𝐺(uh::UnperturbedHamiltonian, i::Integer, ik′::Integer, ik::Integer, m::Integer, iφ::Integer)
     (;a, κ, c) = uh
-    κʲ = κ[i, ik, m, iφ]
-    return 1/2κʲ * sin(a*κʲ/3) * ((c[2i, ik′, m, iφ]' * c[2i, ik, m, iφ] - c[2i-1, ik′, m, iφ]' * c[2i-1, ik, m, iφ]) * cos(a*(2(i-1)+1)*κʲ/3) +
-                                  (c[2i-1, ik′, m, iφ]' * c[2i, ik, m, iφ] + c[2i, ik′, m, iφ]' * c[2i-1, ik, m, iφ]) * sin(a*(2(i-1)+1)*κʲ/3) ) +
-           a/6 * (c[2i-1, ik′, m, iφ]' * c[2i-1, ik, m, iφ] + c[2i, ik′, m, iφ]' * c[2i, ik, m, iφ])
+    κᵐ = κ[i, ik, m, iφ]
+    A  = c[2i-1, ik, m, iφ]
+    A′ = c[2i-1, ik′, m, iφ]
+    B  = c[2i, ik, m, iφ]
+    B′ = c[2i, ik′, m, iφ]
+    return 1/2κᵐ * sin(a*κᵐ/3) * ((B′' * B - A′' * A) * cos(a*(2(i-1)+1)*κᵐ/3) +
+                                  (A′' * B + B′' * A) * sin(a*(2(i-1)+1)*κᵐ/3) ) +
+           a/6 * (A′' * A + B′' * B)
+       
 end
 
 "Calculate Wannier vectors for the unperturbed Hamiltonian `uh`."
@@ -193,7 +200,7 @@ function compute_wanniers!(uh::UnperturbedHamiltonian, targetband::Integer)
             for ik in 1:N
                 ik′ = ik % N + 1
                 for i = 1:3
-                    X[ik′, ik] += 𝐹(uh, i*a/3, i, ik′, ik, m, m, iφ, k₂) - 𝐹(uh, (i-1)a/3, i, ik′, ik, m, m, iφ, k₂)
+                    X[ik′, ik] += 𝐹(uh, i, ik′, ik, m, m, iφ, k₂)
                 end
                 X[ik′, ik] *= N
             end
@@ -225,7 +232,7 @@ function compute_wanniers(uh::UnperturbedHamiltonian; iφ₀::Integer=1, targetb
             for ik in 1:N
                 ik′ = ik % N + 1
                 for i in 1:3
-                    X[N*(b′-1)+ik′, N*(b-1)+ik] += 𝐹(uh, i*a/3, i, ik′, ik, m′, m, iφ₀, k₂) - 𝐹(uh, (i-1)a/3, i, ik′, ik,  m′, m, iφ₀, k₂)
+                    X[N*(b′-1)+ik′, N*(b-1)+ik] += 𝐹(uh, i, ik′, ik, m′, m, iφ₀, k₂)
                 end
                 X[N*(b′-1)+ik′, N*(b-1)+ik] *= N
             end
@@ -361,8 +368,7 @@ function TBHamiltonian(uh::UnperturbedHamiltonian; d::Matrix{ComplexF64}, iφ₀
                         ψ∑ψ[N*(b′-1)+ik, N*(b-1)+ik] = sum(𝐺(uh, r, ik, ik, m, iφ₀) * (cos(φ + 2π*(r-1)/3) - cos(φₓ[iφ₀] + 2π*(r-1)/3)) for r in 1:3)
                     else
                         for r in 1:3
-                            ψ∑ψ[N*(b′-1)+ik, N*(b-1)+ik] += (𝐹(uh, r*a/3, r, ik, ik, m′, m, iφ₀, 0) - 𝐹(uh, (r-1)a/3, r, ik, ik, m′, m, iφ₀, 0)) *
-                                                            (cos(φ + 2π*(r-1)/3) - cos(φₓ[iφ₀] + 2π*(r-1)/3))
+                            ψ∑ψ[N*(b′-1)+ik, N*(b-1)+ik] += 𝐹(uh, r, ik, ik, m′, m, iφ₀, 0) * (cos(φ + 2π*(r-1)/3) - cos(φₓ[iφ₀] + 2π*(r-1)/3))
                         end
                     end
                     ψ∑ψ[N*(b′-1)+ik, N*(b-1)+ik] *= N
@@ -458,8 +464,8 @@ end
 
 """
 A type representing the Floquet Hamiltonian
-    ℋ = ℎ - i∂ₜ + λₛcos²(2𝑥)cos(2𝜔𝑡) + λₗcos²(2𝑥)cos(𝜔𝑡 + 𝜑ₜ),
-where ℎ is the unperturbed Hamiltonian represented by [`UnperturbedHamiltonian`](@ref), and 𝜑ₜ = 𝜑ₓ.
+    ℋ = ℎ - i∂ₜ + λₛcos(12π𝑥/𝑎)cos(2𝜔𝑡) + λₗcos(6π𝑥/𝑎)cos(𝜔𝑡 + 𝜑ₜ),
+where ℎ is the unperturbed Hamiltonian represented by [`UnperturbedHamiltonian`](@ref).
 """
 mutable struct FloquetHamiltonian
     uh::UnperturbedHamiltonian
@@ -468,8 +474,8 @@ mutable struct FloquetHamiltonian
     λₗ::Float64
     ω::Float64
     pumptype::Symbol
-    E::Array{Float64, 3} # `E[i, ik, j]` = `i`th eigenvalue (Floquet quasienergy) at `j`th phase, `i = 1:maxlevel`
-    b::Array{ComplexF64, 4} # `b[:, i, ik, j]` = `i`th eigenvector at `j`th phase, `i = 1:maxlevel; j = 1:2maxlevel+1`
+    E::Array{Float64, 3}    # `E[i, ik, j]` = Floquet quasienergy of `i`th subband and `ik`th quasimomentum at `j`th phase
+    b::Array{ComplexF64, 4} # `b[:, i, ik, j]` = `i`th eigenvector `i`th subband and `ik`th quasimomentum at `j`th phase
     ν::Vector{Int}  # band map 𝜈(𝑚)
     w::FloquetWanniers
 end
@@ -512,7 +518,7 @@ function diagonalise!(fh::FloquetHamiltonian)
                     if pumptype != :time || iφ == 1 # if pumping is time-only, this must be calculated only once, at `iφ` = 1
                         ∫cos = ComplexF64(0)
                         for i = 1:3, k₂ in (-6π/a, 6π/a)
-                            ∫cos += 𝐹(fh.uh, i*a/3, i, ik, ik, m′, m, iφ, k₂) - 𝐹(fh.uh, (i-1)a/3, i, ik, ik, m′, m, iφ, k₂)
+                            ∫cos += 𝐹(fh.uh, i, ik, ik, m′, m, iφ, k₂)
                         end
                         # if pumping is space-time, then also multiply by cis(-𝜑ₜ). `φ` runs over 𝜑ₓ, and we assume the pumping protocol 𝜑ₜ = 𝜑ₓ
                         H[m′, m] = (pumptype == :space ? λₗ/4 * ∫cos : λₗ/4 * ∫cos * cis(-φ))
@@ -522,13 +528,13 @@ function diagonalise!(fh::FloquetHamiltonian)
                 end
                 
                 # place the elements of the short lattice
-                for g in 1:3
-                    m′ = 3(2s + ν[m] - 1) + g
-                    m′ > n_levels && break
-                    if pumptype != :time || iφ == 1 # if pumping is time-only, this must be calculated only once, at `iφ` = 1
+                if pumptype != :time || iφ == 1 # if pumping is time-only, this must be calculated only once, at `iφ` = 1
+                    for g in 1:3
+                        m′ = 3(2s + ν[m] - 1) + g
+                        m′ > n_levels && break
                         ∫cos = ComplexF64(0)
                         for i = 1:3, k₂ in (-12π/a, 12π/a)
-                            ∫cos += 𝐹(fh.uh, i*a/3, i, ik, ik, m′, m, iφ, k₂) - 𝐹(fh.uh, (i-1)a/3, i, ik, ik, m′, m, iφ, k₂)
+                            ∫cos += 𝐹(fh.uh, i, ik, ik, m′, m, iφ, k₂)
                         end
                         H[m′, m] = λₛ/4 * ∫cos
                     end
@@ -620,7 +626,7 @@ function compute_wanniers!(fh::FloquetHamiltonian; targetsubbands::AbstractVecto
                 ik′ = ik % N + 1
                 for m in 1:n_levels,  m′ in 1:n_levels
                     for i in 1:3
-                        expik[m′, m, ik′, ik] += 𝐹(fh.uh, i*a/3, i, ik′, ik, m′, m, iφ, k₂) - 𝐹(fh.uh, (i-1)a/3, i, ik′, ik, m′, m, iφ, k₂)
+                        expik[m′, m, ik′, ik] += 𝐹(fh.uh, i, ik′, ik, m′, m, iφ, k₂)
                     end
                     expik[m′, m, ik′, ik] *= N
                 end
@@ -704,8 +710,7 @@ function TBFloquetHamiltonian(fh::FloquetHamiltonian, d::Matrix{ComplexF64}; N::
                         Ψ[m′, m] += U * sum(𝐺(fh.uh, r, ik, ik, m, iφ₀) * (cos(φ + 2π*(r-1)/3) - cos(2π*(r-1)/3)) for r in 1:3)
                     elseif ν[m] == ν[m′]
                         for r in 1:3
-                            Ψ[m′, m] += U * (𝐹(fh.uh, r*a/3, r, ik, ik, m′, m, iφ₀, 0) - 𝐹(fh.uh, (r-1)a/3, r, ik, ik, m′, m, iφ₀, 0)) *
-                                            (cos(φ + 2π*(r-1)/3) - cos(2π*(r-1)/3))
+                            Ψ[m′, m] += U * 𝐹(fh.uh, r, ik, ik, m′, m, iφ₀, 0) * (cos(φ + 2π*(r-1)/3) - cos(2π*(r-1)/3))
                         end
                     end
                 end
@@ -718,7 +723,7 @@ function TBFloquetHamiltonian(fh::FloquetHamiltonian, d::Matrix{ComplexF64}; N::
                         continue
                     end
                     for r = 1:3, k₂ in (-6π/a, 6π/a)
-                        Ψ[m′, m] += λₗ/4 * (e - 1) * ( 𝐹(fh.uh, r*a/3, r, ik, ik, m′, m, iφ₀, k₂) - 𝐹(fh.uh, (r-1)a/3, r, ik, ik, m′, m, iφ₀, k₂) )
+                        Ψ[m′, m] += λₗ/4 * (e - 1) * 𝐹(fh.uh, r, ik, ik, m′, m, iφ₀, k₂)
                     end
                 end
             end
