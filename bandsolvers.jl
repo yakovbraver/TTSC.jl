@@ -432,7 +432,12 @@ function diagonalise!(fh::FloquetHamiltonian)
     end
 
     if fh.uh.isperiodic
-        for (i, φ) in enumerate(φₓ)
+        @floop for (i, φ) in enumerate(φₓ)
+            @init begin
+                H = zeros(ComplexF64, n_levels, n_levels) # ℋ matrix, will only fill the lower triangle
+                prev_iter = -1 # a thread-local indicator of previous iteration number
+            end 
+
             # `m` and `m′` number the levels of ℎ
             # `e` and `e′` number the elements of `H`
             for m in fh.minlevel:fh.uh.maxlevel
@@ -442,38 +447,48 @@ function diagonalise!(fh::FloquetHamiltonian)
                 p = (pumptype == :time ? 1 : i)
                 H[e, e] = E[m, p] - ν[m]*ω/s
 
+                # place the elements of the short lattice
+                if pumptype != :time || prev_iter == -1 # if pumping is time-only, this can be calculated only once since ∑cc is constant
+                    for g in 1:2N
+                        m′ = 2N*(2s + ν[m] - 1) + g
+                        e′ = m′ - fh.minlevel + 1
+                        e′ > n_levels && break
+                        H[e′, e] = -λₛ/8 * ∑cc(m′, m, (pumptype == :time ? 1 : i))
+                    end
+                end
+
                 # place the elements of the long lattice
                 for g in 1:2N
                     m′ = 2N*(s + ν[m] - 1) + g
                     e′ = m′ - fh.minlevel + 1
                     e′ > n_levels && break
-                    if pumptype != :time || i == 1 # if pumping is time-only, this must be calculated only once, at `i` = 1
+                    if pumptype == :time
+                        if prev_iter == -1 # for the first time, calculate ∑cc
+                            H[e′, e] = λₗ/8 * ∑cc(m′, m, 1) * cis(-2φ)
+                        else # later, simply account for the change of phase since ∑cc is the same
+                            H[e′, e] *= cis(+2φₓ[prev_iter] - 2φₓ[i])
+                        end
+                    else
                         # if pumping is space-time, then also multiply by cis(-𝜑ₜ). `φ` runs over 𝜑ₓ, and we assume the pumping protocol 𝜑ₜ = 2𝜑ₓ
                         H[e′, e] = (pumptype == :space ? λₗ/8 * ∑cc(m′, m, i) : λₗ/8 * ∑cc(m′, m, i) * cis(-2φ))
-                    elseif pumptype == :time 
-                        H[e′, e] *= cis(-2(φₓ[i]-φₓ[i-1]))
-                    end
-                end
-                
-                # place the elements of the short lattice
-                if pumptype != :time || i == 1 # if pumping is time-only, this must be calculated only once, at `i` = 1
-                    for g in 1:2N
-                        m′ = 2N*(2s + ν[m] - 1) + g
-                        e′ = m′ - fh.minlevel + 1
-                        e′ > n_levels && break
-                        H[e′, e] = -λₛ/8 * ∑cc(m′, m, i)
                     end
                 end
             end
             fh.E[:, i], fh.b[:, :, i] = eigen(Hermitian(H, :L), sortby=-)
+            prev_iter = i
         end
     else
-        for (i, φ) in enumerate(φₓ)
-            bs1 = 2N - 1
-            bs2 = 2N + 1
-            pattern = [fill(bs1, bs1); fill(bs2, bs2)]
-            G = repeat(pattern, fh.uh.maxlevel÷4N) # a pattern which e.g. for `N == 2` looks like [3, 3, 3, 5, 5, 5, 5, 3, 3, 3, 5, 5, 5, 5, ...]
-            fh.uh.maxlevel % 4N != 0 && append!(G, fill(bs1, bs1))
+        bs1 = 2N - 1
+        bs2 = 2N + 1
+        pattern = [fill(bs1, bs1); fill(bs2, bs2)]
+        G = repeat(pattern, fh.uh.maxlevel÷4N) # a pattern which e.g. for `N == 2` looks like [3, 3, 3,  5, 5, 5, 5, 5,  3, 3, 3,  5, 5, 5, 5, 5, ...]
+        fh.uh.maxlevel % 4N != 0 && append!(G, fill(bs1, bs1))
+
+        @floop for (i, φ) in enumerate(φₓ)
+            @init begin
+                H = zeros(ComplexF64, n_levels, n_levels) # ℋ matrix, will only fill the lower triangle
+                prev_iter = -1
+            end 
 
             # `m` and `m′` number the levels of ℎ
             # `e` and `e′` number the elements of `H`
@@ -484,27 +499,31 @@ function diagonalise!(fh::FloquetHamiltonian)
                 p = (pumptype == :time ? 1 : i)
                 H[e, e] = E[m, p] - fh.ν[m]*ω/s
 
+                # place the elements of the short lattice
+                if pumptype != :time || prev_iter == -1 # if pumping is time-only, this must be calculated only once, at `i` = 1
+                    for g in 1:G[m]
+                        e′ = 4N*s + 4N*((fh.ν[m]-1)÷2) + iseven(ν[m])*G[fh.minlevel] + g
+                        e′ > n_levels && break
+                        m′ = e′ + fh.minlevel - 1
+                        H[e′, e] = -λₛ/8 * ∑cc(m′, m, (pumptype == :time ? 1 : i))
+                    end
+                end
+
                 # place the elements of the long lattice
                 for g in 1:G[m]
                     # skip `s` groups of `4N`, then some more groups depending on `m`, then skip `G[fh.minlevel]` cells
                     e′ = 4N*(s÷2) + 4N*((fh.ν[m]-1)÷2) + iseven(ν[m])*G[fh.minlevel] + g
                     e′ > n_levels && break
-                    m′ = e′ + fh.minlevel - 1 
-                    if pumptype != :time || i == 1 # if pumping is time-only, this must be calculated only once, at `i` = 1
+                    m′ = e′ + fh.minlevel - 1
+                    if pumptype == :time
+                        if prev_iter == -1
+                            H[e′, e] = λₗ/8 * ∑cc(m′, m, 1) * cis(-2φ)
+                        else
+                            H[e′, e] *= cis(+2φₓ[prev_iter] - 2φₓ[i])
+                        end
+                    else
                         # if pumping is space-time, then also multiply by cis(-𝜑ₜ). `φ` runs over 𝜑ₓ, and we assume the pumping protocol 𝜑ₜ = 2𝜑ₓ
                         H[e′, e] = (pumptype == :space ? λₗ/8 * ∑cc(m′, m, i) : λₗ/8 * ∑cc(m′, m, i) * cis(-2φ))
-                    elseif pumptype == :time 
-                        H[e′, e] *= cis(-2(φₓ[i]-φₓ[i-1]))
-                    end
-                end
-                
-                # place the elements of the short lattice
-                if pumptype != :time || i == 1 # if pumping is time-only, this must be calculated only once, at `i` = 1
-                    for g in 1:2N
-                        e′ = 4N*s + 4N*((fh.ν[m]-1)÷2) + iseven(ν[m])*G[fh.minlevel] + g
-                        e′ > n_levels && break
-                        m′ = e′ + fh.minlevel - 1
-                        H[e′, e] = -λₛ/8 * ∑cc(m′, m, i)
                     end
                 end
             end
