@@ -1,6 +1,6 @@
 module Bandsolvers
 
-using LinearAlgebra: eigen, schur, diagm, diagind, eigvals, ⋅, Diagonal, Hermitian
+using LinearAlgebra: eigen, schur, diagm, diagind, eigvals, ⋅, mul!, Diagonal, Symmetric, Hermitian
 
 "A type for storing the Wannier functions."
 mutable struct Wanniers
@@ -28,7 +28,7 @@ mutable struct UnperturbedHamiltonian
     isperiodic::Bool
     φₓ::Vector{Float64}
     maxlevel::Int   # highest level number to consider
-    E::Matrix{Float64}      # `E[i, j]` = `i`th eigenvalue at `j`th phase, `i` ∈ [1, `maxlevel`], `j` ∈ [1, `length(φₓ)`]
+    E::Matrix{Float64}      # `E[i, j]` = `i`th eigenvalue at `j`th phase, 1 ≤ i ≤ maxlevel, 1 ≤ j ≤ length(φₓ)
     c::Array{ComplexF64, 3} # `c[:, i, j]` = `i`th eigenvector at `j`th phase
     w::Wanniers
 end
@@ -61,7 +61,7 @@ function diagonalise!(uh::UnperturbedHamiltonian)
         h = diagm(0 => ComplexF64[(2j/N)^2 / 2M + (gₗ + Vₗ)/2 for j = -maxlevel:maxlevel])
         h[diagind(h, 2N)] .= gₗ/4
         for (i, φ) in enumerate(uh.φₓ)
-            h[diagind(h, +N)] .= Vₗ/4 * cis(-2φ)
+            h[diagind(h, N)] .= Vₗ/4 * cis(-2φ)
             f = eigen(Hermitian(h); sortby)
             uh.E[:, i] = f.values[1:maxlevel]
             uh.c[:, :, i] = f.vectors[:, 1:maxlevel]
@@ -80,22 +80,22 @@ function diagonalise!(uh::UnperturbedHamiltonian)
                         # check diagonals "\"
                         if j′ == j
                             val += (gₗ + Vₗ)/2 + (j / N)^2 / 2M
-                        elseif j′ == j - 2N || j′ == j + 2N
+                        elseif j′ == j - 2N
                             val += Vₗ * cos(2φ) / 4
-                        elseif j′ == j - 4N || j′ == j + 4N
+                        elseif j′ == j - 4N
                             val += gₗ/4
                         end
                         # check anti-diagonals "/"
-                        if j′ == -j - 2N || j′ == -j + 2N
+                        if j′ == -j + 2N
                             val += -Vₗ * cos(2φ) / 4
-                        elseif j′ == -j - 4N || j′ == -j + 4N
+                        elseif j′ == -j + 4N
                             val += -gₗ/4
                         end
                     end
-                    h[j′, j] = val # push the element to the conjugate positions
+                    h[j′, j] = val
                 end
             end
-            f = eigen(Hermitian(h); sortby)
+            f = eigen(Symmetric(h); sortby)
             uh.E[:, i] = f.values[1:maxlevel]
             uh.c[:, :, i] = f.vectors[:, 1:maxlevel]
         end
@@ -124,7 +124,7 @@ function compute_wanniers!(uh::UnperturbedHamiltonian; targetband::Integer, mixs
             for i in eachindex(uh.φₓ)
                 for n in 1:2N
                     for n′ in 1:2N
-                        X[n′, n] = sum(uh.c[j+1, minlevel+n′-1, i]' * uh.c[j, minlevel+n-1, i] for j = 1:size(uh.c, 1)-1)
+                        @views X[n′, n] = uh.c[2:end, minlevel+n′-1, i] ⋅ uh.c[1:end-1, minlevel+n-1, i]
                     end
                 end
                 _, d[:, :, i], pos_complex = schur(X)
@@ -146,11 +146,9 @@ function compute_wanniers!(uh::UnperturbedHamiltonian; targetband::Integer, mixs
                     window = 1+o:N+o
                     for n in 1:N
                         for n′ in 1:N
-                            X[n′, n] = sum(uh.c[j+1, minlevel+o+n′-1, i]' * uh.c[j, minlevel+o+n-1, i] for j = 1:size(uh.c, 1)-1)
+                            @views X[n′, n] = uh.c[2:end, minlevel+o+n′-1, i] ⋅ uh.c[1:end-1, minlevel+o+n-1, i]
                         end
                     end
-                    # `eigen` does not guarantee orthogonality of eigenvectors in case of degeneracies for `X` unitary, so use `schur`
-                    # (although a degeneracy of coordinates eigenvalues is unlikely here)
                     _, d[:, window, i], pos_complex = schur(X)
                     pos_real = @. mod2pi(angle(pos_complex)) / 2 * N # `mod2pi` converts the angle from [-π, π) to [0, 2π)
                     sp = sortperm(pos_real)                 # sort the eigenvalues
@@ -420,7 +418,6 @@ end
 
 "Diagonalise the Floquet Hamiltonian `fh` at each phase."
 function diagonalise!(fh::FloquetHamiltonian)
-    # make views
     (;N, φₓ, E, c) = fh.uh
     n_j = size(c, 1)
     (;s, ω, λₛ, λₗ, pumptype, ν) = fh
@@ -430,9 +427,7 @@ function diagonalise!(fh::FloquetHamiltonian)
     H = zeros(ComplexF64, n_levels, n_levels) # ℋ matrix, will only fill the lower triangle
 
     ∑cc(m′, m, i) = if fh.uh.isperiodic
-        sum( (                 c[j+2N, m′, i])' * c[j, m, i] for j = 1:2N ) +
-        sum( (c[j-2N, m′, i] + c[j+2N, m′, i])' * c[j, m, i] for j = 2N+1:n_j-2N ) + 
-        sum( (c[j-2N, m′, i]                 )' * c[j, m, i] for j = n_j-2N+1:n_j )
+        @views c[1+2N:end, m′, i] ⋅ c[1:end-2N, m, i] + c[1:end-2N, m′, i] ⋅ c[1+2N:end, m, i]
     else
         sum( (-c[-j+4N, m′, i] + c[j+4N, m′, i]) * c[j, m, i] for j = 1:4N-1 ) +
                                + c[4N+4N, m′, i] * c[4N, m, i] + # iteration `j = 4N`
@@ -465,11 +460,11 @@ function diagonalise!(fh::FloquetHamiltonian)
                 end
                 
                 # place the elements of the short lattice
-                for g in 1:2N
-                    m′ = 2N*(2s + ν[m] - 1) + g
-                    e′ = m′ - fh.minlevel + 1
-                    e′ > n_levels && break
-                    if pumptype != :time || i == 1 # if pumping is time-only, this must be calculated only once, at `i` = 1
+                if pumptype != :time || i == 1 # if pumping is time-only, this must be calculated only once, at `i` = 1
+                    for g in 1:2N
+                        m′ = 2N*(2s + ν[m] - 1) + g
+                        e′ = m′ - fh.minlevel + 1
+                        e′ > n_levels && break
                         H[e′, e] = -λₛ/8 * ∑cc(m′, m, i)
                     end
                 end
@@ -508,11 +503,11 @@ function diagonalise!(fh::FloquetHamiltonian)
                 end
                 
                 # place the elements of the short lattice
-                for g in 1:2N
-                    e′ = 4N*s + 4N*((fh.ν[m]-1)÷2) + iseven(ν[m])*G[fh.minlevel] + g
-                    e′ > n_levels && break
-                    m′ = e′ + fh.minlevel - 1 
-                    if pumptype != :time || i == 1 # if pumping is time-only, this must be calculated only once, at `i` = 1
+                if pumptype != :time || i == 1 # if pumping is time-only, this must be calculated only once, at `i` = 1
+                    for g in 1:2N
+                        e′ = 4N*s + 4N*((fh.ν[m]-1)÷2) + iseven(ν[m])*G[fh.minlevel] + g
+                        e′ > n_levels && break
+                        m′ = e′ + fh.minlevel - 1
                         H[e′, e] = -λₛ/8 * ∑cc(m′, m, i)
                     end
                 end
@@ -568,7 +563,7 @@ end
 Calculate Wannier vectors for the Floquet Hamiltonian `fh` using the quasienergy levels `targetlevels`.
 """
 function compute_wanniers!(fh::FloquetHamiltonian; targetlevels::AbstractVector{<:Real})
-    (;N, φₓ, c) = fh.uh
+    (;N, φₓ) = fh.uh
 
     n_w = length(targetlevels)
     E = Matrix{Float64}(undef, n_w, length(φₓ))
@@ -578,33 +573,27 @@ function compute_wanniers!(fh::FloquetHamiltonian; targetlevels::AbstractVector{
     X = Matrix{ComplexF64}(undef, n_w, n_w) # position operator
     
     n_levels = size(fh.E, 1)
-    ∑cc = Matrix{ComplexF64}(undef, n_levels, n_levels)
-    cis∑cc = Matrix{ComplexF64}(undef, n_levels, n_levels)
+    # matrices for storing intermediate results
+    C = Matrix{ComplexF64}(undef, n_levels, n_levels)
+    D = Matrix{ComplexF64}(undef, n_levels, n_levels)
     
+    Ωt = π/5 # time moment at which to diagonalise the coordinate operator
     for i in eachindex(φₓ)
-        # if pumping is time-only, then `∑cc` must be calculated only at the first iteration, thereby using `c`'s at 𝜑ₓ = 0
+        # if pumping is time-only, then `C` must be calculated only at the first iteration, thereby using `c`'s at 𝜑ₓ = 0
         if fh.pumptype != :time || i == 1
-            for m in range(fh.minlevel, length=n_levels)
-                for m′ in range(fh.minlevel, length=n_levels)
-                    ∑cc[m′-fh.minlevel+1, m-fh.minlevel+1] = sum(c[j+1, m′, i]' * c[j, m, i] for j = 1:size(c, 1)-1)
-                end
-            end
+            window = range(fh.minlevel, length=n_levels)
+            mul!(C, @view(fh.uh.c[2:end, window, i])', @view(fh.uh.c[1:end-1, window, i]))
         end
 
-        t = (fh.pumptype == :space ? π/5 : π/5 - i/length(φₓ)*π/2) # time moment at which to diagonalise the coordinate operator
-        # `cis∑cc` must be calculated at every phase: if pumping is temporal, `t` depends on phase;
-        # if pumping is spatial, `∑cc` depends on phase (because `c`'s do)
-        for m in 1:n_levels
-            for m′ in 1:n_levels
-                cis∑cc[m′, m] = ∑cc[m′, m] * cis((fh.ν[m′+fh.minlevel-1] - fh.ν[m+fh.minlevel-1]) * t)
-            end
+        fh.pumptype != :space && (Ωt = π/5 - i/length(φₓ)*π/2)
+        # `D` must be calculated at every phase: if pumping is temporal, `Ωt` depends on phase;
+        # if pumping is spatial, `C` depends on phase (because `c`'s do)
+        for m in 1:n_levels, m′ in 1:n_levels
+            D[m′, m] = C[m′, m] * cis((fh.ν[m′+fh.minlevel-1] - fh.ν[m+fh.minlevel-1]) * Ωt)
         end
 
-        for (in, n) in enumerate(targetlevels)
-            for (in′, n′) in enumerate(targetlevels)
-                X[in′, in] = sum(fh.b[m, n, i] * sum(fh.b[m′, n′, i]' * cis∑cc[m′, m] for m′ in 1:n_levels) for m in 1:n_levels)
-            end
-        end
+        X .= fh.b[:, targetlevels, i]' * D * fh.b[:, targetlevels, i]
+
         _, d[:, :, i], pos_complex = schur(X)
         pos_real = @. mod2pi(angle(pos_complex)) / 2 * N # `mod2pi` converts the angle from [-π, π) to [0, 2π)
         sp = sortperm(pos_real)         # sort the eigenvalues
@@ -656,14 +645,15 @@ function TBFloquetHamiltonian(fh::FloquetHamiltonian; targetband::Integer, pumpt
     n_w = 4 * 2N # number of Wanniers
     H = Array{ComplexF64, 3}(undef, n_w, n_w, n_φₓ) # TB Hamiltonian matrix
     
-    iφ₀ = 1 # phase index at which to take the Wanniers -- any choice should work, but we assume `iφ₀ = 1` below
+    iφ₀ = 1 # phase index at which to take the Wanniers -- any choice should work, but it is simpler to assume `iφ₀ = 1` below
     
     n_m = size(fh.E, 1) # number of levels of ℎ considered
     Ψ = Matrix{ComplexF64}(undef, n_m, n_m)
     
-    d = fh.uh.w.d[:, :, iφ₀]
-    b = fh.b[:, range(n_w*(targetband-1) + 1, length=n_w), iφ₀] # a view for convenience
-    H₀ = d' * (d .* fh.E[range(n_w*(targetband-1) + 1, length=n_w), iφ₀]) # in brackets, element-wise multiply each column of `d` by a range from `fh.E`
+    d = @view fh.uh.w.d[:, :, iφ₀]
+    bd = fh.b[:, range(n_w*(targetband-1) + 1, length=n_w), iφ₀] * d
+    
+    H₀ = d' * Diagonal(fh.E[range(n_w*(targetband-1) + 1, length=n_w), iφ₀]) * d
 
     for (iφ, φ) in enumerate(φₓ)
         for m in 1:n_m # `m` is the subband index of ℎ
@@ -688,7 +678,7 @@ function TBFloquetHamiltonian(fh::FloquetHamiltonian; targetband::Integer, pumpt
                 end
             end
         end
-        H[:, :, iφ] = H₀ + d' * b' * Ψ * b * d
+        H[:, :, iφ] = H₀ + bd' * Ψ * bd
     end
 
     E = Matrix{Float64}(undef, n_w, n_φₓ)
