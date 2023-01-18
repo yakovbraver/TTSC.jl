@@ -2,6 +2,9 @@ using Plots, LaTeXStrings, ProgressMeter
 plotlyjs()
 theme(:dark, size=(800, 600))
 
+using LinearAlgebra.BLAS: set_num_threads
+set_num_threads(1)
+
 includet("bandsolvers.jl")
 import .Bandsolvers
 
@@ -21,7 +24,7 @@ fig = plot();
 for (i, r) in enumerate(eachrow(h.E))
     plot!(φₓ, r, label="$i")
 end
-plot!(xlabel=L"\varphi_x", ylabel="Energy", title=L"(V_S, V_L) = (%$(-gₗ), %$(-Vₗ))")
+plot!(xlabel=L"\varphi_x", ylabel="Energy")
 
 # Eigenfunctions
 iφ = 1;
@@ -36,13 +39,12 @@ end
 display(fig)
 
 # Wannier centres
-pyplot()
 Bandsolvers.compute_wanniers!(h, targetband=25, mixsubbands=false)
 fig = plot();
 for (i, φ) in enumerate(φₓ)
     scatter!(h.w.pos[:, i], fill(φ, 2n_cells); marker_z=h.w.E[:, i], c=:coolwarm, label=false, markerstrokewidth=0)
 end
-plot!(minorgrid=true, xlabel=L"x", ylabel=L"\varphi_x", cbtitle="Energy", title=L"(V_S, V_L) = (%$(-gₗ), %$(-Vₗ))"*"; periodic")
+plot!(minorgrid=true, xlabel=L"x", ylabel=L"\varphi_x", cbtitle="Energy")
 
 # Wannier functions
 x = range(0, n_cells*π, length=50n_cells)
@@ -68,7 +70,6 @@ Bandsolvers.compute_wanniers!(h, targetband=25, mixsubbands=true)
 # Plot the Wanniers
 x = range(0, n_cells*π, length=50n_cells)
 _, w = Bandsolvers.make_wannierfunctions(h, x, 1:length(φₓ))
-
 lims = (minimum(h.w.E)-0.5, maximum(h.w.E)+2)
 iφ = 2
 U = @. gₗ*cos(2x)^2 + Vₗ*cos(x + φₓ[iφ])^2
@@ -81,8 +82,8 @@ display(fig)
 
 # Construct the TB Hamiltonian
 htb = Bandsolvers.TBHamiltonian(h)
-
 Bandsolvers.diagonalise!(htb)
+
 fig = plot();
 for r in eachrow(htb.E)
     plot!(φₓ, r)
@@ -95,7 +96,7 @@ fig2 = plot();
 for (iφ, φ) in enumerate(φₓ)
     scatter!(htb.w.pos[:, iφ], fill(φ, size(htb.w.pos, 1)); marker_z=htb.w.E[:, iφ], c=:coolwarm, label=false, markerstrokewidth=0)
 end
-plot!(minorgrid=true, xlabel=L"x", ylabel=L"\varphi", cbtitle="Energy")
+plot!(minorgrid=true, xlabel=L"x", ylabel=L"\varphi_x", cbtitle="Energy")
 
 # Wannier functions
 whichphases = 1:length(φₓ)
@@ -129,7 +130,7 @@ fig = plot();
 for r in eachrow(h.E)
     plot!(φₓ, r, label=false)
 end
-plot!(xlabel=L"\varphi_x", ylabel="Energy", title=L"(V_S, V_L) = (%$(-gₗ), %$(-Vₗ))", ylims=(-Inf, 0))
+plot!(xlabel=L"\varphi_x", ylabel="Energy", ylims=(-Inf, 0))
 
 # Wavefunctions
 iφ = 46; φ_str = L"\varphi_x = 3\pi/4"
@@ -150,7 +151,7 @@ fig = plot();
 for (i, φ) in enumerate(φₓ)
     scatter!(h.w.pos[:, i], fill(φ, size(h.w.pos, 1)); marker_z=h.w.E[:, i], c=:coolwarm, label=false, markerstrokewidth=0)
 end
-plot!(minorgrid=true, xlabel=L"x", ylabel=L"\varphi", cbtitle="Energy", title=L"(V_S, V_L) = (%$(-gₗ), %$(-Vₗ))"*"; non-periodic")
+plot!(minorgrid=true, xlabel=L"x", ylabel=L"\varphi_x", cbtitle="Energy")
 
 # Wannier functions
 x = range(0, n_cells*π, length=50n_cells)
@@ -166,3 +167,19 @@ p = Progress(length(φₓ), 1)
     end
     next!(p)
 end
+
+##### Wannier functions obtained by mixing all subbands
+
+Bandsolvers.compute_wanniers!(h, targetband=25, mixsubbands=true)
+
+x = range(0, n_cells*π, length=50n_cells)
+_, w = Bandsolvers.make_wannierfunctions(h, x, 1:length(φₓ))
+lims = (minimum(h.w.E)-0.5, maximum(h.w.E)+2)
+iφ = 1
+U = @. gₗ*cos(2x)^2 + Vₗ*cos(x + φₓ[iφ])^2
+plot(x, U, label=false, ylims=lims);
+scatter!(h.w.pos[:, iφ], h.w.E[:, iφ]; marker_z=h.w.E[:, iφ], c=:coolwarm, label=false, markerstrokewidth=0, clims=lims);
+for j in axes(w, 2)
+    plot!(x, abs2.(w[:, j, iφ]) .+ h.w.E[j, iφ], label=false)
+end
+plot!(minorgrid=true, xlabel=L"\varphi_x", ylabel="Energy", cbtitle="Energy")
