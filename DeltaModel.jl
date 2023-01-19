@@ -4,6 +4,7 @@ using ProgressMeter: @showprogress
 import IntervalRootFinding as iroots
 using IntervalArithmetic: (..)
 using LinearAlgebra: eigvals, eigen, schur, ⋅, dot, svd, diagm, diagind, Diagonal, Hermitian
+using FLoops: @floop, @init
 
 "A type for storing the Wannier functions."
 mutable struct Wanniers
@@ -608,38 +609,40 @@ function compute_wanniers!(fh::FloquetHamiltonian; targetsubbands::AbstractVecto
     pos = Matrix{Float64}(undef, n_w, length(φₓ))
     d = Array{ComplexF64, 3}(undef, n_w, n_w, length(φₓ))
     fh.w = FloquetWanniers(targetsubbands, E, pos, d)
-
-    X = Matrix{ComplexF64}(undef, n_w, n_w) # position operator
     
     n_levels = size(fh.E, 1)
-    n_subbands = length(targetsubbands)
-
-    expik = Array{ComplexF64, 4}(undef, n_levels, n_levels, N, N)
-
+    n_subbands = length(targetsubbands)    
+    
     k₂ = 2π/(N*a)
-
-    for iφ in eachindex(φₓ)
-        # if pumping is time-only, then `expik` must be calculated only at the first iteration, thereby using `c`'s at 𝜑ₓ = 0
-        if fh.pumptype != :time || iφ == 1
+    
+    @floop for iφ in eachindex(φₓ)
+        @init begin
+            expik = Array{ComplexF64, 4}(undef, n_levels, n_levels, N, N)
+            X = Matrix{ComplexF64}(undef, n_w, n_w) # position operator
+            first_iter = true # idicates if the current thread is on its first iteration
+        end
+        # if pumping is time-only, then `expik` can be calculated only once, using `c`'s at 𝜑ₓ = 0
+        if fh.pumptype != :time || first_iter
             expik .= 0
             for ik in 1:N
                 ik′ = ik % N + 1
                 for m in 1:n_levels,  m′ in 1:n_levels
                     for i in 1:3
-                        expik[m′, m, ik′, ik] += 𝐹(fh.uh, i, ik′, ik, m′, m, iφ, k₂)
+                        expik[m′, m, ik′, ik] += 𝐹(fh.uh, i, ik′, ik, m′, m, (fh.pumptype == :time ? 1 : iφ), k₂)
                     end
                     expik[m′, m, ik′, ik] *= N
                 end
             end
+            first_iter = false
         end
 
-        fh.pumptype != :space && (Ωt -= (iφ-1)/length(φₓ)*π)
+        t = fh.pumptype == :space ? Ωt : Ωt - (iφ-1)/length(φₓ) * π
 
         for ik in 1:N,  ik′ in 1:N
             for (in, n) in enumerate(targetsubbands)
                 for (in′, n′) in enumerate(targetsubbands)
                     X[in′+(ik′-1)*n_subbands, in+(ik-1)*n_subbands] = sum(fh.b[m, n, ik, iφ] * sum(fh.b[m′, n′, ik′, iφ]' * expik[m′, m, ik′, ik] *
-                                                                          cis((fh.ν[m′] - fh.ν[m]) * Ωt) for m′ in 1:n_levels) for m in 1:n_levels)
+                                                                          cis((fh.ν[m′] - fh.ν[m]) * t) for m′ in 1:n_levels) for m in 1:n_levels)
                 end
             end
         end
@@ -741,6 +744,26 @@ function diagonalise!(tbh::TBFloquetHamiltonian)
     for i in eachindex(tbh.φₓ)
         tbh.E[:, i], tbh.c[:, :, i] = eigen(Hermitian(tbh.H[:, :, i]))
     end
+end
+
+"Construct a `TBFloquetHamiltonian` object."
+function TBFloquetHamiltonian(fh::FloquetHamiltonian; isperiodic::Bool)
+    (;N, φₓ) = fh.uh
+    n_φₓ = length(φₓ)
+    n_s = size(fh.w.d, 1) ÷ N # number of subbands of ℋ mixed
+    # Compute the off-diagonal elements of the TB Hamiltonian 𝐻 using the Wanniers of ℋ.
+    # Use only the first phase since each phase should lead to identical results.
+    H = Array{ComplexF64, 3}(undef, n_s*N, n_s*N, n_φₓ)
+    for iφ in eachindex(φₓ)
+        for a = 1:n_s*N, b = a:n_s*N
+            H[b, a, iφ] = sum(fh.w.d[i, a, iφ]' * fh.w.d[i, b, iφ] * fh.E[(i-1)%n_s+1, (i-1)÷n_s+1, iφ] for i = axes(fh.w.d, 1))
+            H[a, b, iφ] = H[b, a, iφ]'
+        end
+    end
+
+    E = Matrix{Float64}(undef, n_s*N, n_φₓ)
+    c = Array{ComplexF64, 3}(undef, n_s*N, n_s*N, n_φₓ)
+    TBFloquetHamiltonian(N, fh.uh.a, H, isperiodic, φₓ, E, c, FloquetWanniers())
 end
 
 "Calculate Wannier vectors for the TB floquet Hamiltonian `tbh` using the quasienergy levels `targetsubbands`."
