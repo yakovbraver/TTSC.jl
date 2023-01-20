@@ -5,6 +5,7 @@ import IntervalRootFinding as iroots
 using IntervalArithmetic: (..)
 using LinearAlgebra: eigvals, eigen, schur, ⋅, dot, svd, diagm, diagind, Diagonal, Hermitian
 using FLoops: @floop, @init
+import Optim
 
 "A type for storing the Wannier functions."
 mutable struct Wanniers
@@ -676,6 +677,55 @@ function make_wannierfunctions(fh::FloquetHamiltonian, n_x::Integer, Ωt::Abstra
 end
 
 """
+Find the optimal superposition for each pair of Wannier numbers in `whichstates` at phase `iφ,
+such that the overlap of probability density is minimised. Overwrite the corresponding Wanniers in `fh`.
+"""
+function optimise_wanniers!(fh::FloquetHamiltonian; whichstates::Vector{<:Tuple{Integer, Integer}}, iφ::Integer)
+    n_x = 50
+    Ωt = range(0, 2π, length=40fh.s)
+    x, _, w = DeltaModel.make_wannierfunctions(fh, n_x, Ωt, [iφ])
+
+    dᵢ′ = similar(fh.w.d[:, 1, 1])
+    dⱼ′ = similar(fh.w.d[:, 1, 1])
+
+    for (i, j) in whichstates
+        wᵢ = @view w[:, :, i, 1]
+        wⱼ = @view w[:, :, j, 1]
+        
+        best_x = Vector{Float64}(undef, 3)
+        best_val = 0.0
+        for _ in 1:10
+            opt = Optim.optimize(x -> begin 
+                                        U = get_U(x...)
+                                        wᵢ′ = U[1, 1] * wᵢ + U[1, 2] * wⱼ
+                                        wⱼ′ = U[2, 1] * wᵢ + U[2, 2] * wⱼ
+                                        -sum(abs2.(abs2.(wᵢ′) .- abs2.(wⱼ′)))
+                                    end,
+                                [π * rand(), 2π * rand(), 2π * rand()], Optim.NelderMead())
+            val = Optim.minimum(opt)
+            if val < best_val
+                best_val = val
+                best_x .= Optim.minimizer(opt) 
+            end
+        end
+        U = get_U(best_x...)
+
+        dᵢ′ .= copy(fh.w.d[:, i, iφ])
+        dⱼ′ .= copy(fh.w.d[:, j, iφ])
+        fh.w.d[:, i, iφ] = U[1, 1] * dᵢ′ + U[1, 2] * dⱼ′
+        fh.w.d[:, j, iφ] = U[2, 1] * dᵢ′ + U[2, 2] * dⱼ′
+    end
+end
+
+"Generate a 2×2 unitary matrix parameterised by the angles 0 ≤ ϑ ≤ π, 0 ≤ ϕ, α ≤ 2π."
+function get_U(ϑ, ϕ, α)
+    n1, n2, n3 = sin(ϑ)cos(ϕ), sin(ϑ)sin(ϕ), cos(ϑ)
+    s, c = sincos(α/2)
+    [c + im * n3 * s        im * n1 * s + n2 * s
+     im * n1 * s - n2 * s   c - im * n3 * s]
+end
+
+"""
 A type representing a 2D (time+space) tight-binding Hamiltonian.
 """
 mutable struct TBFloquetHamiltonian
@@ -689,8 +739,11 @@ mutable struct TBFloquetHamiltonian
     w::FloquetWanniers 
 end
 
-"Construct a `TBFloquetHamiltonian` object."
-function TBFloquetHamiltonian(fh::FloquetHamiltonian, d::Matrix{ComplexF64}; N::Integer, iφ₀::Integer, isperiodic::Bool, targetband::Integer, pumptype::Symbol)
+"""
+Construct a `TBFloquetHamiltonian` object using the periodic Wanniers at a single phase contained in `fh`.
+`pumptype` may or may not coincide with `fh.pumptype`.
+"""
+function TBFloquetHamiltonian(fh::FloquetHamiltonian; N::Integer, isperiodic::Bool, targetband::Integer, pumptype::Symbol)
     (;a, U, φₓ) = fh.uh
     (;s, λₗ, ν) = fh
     n_φₓ = length(φₓ)
@@ -700,9 +753,13 @@ function TBFloquetHamiltonian(fh::FloquetHamiltonian, d::Matrix{ComplexF64}; N::
     n_m = size(fh.E, 1) # number of levels of ℎ considered
     Ψ = Matrix{ComplexF64}(undef, n_m, n_m)
 
+    iφ₀ = 1 # phase index at which to take the Wanniers -- any choice should work, but it is simpler to assume `iφ₀ = 1` below
     ik = 1
+
+    d = @view fh.w.d[:, :, iφ₀]
+    bd = fh.b[:, range(n_w*(targetband-1) + 1, length=n_w), ik, iφ₀] * d
+
     H₀ = d' * Diagonal(fh.E[range(n_w*(targetband-1) + 1, length=n_w), ik, iφ₀]) * d
-    b = fh.b[:, range(n_w*(targetband-1) + 1, length=n_w), ik, iφ₀] # a view for convenience
 
     for (iφ, φ) in enumerate(φₓ)
         for m in 1:n_m # `m` is the subband index of ℎ
@@ -731,7 +788,7 @@ function TBFloquetHamiltonian(fh::FloquetHamiltonian, d::Matrix{ComplexF64}; N::
                 end
             end
         end
-        H[:, :, iφ] = H₀ + d' * b' * Ψ * b * d
+        H[:, :, iφ] = H₀ + bd' * Ψ * bd
     end
 
     E = Matrix{Float64}(undef, n_w, n_φₓ)
@@ -739,20 +796,11 @@ function TBFloquetHamiltonian(fh::FloquetHamiltonian, d::Matrix{ComplexF64}; N::
     TBFloquetHamiltonian(N, a, H, isperiodic, φₓ, E, c, FloquetWanniers())
 end
 
-"Diagonalise the TB Floquet Hamiltonian `tbh` at each phase. The wannier energies `fh.w.E` are used to fill the diagonal of `tbh` at each phase."
-function diagonalise!(tbh::TBFloquetHamiltonian)
-    for i in eachindex(tbh.φₓ)
-        tbh.E[:, i], tbh.c[:, :, i] = eigen(Hermitian(tbh.H[:, :, i]))
-    end
-end
-
-"Construct a `TBFloquetHamiltonian` object."
+"Construct a `TBFloquetHamiltonian` object using the corresponding Wanniers contained in `fh` at each phase."
 function TBFloquetHamiltonian(fh::FloquetHamiltonian; isperiodic::Bool)
     (;N, φₓ) = fh.uh
     n_φₓ = length(φₓ)
     n_s = size(fh.w.d, 1) ÷ N # number of subbands of ℋ mixed
-    # Compute the off-diagonal elements of the TB Hamiltonian 𝐻 using the Wanniers of ℋ.
-    # Use only the first phase since each phase should lead to identical results.
     H = Array{ComplexF64, 3}(undef, n_s*N, n_s*N, n_φₓ)
     for iφ in eachindex(φₓ)
         for a = 1:n_s*N, b = a:n_s*N
@@ -764,6 +812,13 @@ function TBFloquetHamiltonian(fh::FloquetHamiltonian; isperiodic::Bool)
     E = Matrix{Float64}(undef, n_s*N, n_φₓ)
     c = Array{ComplexF64, 3}(undef, n_s*N, n_s*N, n_φₓ)
     TBFloquetHamiltonian(N, fh.uh.a, H, isperiodic, φₓ, E, c, FloquetWanniers())
+end
+
+"Diagonalise the TB Floquet Hamiltonian `tbh` at each phase."
+function diagonalise!(tbh::TBFloquetHamiltonian)
+    for i in eachindex(tbh.φₓ)
+        tbh.E[:, i], tbh.c[:, :, i] = eigen(Hermitian(tbh.H[:, :, i]))
+    end
 end
 
 "Calculate Wannier vectors for the TB floquet Hamiltonian `tbh` using the quasienergy levels `targetsubbands`."

@@ -6,6 +6,9 @@ plotlyjs()
 pyplot()
 theme(:dark, size=(800, 500))
 
+using LinearAlgebra.BLAS: set_num_threads
+set_num_threads(1)
+
 includet("DeltaModel.jl")
 import .DeltaModel
 
@@ -13,7 +16,7 @@ import .DeltaModel
 
 n_cells = 2
 a = 4; λ = 10000; U = 1
-φₓ = range(0, 2π, length=31)
+φₓ = range(0, 2π, length=61)
 h = DeltaModel.UnperturbedHamiltonian(n_cells; a, λ, U, φₓ)
 
 # dispersion
@@ -57,9 +60,8 @@ savefig("spatial-spectrum-zoom.pdf")
 
 λₛ = 10; λₗ = 5; ω = 494
 s = 2
-pumptype = :space
+pumptype = :time
 H = DeltaModel.FloquetHamiltonian(h; s, λₛ, λₗ, ω, pumptype)
-
 DeltaModel.diagonalise!(H)
 
 skipbands = 2 # number of spatial bands that have been skipped by the choice if `bounds` above
@@ -86,13 +88,13 @@ savefig("floquet-space.pdf")
 n_x = 50
 Ωt = range(0, 2π, length=40s)
 iφ = 1
-whichsubbands = 1:12
+whichsubbands = 4:6
 x, u = DeltaModel.make_eigenfunctions(H, n_x, Ωt, [iφ], whichsubbands)
-u_real = abs2.(u) |> real
+u_real = abs2.(u)
 figs = [plot() for _ in 1:length(whichsubbands)*n_cells]
-for (f, n) in enumerate(whichsubbands)
+for n in eachindex(whichsubbands)
     for ik in 1:n_cells
-        figs[n_cells*(f-1)+ik] = heatmap(x, Ωt, u_real[:, :, ik, n, 1]', xlabel=L"x", ylabel=L"\Omega t", c=:viridis, title="Mode n=$n, ik=$ik")
+        figs[n_cells*(n-1)+ik] = heatmap(x, Ωt, u_real[:, :, ik, n, 1]', xlabel=L"x", ylabel=L"\Omega t", c=:viridis, title="Mode n=$n, ik=$ik")
     end
 end
 plot(figs...)
@@ -163,18 +165,32 @@ p = Progress(length(φₓ), 1)
         figs[f] = heatmap(x, Ωt/π, abs2.(w[:, :, o, iφ]'), xlabel=L"x", ylabel=L"\Omega t/\pi", c=CMAP, title="Wannier $f", clims=(0, 3), xlims=(0, a*n_cells), ylims=(0, 2))
         shadecells!(figs[f])
     end
-    # plot(figs..., plot_title=L"\varphi_x=\varphi_t = %$(round(φₓ[iφ], sigdigits=3))")
+    plot(figs..., plot_title=L"\varphi_x=\varphi_t = %$(round(φₓ[iφ], sigdigits=3))")
     next!(p)
 end
 
 ### Floquet TB
 
-## Construct Wanniers of the first temporal band
+## Construct Wanniers for the first temporal band
+
+λₛ = 10; λₗ = 5; ω = 494
+s = 2
+pumptype = :time
+
+n_cells = 1
+h = DeltaModel.UnperturbedHamiltonian(n_cells; a, λ, U, φₓ)
+f(E) = DeltaModel.cos_ka(E; φ=0, uh=h)
+bounds = (45, 5100)
+rts = iroots.roots(f, bounds[1]..bounds[2])
+DeltaModel.diagonalise!(h, length(rts), bounds)
+H = DeltaModel.FloquetHamiltonian(h; s, λₛ, λₗ, ω, pumptype=:time)
+DeltaModel.diagonalise!(H)
 
 targetsubbands = 1:12
 n_subbands = length(targetsubbands)
 
-DeltaModel.compute_wanniers!(H; targetsubbands, Ωt=0.35π)
+DeltaModel.compute_wanniers!(H; targetsubbands, Ωt=0.3π)
+DeltaModel.optimise_wanniers!(H, [(2, 3), (6, 7), (10, 11)], iφ=1)
 
 # Maps of Wannier functions
 iφ = 1
@@ -186,64 +202,26 @@ figs = [plot() for _ in 1:length(targetsubbands)*n_cells]
 for f in eachindex(figs)
     figs[f] = heatmap(x, Ωt, abs2.(w[:, :, f, 1]'), xlabel=L"x", ylabel=L"\Omega t", c=CMAP, title="Wannier $f")
 end
-for f in eachindex(figs)
-    figs[f] = heatmap(x, Ωt, abs2.(w[:, :, f, 2]'), xlabel=L"x", ylabel=L"\Omega t", c=CMAP, title="Wannier $f")
-end
 plot(figs...)
 savefig("all-wanniers-12.png")
 
-# Construct a copy of `H.w.d` describing `2n_subbands*n_cells` Wannier states by selecting wanniers at 𝜑ₓ = 0 and π.
-d = Matrix{ComplexF64}(undef, n_subbands*n_cells, 2n_subbands*n_cells)
-for i in axes(d, 2)
-    level = ceil(Int, i/2)
-    phase = isodd(i) ? 1 : 31
-    d[:, i] = H.w.d[:, level, phase]
-end
+DeltaModel.swap_wanniers!(H.w, 3, 1)
+DeltaModel.swap_wanniers!(H.w, 2, 3)
+DeltaModel.swap_wanniers!(H.w, 5, 6)
+DeltaModel.swap_wanniers!(H.w, 11, 9)
+DeltaModel.swap_wanniers!(H.w, 10, 11)
 
-# Plot the resulting Wanniers
-function make_wannierfunctions(fh, d, n_x::Integer, Ωt::AbstractVector{<:Real})
-    (;N) = fh.uh
-    n_subbands = length(fh.w.targetsubbands)
-    n_w = n_subbands * N * 2
-    whichphases = [1, 31]
-    x, u = DeltaModel.make_eigenfunctions(fh, n_x, Ωt, whichphases, fh.w.targetsubbands) # format: `u[ix, it, ik, j, i]`
-    w = Array{ComplexF64, 3}(undef, length(x), length(Ωt), n_w)
-    for j in 1:n_w
-        iφ = isodd(j) ? 1 : 2
-        w[:, :, j] = sum(d[m, j] * u[:, :, (m-1)÷n_subbands+1, (m-1)%n_subbands+1, iφ] for m = 1:n_w÷2)
-    end
-    return x, u, w
-end
-x, _, w = make_wannierfunctions(H, d, n_x, Ωt)
-sum(conj.(w[:, :, 1]) .* w[:, :, 2])
-figs = [plot() for _ in axes(d, 2)]
-for f in eachindex(figs)
-    figs[f] = heatmap(x, Ωt, abs2.(w[:, :, f]'), xlabel=L"x", ylabel=L"\Omega t", c=CMAP, title="Wannier $f")
-end
-plot(figs...)
+# Construct the TB Floquet Hamiltonian
 
+Htb = DeltaModel.TBFloquetHamiltonian(H; N=n_cells, isperiodic=true, targetband=1, pumptype=:space)
 
-for i in [1, 5, 9]
-    DeltaModel.swap_wanniers!(H.w, i, i+1)
-end
+# plot the Hamiltonian matrix
+using LinearAlgebra: diagind
+M = copy(Htb.H[:, :, 1])
+M[diagind(M)] .= 0
+heatmap(1:size(M, 1), 1:size(M, 1), abs.(M); yaxis=:flip, c=CMAP, xticks=1:size(M, 1), yticks=1:size(M, 1))
 
-## Construct the TB Floquet Hamiltonian
-
-n_cells = 1
-h = DeltaModel.UnperturbedHamiltonian(n_cells; a, λ, U, φₓ)
-f(E) = DeltaModel.cos_ka(E; φ=0, uh=h)
-bounds = (45, 5100)
-rts = iroots.roots(f, bounds[1]..bounds[2])
-DeltaModel.diagonalise!(h, length(rts), bounds)
-H = DeltaModel.FloquetHamiltonian(h; s, λₛ, λₗ, ω, pumptype=:space)
-DeltaModel.diagonalise!(H)
-
-targetsubbands = 1:12
-n_subbands = length(targetsubbands)
-
-DeltaModel.compute_wanniers!(H; targetsubbands, Ωt=0.3π)
-
-Htb = DeltaModel.TBFloquetHamiltonian(H, H.w.d[:, :, 1]; N=n_cells, iφ₀=1, isperiodic=true, targetband=1, pumptype=:space)
+# Htb = DeltaModel.TBFloquetHamiltonian(H, isperiodic=true)
 
 DeltaModel.diagonalise!(Htb)
 
