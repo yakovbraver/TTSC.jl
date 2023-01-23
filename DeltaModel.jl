@@ -447,19 +447,19 @@ end
 "Default-construct an empty `FloquetWanniers` object."
 FloquetWanniers() = FloquetWanniers(Int[], Float64[;;], Float64[;;], ComplexF64[;;;])
 
-"Swap energies, positions, and vectors of wanniers `i` and `j` at every phase."
-function swap_wanniers!(w::FloquetWanniers, i, j)
-    temp_E = w.E[i, :]
-    w.E[i, :] = w.E[j, :]
-    w.E[j, :] = temp_E
+"Swap energies, positions, and vectors of wanniers `i` and `j` at phase `iφ`."
+function swap_wanniers!(w::FloquetWanniers, i, j, iφ)
+    temp_E = w.E[i, iφ]
+    w.E[i, iφ] = w.E[j, iφ]
+    w.E[j, iφ] = temp_E
     
-    temp_pos = w.pos[i, :]
-    w.pos[i, :] = w.pos[j, :]
-    w.pos[j, :] = temp_pos
+    temp_pos = w.pos[i, iφ]
+    w.pos[i, iφ] = w.pos[j, iφ]
+    w.pos[j, iφ] = temp_pos
     
-    temp_d = w.d[:, i, :]
-    w.d[:, i, :] = w.d[:, j, :]
-    w.d[:, j, :] = temp_d
+    temp_d = w.d[:, i, iφ]
+    w.d[:, i, iφ] = w.d[:, j, iφ]
+    w.d[:, j, iφ] = temp_d
 
     return nothing
 end
@@ -600,9 +600,10 @@ end
 
 """
 Calculate Wannier vectors for the Floquet Hamiltonian `fh` using the quasienergy levels `targetsubbands`.
-`Ωt` is the time moment at which to diagonalise the coordinate operator.
+`Ωt` is the time moment at which to diagonalise the coordinate operator; pass `slide_time=true` if you wish this moment
+to change linearly with phase, sliding by π over the period. This may be beneficial for temporal pumping.
 """
-function compute_wanniers!(fh::FloquetHamiltonian; targetsubbands::AbstractVector{<:Integer}, Ωt::AbstractFloat=π/5)
+function compute_wanniers!(fh::FloquetHamiltonian; targetsubbands::AbstractVector{<:Integer}, Ωt::Real=π/5, slide_time=false)
     (;N, a, φₓ) = fh.uh
 
     n_w = length(targetsubbands) * N
@@ -637,7 +638,7 @@ function compute_wanniers!(fh::FloquetHamiltonian; targetsubbands::AbstractVecto
             first_iter = false
         end
 
-        t = fh.pumptype == :space ? Ωt : Ωt - (iφ-1)/length(φₓ) * π
+        t = slide_time ? Ωt - (iφ-1)/length(φₓ) * π : Ωt
 
         for ik in 1:N,  ik′ in 1:N
             for (in, n) in enumerate(targetsubbands)
@@ -677,12 +678,13 @@ function make_wannierfunctions(fh::FloquetHamiltonian, n_x::Integer, Ωt::Abstra
 end
 
 """
-Find the optimal superposition for each pair of Wannier numbers in `whichstates` at phase `iφ,
-such that the overlap of probability density is minimised. Overwrite the corresponding Wanniers in `fh`.
+Find the optimal superposition for each pair of Wannier numbers in `whichstates` at phase `iφ`,
+such that the overlap of probability density is minimised. Overwrite the corresponding states `fh.w.d`.
+Note that `fh.w.E` and `fh.w.pos` are not recalculated.
 """
 function optimise_wanniers!(fh::FloquetHamiltonian; whichstates::Vector{<:Tuple{Integer, Integer}}, iφ::Integer)
-    n_x = 50
-    Ωt = range(0, 2π, length=40fh.s)
+    n_x = 10
+    Ωt = range(0, 2π, length=10fh.s)
     x, _, w = DeltaModel.make_wannierfunctions(fh, n_x, Ωt, [iφ])
 
     dᵢ′ = similar(fh.w.d[:, 1, 1])
@@ -717,12 +719,48 @@ function optimise_wanniers!(fh::FloquetHamiltonian; whichstates::Vector{<:Tuple{
     end
 end
 
-"Generate a 2×2 unitary matrix parameterised by the angles 0 ≤ ϑ ≤ π, 0 ≤ ϕ, α ≤ 2π."
+"Generate a 2×2 unitary matrix parameterised by the angles 0 ≤ `ϑ` ≤ π, 0 ≤ `ϕ`, `α` ≤ 2π."
 function get_U(ϑ, ϕ, α)
     n1, n2, n3 = sin(ϑ)cos(ϕ), sin(ϑ)sin(ϕ), cos(ϑ)
-    s, c = sincos(α/2)
+    s, c = sincos(α)
     [c + im * n3 * s        im * n1 * s + n2 * s
      im * n1 * s - n2 * s   c - im * n3 * s]
+end
+
+"""
+For each phase, reorder the Wanniers in each spatial site so that the first Wannier has its "right" probability density maximum in the region
+3π/2 < 𝛺𝑡 < 2π, the second has its right maximum in π < 𝛺𝑡 < 3π/2, third in π/2 < 𝛺𝑡 < π, and fourth in 0 < 𝛺𝑡 < π/2.
+In practice, this requires either swapping first and second Wanniers, or second with third and then the resulting second with first.
+Optionally, run an optimisation of the second and third Wanniers in each spatial site before reordering.
+"""
+function order_wanniers!(fh::FloquetHamiltonian, optimise::Bool=true)
+    n_x = 10
+    n_t = 10fh.s
+    Ωt = range(0, 2π, length=n_t)
+
+    if optimise
+        whichstates = [(4(s-1)+2, 4(s-1)+3) for s in 1:size(fh.w.d, 2)÷4]
+        @showprogress "Optimising:" for iφ in eachindex(fh.uh.φₓ)
+            DeltaModel.optimise_wanniers!(fh; whichstates, iφ)
+        end
+    end
+    
+    I = Vector{Float64}(undef, 3) # stores the value of ∫|𝑤ᵢ|²d𝑥 d𝑡 over 3𝑙/4 < 𝑥 < 𝑙, 3π/2 < 𝛺𝑡 < 2π for 𝑖 = 1, 2, 3
+    _, _, w = DeltaModel.make_wannierfunctions(fh, n_x, Ωt, eachindex(fh.uh.φₓ))
+    for iφ in eachindex(fh.uh.φₓ)
+        for s in 1:size(fh.w.d, 2)÷4 # for each group of 4 Wanniers (i.e. for each spatial site)
+            for j in 1:3 # for each of the first 3 Wanniers in a given spatial site
+                I[j] = sum(abs2, @view w[(s-1)n_x+3n_x÷4:s*n_x, round(Int, 0.7n_t):end, 4(s-1)+j, iφ])
+            end
+            m = argmax(I)
+            if m == 2
+                DeltaModel.swap_wanniers!(fh.w, 4(s-1)+1, 4(s-1)+2, iφ)
+            elseif m == 3
+                DeltaModel.swap_wanniers!(fh.w, 4(s-1)+2, 4(s-1)+3, iφ)
+                DeltaModel.swap_wanniers!(fh.w, 4(s-1)+1, 4(s-1)+2, iφ)
+            end
+        end
+    end
 end
 
 """
@@ -797,7 +835,7 @@ function TBFloquetHamiltonian(fh::FloquetHamiltonian; N::Integer, isperiodic::Bo
 end
 
 "Construct a `TBFloquetHamiltonian` object using the corresponding Wanniers contained in `fh` at each phase."
-function TBFloquetHamiltonian(fh::FloquetHamiltonian; isperiodic::Bool)
+function TBFloquetHamiltonian(fh::FloquetHamiltonian, isperiodic::Bool)
     (;N, φₓ) = fh.uh
     n_φₓ = length(φₓ)
     n_s = size(fh.w.d, 1) ÷ N # number of subbands of ℋ mixed
