@@ -687,9 +687,6 @@ function optimise_wanniers!(fh::FloquetHamiltonian; whichstates::Vector{<:Tuple{
     Ωt = range(0, 2π, length=10fh.s)
     x, _, w = DeltaModel.make_wannierfunctions(fh, n_x, Ωt, [iφ])
 
-    dᵢ′ = similar(fh.w.d[:, 1, 1])
-    dⱼ′ = similar(fh.w.d[:, 1, 1])
-
     for (i, j) in whichstates
         wᵢ = @view w[:, :, i, 1]
         wⱼ = @view w[:, :, j, 1]
@@ -697,13 +694,16 @@ function optimise_wanniers!(fh::FloquetHamiltonian; whichstates::Vector{<:Tuple{
         best_x = Vector{Float64}(undef, 3)
         best_val = 0.0
         for _ in 1:10
-            opt = Optim.optimize(x -> begin 
-                                        U = get_U(x...)
-                                        wᵢ′ = U[1, 1] * wᵢ + U[1, 2] * wⱼ
-                                        wⱼ′ = U[2, 1] * wᵢ + U[2, 2] * wⱼ
-                                        -sum(abs2.(abs2.(wᵢ′) .- abs2.(wⱼ′)))
-                                    end,
-                                [π * rand(), 2π * rand(), 2π * rand()], Optim.NelderMead())
+            opt = Optim.optimize([π * rand(), 2π * rand(), 2π * rand()], Optim.NelderMead()) do x
+                local U = get_U(x...)
+                s = 0.0
+                for k in eachindex(wᵢ)
+                    wᵢ′ = U[1] * wᵢ[k] + U[2] * wⱼ[k]
+                    wⱼ′ = U[3] * wᵢ[k] + U[4] * wⱼ[k]
+                    s -= abs2(abs2(wᵢ′) - abs2(wⱼ′))
+                end
+                s
+            end
             val = Optim.minimum(opt)
             if val < best_val
                 best_val = val
@@ -712,19 +712,20 @@ function optimise_wanniers!(fh::FloquetHamiltonian; whichstates::Vector{<:Tuple{
         end
         U = get_U(best_x...)
 
-        dᵢ′ .= copy(fh.w.d[:, i, iφ])
-        dⱼ′ .= copy(fh.w.d[:, j, iφ])
-        fh.w.d[:, i, iφ] = U[1, 1] * dᵢ′ + U[1, 2] * dⱼ′
-        fh.w.d[:, j, iφ] = U[2, 1] * dᵢ′ + U[2, 2] * dⱼ′
+        for k in axes(fh.w.d, 1)
+            dᵢ = fh.w.d[k, i, iφ]
+            fh.w.d[k, i, iφ] = U[1] * dᵢ + U[2] * fh.w.d[k, j, iφ]
+            fh.w.d[k, j, iφ] = U[3] * dᵢ + U[4] * fh.w.d[k, j, iφ]
+        end
     end
 end
 
-"Generate a 2×2 unitary matrix parameterised by the angles 0 ≤ `ϑ` ≤ π, 0 ≤ `ϕ`, `α` ≤ 2π."
-function get_U(ϑ, ϕ, α)
+"Generate a 2×2 unitary matrix, returned as a tuple, parameterised by the angles 0 ≤ `ϑ` ≤ π, 0 ≤ `ϕ`, `α` ≤ 2π."
+function get_U(ϑ::Real, ϕ::Real, α::Real)
     n1, n2, n3 = sin(ϑ)cos(ϕ), sin(ϑ)sin(ϕ), cos(ϑ)
     s, c = sincos(α)
-    [c + im * n3 * s        im * n1 * s + n2 * s
-     im * n1 * s - n2 * s   c - im * n3 * s]
+    return c + im * n3 * s,        im * n1 * s + n2 * s,
+           im * n1 * s - n2 * s,   c - im * n3 * s
 end
 
 """
@@ -740,7 +741,7 @@ function order_wanniers!(fh::FloquetHamiltonian, optimise::Bool=true)
 
     if optimise
         whichstates = [(4(s-1)+2, 4(s-1)+3) for s in 1:size(fh.w.d, 2)÷4]
-        @showprogress "Optimising:" for iφ in eachindex(fh.uh.φₓ)
+        for iφ in eachindex(fh.uh.φₓ)
             DeltaModel.optimise_wanniers!(fh; whichstates, iφ)
         end
     end
