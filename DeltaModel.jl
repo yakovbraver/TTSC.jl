@@ -497,8 +497,8 @@ function FloquetHamiltonian(uh::UnperturbedHamiltonian; s::Integer, λₛ::Real,
     FloquetHamiltonian(uh, Int(s), Float64(λₛ), Float64(λₗ), Float64(ω), pumptype, E, b, ν, FloquetWanniers())
 end
 
-"Diagonalise the Floquet Hamiltonian `fh` at each phase."
-function diagonalise!(fh::FloquetHamiltonian)
+"Diagonalise the Floquet Hamiltonian `fh` at each phase. If `reorder=true`, then reorder the eigenstates according to the unperturbed order."
+function diagonalise!(fh::FloquetHamiltonian; reorder::Bool=false)
     (;N, a, φₓ, E) = fh.uh
     (;s, ω, λₛ, λₗ, pumptype, ν) = fh
 
@@ -522,7 +522,7 @@ function diagonalise!(fh::FloquetHamiltonian)
                         for i = 1:3, k₂ in (-6π/a, 6π/a)
                             ∫cos += 𝐹(fh.uh, i, ik, ik, m′, m, iφ, k₂)
                         end
-                        ∫cos *= N # restore proper normalisation; `fh.uh.c` used in `𝐹` are normalised over all the cells, while we need a one-cell normalisation
+                        ∫cos *= N # restore proper normalisation; `fh.uh.c` used in `𝐹` are normalised over all the cells, but we need one-cell normalisation here
                         # if pumping is space-time, then also multiply by cis(-𝜑ₜ). `φ` runs over 𝜑ₓ, and we assume the pumping protocol 𝜑ₜ = 𝜑ₓ
                         H[m′, m] = (pumptype == :space ? λₗ/4 * ∫cos : λₗ/4 * ∫cos * cis(-φ))
                     elseif pumptype == :time 
@@ -539,17 +539,32 @@ function diagonalise!(fh::FloquetHamiltonian)
                         for i = 1:3, k₂ in (-12π/a, 12π/a)
                             ∫cos += 𝐹(fh.uh, i, ik, ik, m′, m, iφ, k₂)
                         end
-                        ∫cos *= N # restore proper normalisation; `fh.uh.c` used in `𝐹` are normalised over all the cells, while we need a one-cell normalisation
+                        ∫cos *= N # restore proper normalisation; `fh.uh.c` used in `𝐹` are normalised over all the cells, but we need one-cell normalisation here
                         H[m′, m] = λₛ/4 * ∫cos
                     end
                 end
             end
             fh.E[:, ik, iφ], fh.b[:, :, ik, iφ] = eigen(Hermitian(H, :L))
-            perm = diag(H) .|> real |> sortperm |> invperm # get a permutation "restoring" the order of spatial bands
-            @views permute!(fh.E[:, ik, iφ], perm)
-            @views Base.permutecols!!(fh.b[:, :, ik, iφ], perm)
+            if reorder
+                perm = diag(H) .|> real |> sortperm |> invperm # get a permutation "restoring" the order of spatial bands
+                @views permute!(fh.E[:, ik, iφ], perm)
+                @views Base.permutecols!!(fh.b[:, :, ik, iφ], perm)
+            end
         end
     end
+end
+
+"Swap energies and eigenvectors of states `i` and `j` for quasimomenta `ik` at phases `iφ`."
+function swap_eigenstates!(fh::FloquetHamiltonian, i::Integer, j::Integer, ik::AbstractVector{<:Integer}, iφ::AbstractVector{<:Integer})
+    temp_E = fh.E[i, ik, iφ]
+    fh.E[i, ik, iφ] = fh.E[j, ik, iφ]
+    fh.E[j, ik, iφ] = temp_E
+
+    temp_b = fh.b[:, i, ik, iφ]
+    fh.b[:, i, ik, iφ] = fh.b[:, j, ik, iφ]
+    fh.b[:, j, ik, iφ] = temp_b
+
+    return nothing
 end
 
 """
@@ -718,8 +733,8 @@ In practice, this requires either swapping first and second Wanniers, or second 
 Optionally, run an optimisation of the second and third Wanniers in each spatial site before reordering.
 """
 function order_wanniers!(fh::FloquetHamiltonian; optimise::Bool=true)
-    n_x = 10
-    n_t = 10fh.s
+    n_x = 20
+    n_t = 20fh.s
     Ωt = range(0, 2π, length=n_t)
 
     if optimise
@@ -754,7 +769,7 @@ mutable struct TBFloquetHamiltonian
     N::Int
     a::Float64
     H::Array{ComplexF64, 3} # Hamiltonian matrix
-    isperiodic::Bool
+    periodicity::Symbol
     φₓ::Vector{Float64}
     E::Matrix{Float64}      # `E[i, j]` = `i`th eigenvalue at `j`th phase, `1 ≤ i ≤ 6N`, `1 ≤ j ≤ length(φₓ)`
     c::Array{ComplexF64, 3} # `c[:, i, j]` = `i`th eigenvector at `j`th phase
@@ -766,7 +781,7 @@ Experimental: Construct a `TBFloquetHamiltonian` object using the periodic Wanni
 `fh` should be calculated for a single spatial site. `pumptype` may or may not coincide with `fh.pumptype`.
 `startsubband` is the first subband of `fh` to use for constructing Wanniers.
 """
-function TBFloquetHamiltonian(fh::FloquetHamiltonian; startsubband::Integer, pumptype::Symbol)
+function TBFloquetHamiltonian(fh::FloquetHamiltonian, startsubband::Integer, pumptype::Symbol)
     (;a, U, φₓ) = fh.uh
     (;s, λₗ, ν) = fh
     n_φₓ = length(φₓ)
@@ -816,25 +831,37 @@ function TBFloquetHamiltonian(fh::FloquetHamiltonian; startsubband::Integer, pum
 
     E = Matrix{Float64}(undef, n_w, n_φₓ)
     c = Array{ComplexF64, 3}(undef, n_w, n_w, n_φₓ)
-    TBFloquetHamiltonian(1, a, H, true, φₓ, E, c, FloquetWanniers())
+    TBFloquetHamiltonian(1, a, H, :both, φₓ, E, c, FloquetWanniers())
 end
 
-"Construct a `TBFloquetHamiltonian` object using the corresponding Wanniers contained in `fh` at each phase."
-function TBFloquetHamiltonian(fh::FloquetHamiltonian, isperiodic::Bool)
+"""
+Construct a `TBFloquetHamiltonian` object using the corresponding Wanniers contained in `fh` at each phase.
+`perdicity` should be `:none`, `:space`, `:time`, or anything else for toroidal time-space periodicity.
+"""
+function TBFloquetHamiltonian(fh::FloquetHamiltonian; periodicity::Symbol)
     (;N, φₓ) = fh.uh
     n_φₓ = length(φₓ)
     n_s = length(fh.w.targetsubbands) # number of spatial subbands of ℋ mixed
+    n_t = 4 # number of temporal sites
     H = Array{ComplexF64, 3}(undef, n_s*N, n_s*N, n_φₓ)
     for iφ in eachindex(φₓ)
         for a = 1:n_s*N, b = a:n_s*N
             H[b, a, iφ] = sum(fh.w.d[i, a, iφ]' * fh.w.d[i, b, iφ] * fh.E[fh.w.targetsubbands[(i-1)%n_s+1], (i-1)÷n_s+1, iφ] for i = axes(fh.w.d, 1))
             H[a, b, iφ] = H[b, a, iφ]'
         end
+        if periodicity == :space || periodicity == :none # make non-periodic in time
+            for i in 0:3N-1
+                H[n_t*i+1, n_t*(i+1), iφ] = H[n_t*(i+1), n_t*i+1, iφ] = 0
+            end
+        end
+        if periodicity == :time || periodicity == :none # make non-periodic in space
+            H[1:n_t, end-n_t+1:end, iφ] .= H[end-n_t+1:end, 1:n_t, iφ] .= 0
+        end
     end
 
     E = Matrix{Float64}(undef, n_s*N, n_φₓ)
     c = Array{ComplexF64, 3}(undef, n_s*N, n_s*N, n_φₓ)
-    TBFloquetHamiltonian(N, fh.uh.a, H, isperiodic, φₓ, E, c, FloquetWanniers())
+    TBFloquetHamiltonian(N, fh.uh.a, H, periodicity, φₓ, E, c, FloquetWanniers())
 end
 
 "Diagonalise the TB Floquet Hamiltonian `tbh` at each phase."
@@ -846,10 +873,10 @@ end
 
 """
 Calculate Wannier vectors for the TB floquet Hamiltonian `tbh` using the energy levels `targetlevels`.
-These levels are counted from the spectrum of `tbh` starting from the lowest.
+These levels are counted from the spectrum of `tbh`, starting from the lowest.
 """
-function compute_wanniers!(tbh::TBFloquetHamiltonian; targetlevels::AbstractVector{<:Integer})
-    (;N, a, φₓ) = tbh
+function compute_wanniers!(tbh::TBFloquetHamiltonian, targetlevels::AbstractVector{<:Integer})
+    (;N, φₓ, periodicity) = tbh
 
     n_w = length(targetlevels)
     n_t = 4 # number of temporal sites
@@ -858,25 +885,29 @@ function compute_wanniers!(tbh::TBFloquetHamiltonian; targetlevels::AbstractVect
     d = Array{ComplexF64, 3}(undef, n_w, n_w, length(φₓ))
     tbh.w = FloquetWanniers(targetlevels, E, pos, d) # use `targetlevels` in place of `targetsubbands` argument
 
-    # if tbh.isperiodic
-        X = Diagonal([cis(2π/(n_t*N*a) * n*a/3) for n in 0:3*n_t*N-1]) # position operator in coordinate representation
+    if periodicity == :none
+        X = Diagonal(1:3N) # position operator in coordinate representation
+        for iφ in eachindex(φₓ)
+            XE = tbh.c[:, targetlevels, iφ]' * X * tbh.c[:, targetlevels, iφ] # position operator in energy representation
+            pos[:, iφ], d[:, :, iφ] = eigen(Hermitian(XE))
+            E[:, iφ] = transpose(tbh.E[targetlevels, iφ]) * abs2.(d[:, :, iφ])
+        end
+    else
+        if periodicity == :space
+            X = Diagonal([cis(2π/(3N*n_t) * n) for n in 0:3N*n_t-1]) # position operator in coordinate representation
+        else # if periodicity == :time || periodicity == :both
+            X = Diagonal([cis(2π*((n % n_t)/n_t + (n ÷ n_t)/(3N*n_t))) for n in 0:3N*n_t-1]) # position operator in coordinate representation
+        end    
         for iφ in eachindex(φₓ)
             XE = tbh.c[:, targetlevels, iφ]' * X * tbh.c[:, targetlevels, iφ] # position operator in energy representation
             _, d[:, :, iφ], pos_complex = schur(XE)
-            pos_real = @. mod2pi(angle(pos_complex)) / 2π * n_t*N*a # shift angle from [-π, π) to [0, 2π)
+            pos_real = @. mod2pi(angle(pos_complex)) / 2π * 3N*n_t # shift angle from [-π, π) to [0, 2π)
             sp = sortperm(pos_real)                    # sort the eigenvalues
             pos[:, iφ] = pos_real[sp]
             @views Base.permutecols!!(d[:, :, iφ], sp) # sort the eigenvectors in the same way
-            E[:, iφ] = [abs2.(dˣ) ⋅ tbh.E[targetlevels, iφ] for dˣ in eachcol(d[:, :, iφ])]
+            E[:, iφ] = transpose(tbh.E[targetlevels, iφ]) * abs2.(d[:, :, iφ])
         end
-    # else
-    #     X = Diagonal([n*a/3 for n in 0:3N-1]) # position operator in coordinate representation
-    #     for iφ in eachindex(φₓ)
-    #         XE = tbh.c[:, targetlevels, iφ]' * X * tbh.c[:, targetlevels, iφ] # position operator in energy representation
-    #         tbh.w.pos[b, :, iφ], tbh.w.d[:, :, b, iφ] = eigen(Hermitian(XE))
-    #         tbh.w.E[b, :, iφ] = [abs2.(dˣ) ⋅ tbh.E[targetlevels, iφ] for dˣ in eachcol(tbh.w.d[:, :, b, iφ])]
-    #     end
-    # end
+    end
 end
 
 """
@@ -888,7 +919,7 @@ function make_wannierfunctions(tbh::TBFloquetHamiltonian, whichphases::AbstractV
     targetlevels = tbh.w.targetsubbands # the `targetsubbands` stored in `tbh` are actually level numbers
     n_w = length(targetlevels)
     n_t = 4 # number of temporal sites
-    w = Array{ComplexF64, 4}(undef, n_t, size(tbh.c, 1)÷n_t, n_w, length(whichphases))
+    w = Array{ComplexF64, 4}(undef, n_t, 3N, n_w, length(whichphases))
     for (i, iφ) in enumerate(whichphases)
         for j in 1:n_w
             w[:, :, j, i] = reshape(sum(tbh.w.d[k, j, iφ] * tbh.c[:, targetlevels[k], iφ] for k = 1:n_w), (n_t, 3N))

@@ -44,7 +44,6 @@ for m in 1:n_levels
     end
 end
 plot!(xlabel=L"\varphi_x", title=L"\omega=%$ω, \lambda_S=%$λₛ, \lambda_L=%$λₗ")
-savefig("ordered-spectrum.pdf")
 
 ### Floquet TB
 
@@ -68,7 +67,6 @@ for f in eachindex(figs)
     figs[f] = heatmap(x, Ωt, abs2.(w[:, :, f, 1]'), xlabel=L"x", ylabel=L"\Omega t", c=CMAP, title="Wannier $f")
 end
 plot(figs..., layout=(length(figs)÷4, 4), plot_title=L"\lambda=%$λ, \omega=%$ω, %$iφ") |> display
-savefig("$λ-$λₛ-$λₗ-wanniers.png")
 
 DeltaModel.swap_wanniers!(H.w, 1, 2, eachindex(φₓ))
 DeltaModel.swap_wanniers!(H.w, 6, 7, eachindex(φₓ))
@@ -78,7 +76,7 @@ DeltaModel.swap_wanniers!(H.w, 9, 10, eachindex(φₓ))
 # Construct the TB Floquet Hamiltonian
 
 pumptype = :time
-Htb = DeltaModel.TBFloquetHamiltonian(H; startsubband, pumptype)
+Htb = DeltaModel.TBFloquetHamiltonian(H, startsubband, pumptype)
 
 # plot the Hamiltonian matrix
 M = copy(Htb.H[:, :, 1])
@@ -104,7 +102,6 @@ plot!(xlabel=L"\varphi_t", ylabel="Coupling strength", title="Temporal couplings
 scatter(real(Htb.H[1, 1, :]) - real(Htb.H[2, 2, :]), abs.(Htb.H[1, 2, :]) - abs.(Htb.H[1, 4, :]), zcolor=φₓ, markerstrokewidth=0, markersize=6, c=:viridis,
         colorbar_title=L"\varphi_t", label="", xlabel=L"\Delta = H_{11} - H_{22}", ylabel=L"\delta = |H_{12}| - |H_{14}|",
         title=L"\lambda_S=%$λₛ, \lambda_L=%$λₗ, \omega=%$ω, \lambda=%$λ"*", constant basis", xlims=(-1, Inf))
-savefig("$λₛ-$λₗ-bad-temporal-topology.pdf")
 
 DeltaModel.diagonalise!(Htb)
 
