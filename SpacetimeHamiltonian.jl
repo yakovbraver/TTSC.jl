@@ -10,8 +10,8 @@ mutable struct SpacetimeHamiltonian
     𝐻₀::Function    # free (unperturbed) Hamiltonian
     𝐻::Function     # full Hamiltonian, including time-dependent perturbation
     𝑈::Function     # spatial potential
-    left_tp::Tuple  # bracketing interval for the left turning point of the free motion
-    right_tp::Tuple # bracketing interval for the right turning point of the free motion
+    left_tp::Tuple{Float64, Float64}  # bracketing interval for the left turning point of the free motion
+    right_tp::Tuple{Float64, Float64} # bracketing interval for the right turning point of the free motion
     𝐸::Dierckx.Spline1D # energy at the given action, function 𝐸(𝐼)
     𝐸′::Function    # oscillation frequency at the given action, function 𝐸′(𝐼)
     𝐸″::Function    # effective mass at the given action, function 𝐸″(𝐼)
@@ -33,7 +33,7 @@ function SpacetimeHamiltonian(𝐻₀::Function, 𝐻::Function, params::Abstrac
         left_tp, right_tp = turning_point_intervals(𝑈, min_pos, max_pos, turnpoint)
     end
     𝐸, 𝐸′, 𝐸″ = make_action_functions(𝑈, left_tp, right_tp)
-    SpacetimeHamiltonian(𝐻₀, 𝐻, 𝑈, left_tp, right_tp, 𝐸, 𝐸′, 𝐸″, params, s)
+    SpacetimeHamiltonian(𝐻₀, 𝐻, 𝑈, Float64.(left_tp), Float64.(right_tp), 𝐸, 𝐸′, 𝐸″, params, s)
 end
 
 """
@@ -142,9 +142,9 @@ function compute_parameters(H::SpacetimeHamiltonian, perturbations::Vector{Funct
     return Iₛ, M, coeffs
 end
 
-"Calculate the `n`th Fourier coefficient of `f`. Simple trapezoid rule is used."
+"Calculate the `n`th complex Fourier coefficient of `f`. Simple trapezoid rule is used."
 function fourier_coeff(f::AbstractVector, n::Int, dt::AbstractFloat, T::AbstractFloat)
-    (sum(f[i] * cispi(2n*(i-1)*dt/T) for i = 2:length(f)-1) + (f[1] + f[end])/2) * dt/T
+    (sum(f[i] * cispi(-2n*(i-1)*dt/T) for i = eachindex(f)) - (f[1] + f[end])/2) * dt/T
 end
 
 """
@@ -170,26 +170,26 @@ function compute_IΘ(H::SpacetimeHamiltonian, I_target::Real; χ₀::Real=0, n_T
     T_external = 2π / ω # period of the external driving
     tspan = (0.0, n_T * T_external)
     if χ₀ == 0
-        x₀ = H.right_tp[1] # set iniital coordinate to the potential minimum (this position with positive momenutm defines the zero phase)
+        q₀ = H.right_tp[1] # set iniital coordinate to the potential minimum (this position with positive momenutm defines the zero phase)
     elseif χ₀ > 0
-        right_tp = Roots.find_zero(x -> H.𝐻₀(0, x, H.params) - H.𝐸(I_target), H.right_tp) # right turning point for action `I_target`
-        x₀ = H.right_tp[1] + χ₀ * (right_tp - H.right_tp[1])
+        right_tp::Float64 = Roots.find_zero(x -> H.𝐻₀(0, x, H.params) - H.𝐸(I_target), H.right_tp) # right turning point for action `I_target`
+        q₀ = H.right_tp[1] + χ₀ * (right_tp - H.right_tp[1])
     elseif χ₀ < 0
-        left_tp = Roots.find_zero(x -> H.𝐻₀(0, x, H.params) - H.𝐸(I_target), H.left_tp) # left turning point for action `I_target`
-        x₀ = H.right_tp[1] + χ₀ * (H.right_tp[1] - left_tp) # note that `χ₀` is negative here
+        left_tp::Float64 = Roots.find_zero(x -> H.𝐻₀(0, x, H.params) - H.𝐸(I_target), H.left_tp) # left turning point for action `I_target`
+        q₀ = H.right_tp[1] + χ₀ * (H.right_tp[1] - left_tp) # note that `χ₀` is negative here
     end
-    p₀ = 𝑝(H.𝑈, H.𝐸(I_target), x₀)
+    p₀::Float64 = 𝑝(H.𝑈, H.𝐸(I_target), q₀)
 
-    H_problem = HamiltonianProblem(H.𝐻, p₀, x₀, tspan, H.params)
+    H_problem = HamiltonianProblem(H.𝐻, p₀, q₀, tspan, H.params)
     sol = DiffEq.solve(H_problem, DiffEq.KahanLi8(); dt=2e-4, saveat=T_external)
-    p = sol[1, :]
-    x = sol[2, :]
+    p = @view sol[1, :]
+    x = @view sol[2, :]
     
     # Calculate the energies that the free system would possess if it was at `x` with momenta `p`
     E = Float64[]
     sizehint!(E, length(sol.t))
-    for (pᵢ, xᵢ) in zip(p, x)
-        Eᵢ = H.𝐻₀(pᵢ, xᵢ, H.params)
+    for (pᵢ::Float64, xᵢ::Float64) in zip(p, x)
+        Eᵢ::Float64 = H.𝐻₀(pᵢ, xᵢ, H.params)
         if Eᵢ < H.𝑈(H.left_tp[1])
             push!(E, Eᵢ)
         else # Interrupt if energy `Eᵢ` exceeds that of the barrier. All subsequent energies are of no interest then.
@@ -198,8 +198,9 @@ function compute_IΘ(H::SpacetimeHamiltonian, I_target::Real; χ₀::Real=0, n_T
         end
     end
 
-    I = map(x -> 𝐼(H, x), E)
+    I::Vector{Float64} = map(x -> 𝐼(H, x), E)
     Θ = similar(I)
+    t::Float64 = 0 # initialise with a type to prevent `Any`
 
     if point_to_angle === nothing
         # for all the equations below, the initial position is chosen to be the potential minimum
@@ -207,15 +208,15 @@ function compute_IΘ(H::SpacetimeHamiltonian, I_target::Real; χ₀::Real=0, n_T
 
         # find phases from the coordinates
         for i in eachindex(Θ)
-            T_free = 2π / H.𝐸′(I[i]) # period of the unperturbed motion at action `I[i]`
+            T_free::Float64 = 2π / H.𝐸′(I[i]) # period of the unperturbed motion at action `I[i]`
             tspan = (0.0, 1.02T_free) # take slightly more than `T_free`. Due to solver inaccuracies we might not get a full perdiod, and subsequent search will fail
             p₀ = 𝑝(H.𝑈, E[i], x₀)
             H₀_problem = HamiltonianProblem(H.𝐻₀, p₀, x₀, tspan, H.params)
-            sol = DiffEq.solve(H₀_problem, DiffEq.McAte3(); dt=2e-4)
+            sln = DiffEq.solve(H₀_problem, DiffEq.McAte3(); dt=2e-4)
 
             # Find the time point when the equilibrium point x₀ (i.e. the potential minimum) is reached.
             # The coordinate will be greater than x₀ at times in (0; t_eq) and less than x₀ at times in (t_eq; T_free).
-            t_eq = Roots.find_zero(t -> sol(t)[2] - x₀, T_free/2)
+            t_eq::Float64 = Roots.find_zero(t -> sln(t)[2] - x₀, T_free/2)
 
             # If the coordinate `x[i]` is very close to potential minimum `x₀`, the momentum `p[i]` may lie just outside of the bracketing interval,
             # causing the root finding to fail. However, in that case `p[i]` is either very close to its maximum, meaning `t = 0`,
@@ -226,7 +227,7 @@ function compute_IΘ(H::SpacetimeHamiltonian, I_target::Real; χ₀::Real=0, n_T
                 # use the sign of the coordinate to determine which part of the period the point (x[i]; p[i]) is in
                 bracket = x[i] > x₀ ? (0.0, t_eq) : (t_eq, T_free)
                 # Find the time corresponding to momentum `p[i]`:
-                f = t -> sol(t)[1] - p[i] # construct the function whose root will be searched for
+                f = t -> sln(t)[1] - p[i] # construct the function whose root will be searched for
                 # Check that `bracket` is indeed a bracketing interval. This might not be the case due to various inaccuracies.
                 if prod(f.(bracket)) < 0
                     t = Roots.find_zero(f, bracket, Roots.A42(), xrtol=1e-3)
@@ -238,7 +239,7 @@ function compute_IΘ(H::SpacetimeHamiltonian, I_target::Real; χ₀::Real=0, n_T
         end
     else
         for i in eachindex(Θ)
-            T_free = 2π / H.𝐸′(I[i]) # period of the unperturbed motion at action `I[i]`
+            T_free::Float64 = 2π / H.𝐸′(I[i]) # period of the unperturbed motion at action `I[i]`
             Θ[i] = point_to_angle(p[i], x[i], E[i], T_free)
         end
     end
