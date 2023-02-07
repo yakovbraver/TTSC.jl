@@ -447,8 +447,8 @@ end
 "Default-construct an empty `FloquetWanniers` object."
 FloquetWanniers() = FloquetWanniers(Int[], Float64[;;], Float64[;;], ComplexF64[;;;])
 
-"Swap energies, positions, and vectors of wanniers `i` and `j` at phase(-s) `iφ`."
-function swap_wanniers!(w::FloquetWanniers, i::Integer, j::Integer, iφ::Union{Integer, AbstractVector{<:Integer}})
+"Swap energies, positions, and vectors of wanniers `i` and `j` at phases `iφ`."
+function swap_wanniers!(w::FloquetWanniers, i::Integer, j::Integer, iφ::AbstractVector{<:Integer})
     temp_E = w.E[i, iφ]
     w.E[i, iφ] = w.E[j, iφ]
     w.E[j, iφ] = temp_E
@@ -733,32 +733,42 @@ In practice, this requires either swapping first and second Wanniers, or second 
 Optionally, run an optimisation of the second and third Wanniers in each spatial site before reordering.
 """
 function order_wanniers!(fh::FloquetHamiltonian; optimise::Bool=true)
+    (;N, φₓ) = fh.uh
     n_x = 20
     n_t = 20fh.s
     Ωt = range(0, 2π, length=n_t)
 
+    n_w = size(fh.w.d, 2)
+
     if optimise
-        whichstates = [(4(s-1)+2, 4(s-1)+3) for s in 1:size(fh.w.d, 2)÷4]
-        for iφ in eachindex(fh.uh.φₓ)
-            DeltaModel.optimise_wanniers!(fh; whichstates, iφ)
+        whichstates = [(4(s-1)+2, 4(s-1)+3) for s in 1:n_w÷4]
+        @floop for iφ in eachindex(φₓ)
+            optimise_wanniers!(fh; whichstates, iφ)
         end
     end
     
     I = Vector{Float64}(undef, 3) # stores the value of ∫|𝑤ᵢ|²d𝑥 d𝑡 over 3𝑙/4 < 𝑥 < 𝑙, 3π/2 < 𝛺𝑡 < 2π for 𝑖 = 1, 2, 3
-    _, _, w = DeltaModel.make_wannierfunctions(fh, n_x, Ωt, eachindex(fh.uh.φₓ))
-    for iφ in eachindex(fh.uh.φₓ)
-        for s in 1:size(fh.w.d, 2)÷4 # for each group of 4 Wanniers (i.e. for each spatial site)
+    _, _, w = make_wannierfunctions(fh, n_x, Ωt, eachindex(φₓ))
+    for iφ in eachindex(φₓ)
+        for s in 1:n_w÷4 # for each group of 4 Wanniers (i.e. for each spatial site)
             for j in 1:3 # for each of the first 3 Wanniers in a given spatial site
-                I[j] = sum(abs2, @view w[(s-1)n_x+3n_x÷4:s*n_x, round(Int, 0.7n_t):end, 4(s-1)+j, iφ])
+                I[j] = sum(abs2, @view w[(s-1)n_x+3n_x÷4:s*n_x, 7n_t÷10:end, 4(s-1)+j, iφ])
             end
             m = argmax(I)
             if m == 2
-                DeltaModel.swap_wanniers!(fh.w, 4(s-1)+1, 4(s-1)+2, iφ)
+                swap_wanniers!(fh.w, 4(s-1)+1, 4(s-1)+2, [iφ])
             elseif m == 3
-                DeltaModel.swap_wanniers!(fh.w, 4(s-1)+2, 4(s-1)+3, iφ)
-                DeltaModel.swap_wanniers!(fh.w, 4(s-1)+1, 4(s-1)+2, iφ)
+                swap_wanniers!(fh.w, 4(s-1)+2, 4(s-1)+3, [iφ])
+                swap_wanniers!(fh.w, 4(s-1)+1, 4(s-1)+2, [iφ])
             end
         end
+    end
+
+    # additional reordering in every other spatial site to get separable TB Hamiltonian
+    for i in 2:2:3N
+        j = 4(i-1)
+        swap_wanniers!(fh.w, j+3, j+1, eachindex(φₓ))
+        swap_wanniers!(fh.w, j+4, j+2, eachindex(φₓ))
     end
 end
 
@@ -894,7 +904,7 @@ function compute_wanniers!(tbh::TBFloquetHamiltonian, targetlevels::AbstractVect
         end
     else
         if periodicity == :space
-            X = Diagonal([cis(2π/(3N*n_t) * n) for n in 0:3N*n_t-1]) # position operator in coordinate representation
+            X = Diagonal(cis.(2π/(3N*n_t) .* (1:3N*n_t))) # position operator in coordinate representation
         else # if periodicity == :time || periodicity == :both
             X = Diagonal([cis(2π*((n % n_t)/n_t + (n ÷ n_t)/(3N*n_t))) for n in 0:3N*n_t-1]) # position operator in coordinate representation
         end    
@@ -926,6 +936,34 @@ function make_wannierfunctions(tbh::TBFloquetHamiltonian, whichphases::AbstractV
         end
     end
     return w
+end
+
+"Return eigenspectrum of separated spatial TB Hamiltonian. Most useful when `tbh` describes space-only pumping."
+function separate_space_spectrum(tbh::TBFloquetHamiltonian; N::Integer, periodic::Bool)
+    n_t = 4
+    S_E = Matrix{Float64}(undef, 3N, size(tbh.H, 3))
+    for (iφ, H) in enumerate(eachslice(tbh.H, dims=3))
+        J = fill(abs(H[1, n_t+1]), 3N-1)
+        d = repeat(diag(H)[1:n_t:2n_t+1], N) |> real
+        S = diagm(0 => d, -1 => J, 1 => J)
+        periodic && (S[1, end] = S[end, 1] = J[1])
+        S_E[:, iφ] = eigvals(S)
+    end
+    return S_E
+end
+
+"Return eigenspectrum of separated temporal TB Hamiltonian. Most useful when `tbh` describes time-only pumping."
+function separate_time_spectrum(tbh::TBFloquetHamiltonian; N::Integer, periodic::Bool)
+    n_t = 4
+    T_E = Matrix{Float64}(undef, n_t*N, size(tbh.H, 3))
+    for (iφ, H) in enumerate(eachslice(tbh.H, dims=3))
+        J = [repeat([H[1, 2], H[2, 3]], 2N-1); H[1, 2]] .|> abs
+        d = repeat(diag(H[1:n_t, 1:n_t]), N) |> real
+        T = diagm(0 => d, -1 => J, 1 => J)
+        periodic && (T[1, end] = T[end, 1] = J[1])
+        T_E[:, iφ] = eigvals(T)
+    end
+    return T_E
 end
 
 "Bring the wannier functions contained in `w` to correct order for dispalying animation."
