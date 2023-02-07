@@ -42,7 +42,7 @@ function plot_potential(H; U::Real, U_title::Real=U, lift::Real=0, iφ::Union{No
     end
 end
 
-n_cells = 3
+n_cells = 2
 a = 4; λ = 10000; U = 1
 φₓ = range(0, 2π, length=31)
 h = DeltaModel.UnperturbedHamiltonian(n_cells; a, λ, U, φₓ)
@@ -83,8 +83,33 @@ for m in axes(h.E, 2)
         plot!(φₓ, h.E[ik, m, :], xlabel=L"\varphi_x")
     end
 end
-plot!(ylims=(1797, 1799.5), legend=false, title="Full")
-savefig("full-spectrum.pdf")
+plot!(legend=false, title="Full")
+savefig("spatial-spectrum.pdf")
+
+# bandgaps
+
+"""
+Return gaps between the highest and middle subband of each band in energy spectrum `E`. Number of cells has to be even for correct results.
+Assume 2D or 3D system depending on `type` (`2` or `3`).
+`iφ` is the phase of minimum of the lowest leve of the highest subband.
+"""
+function get_bandgaps(E; type::Integer, iφ) 
+    gaps = Vector{Float64}(undef, size(E, 2)÷3)
+    for b in eachindex(gaps)
+        h = max(E[1, 3b, 1], E[end, 3b, 1])
+        m = min(E[1, 3b, iφ], E[end, 3b, iφ])
+        l = max(E[1, 3b-1, iφ], E[end, 3b-1, iφ])
+        if type == 2
+            gaps[b] = (2m - (h+l)) #/ (2h - 2m)
+        else # if type == 3
+            gaps[b] = (3m - (l+2h)) #/ (3h - 3m)
+        end
+    end
+    return gaps
+end
+g = get_bandgaps(h.E, type=2, iφ=6)
+fig1 = scatter(h.E[1, 3:3:end, 6], g, xlabel="Level energy", ylabel="2D bandgap", label=L"\lambda=%$λ, U=%$U", markersize=5, markerstrokewidth=0)
+savefig("bandgaps.pdf")
 
 # eigenfunctions
 
@@ -220,7 +245,7 @@ fig2 = plot();
 for r in eachrow(htb.E)
     plot!(φₓ, r, xlabel=L"\varphi_x", ylabel="Energy", legend=false)
 end
-plot!(title="Explicit TB", ylims=(1797.0, 1799.5))
+plot!(title="Explicit TB")
 savefig("explicit-tb-spectrum.pdf")
 
 # Energy spectrum calculated using k-space representation
