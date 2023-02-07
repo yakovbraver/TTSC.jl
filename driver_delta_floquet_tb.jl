@@ -1,6 +1,4 @@
 using Plots, LaTeXStrings, ProgressMeter
-import IntervalRootFinding as iroots
-using IntervalArithmetic: (..)
 using LinearAlgebra: diagind
 
 plotlyjs()
@@ -21,12 +19,7 @@ a = 4; λ = 2000; U = 7
 φₓ = range(0, 2pi, length=31)
 h = DeltaModel.UnperturbedHamiltonian(n_cells; a, λ, U, φₓ)
 
-f(E) = DeltaModel.cos_ka(E; φ=0, uh=h)
-bounds = (300, 10000)
-rts = iroots.roots(f, bounds[1]..bounds[2])
-z = [rts[i].interval.lo for i in eachindex(rts)]
-
-DeltaModel.diagonalise!(h, length(z), bounds)
+DeltaModel.diagonalise!(h; bounds=(300, 10000))
 
 # Floquet Hamiltonian
 λₛ = 20; λₗ = 10; ω = 676.8

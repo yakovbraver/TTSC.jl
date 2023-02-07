@@ -90,8 +90,13 @@ end
 Diagonalise the unperturbed Hamiltonian `uh`: Find allowed energies at each phase for all bands bracketed in energy by `bounds`,
 and calculate the corresponding eigenfunctions.
 """
-function diagonalise!(uh::UnperturbedHamiltonian, n_subbands::Integer, bounds::Tuple{<:Real, <:Real})
+function diagonalise!(uh::UnperturbedHamiltonian; bounds::Tuple{<:Real, <:Real})
     (;N, a, U, φₓ) = uh
+
+    # perform root-finding once to find the number of subbands in the bounded interval
+    rts = iroots.roots(ε -> cos_ka(ε; φ=φₓ[1], uh), bounds[1]..bounds[2])
+    n_subbands = length(rts)
+
     uh.E = Array{Float64, 3}(undef, N, n_subbands, length(φₓ)) # the number of different 𝑘's is equal to `N`
     uh.c = Array{ComplexF64, 4}(undef, 6, N, n_subbands, length(φₓ))
     uh.κ = Array{Float64, 4}(undef, 3, N, n_subbands, length(φₓ))

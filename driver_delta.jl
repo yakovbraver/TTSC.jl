@@ -63,7 +63,6 @@ end
 
 ε = range(U, 2000, length=2000)
 plot_dispersion(ε; φ=φₓ[1], uh=h)
-xlims!(340, 360)
 savefig("dispersion.pdf")
 
 f(E) = DeltaModel.cos_ka(E; φ=0, uh=h)
@@ -73,7 +72,7 @@ z = [rts[i].interval.lo for i in eachindex(rts)]
 sort!(z)
 scatter!(z, zeros(length(z)))
 
-DeltaModel.diagonalise!(h, length(z), bounds)
+DeltaModel.diagonalise!(h; bounds)
 
 # spectrum
 

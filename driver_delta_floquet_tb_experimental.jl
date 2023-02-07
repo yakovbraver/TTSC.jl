@@ -1,6 +1,4 @@
 using Plots, LaTeXStrings, ProgressMeter
-import IntervalRootFinding as iroots
-using IntervalArithmetic: (..)
 using LinearAlgebra: diagind
 
 plotlyjs()
@@ -20,12 +18,7 @@ a = 4; λ = 10000; U = 1
 φₓ = range(0, 2π, length=31)
 h = DeltaModel.UnperturbedHamiltonian(n_cells; a, λ, U, φₓ)
 
-f(E) = DeltaModel.cos_ka(E; φ=0, uh=h)
-bounds = (45, 5100)
-rts = iroots.roots(f, bounds[1]..bounds[2])
-z = [rts[i].interval.lo for i in eachindex(rts)]
-
-DeltaModel.diagonalise!(h, length(z), bounds)
+DeltaModel.diagonalise!(h; bounds=(45, 5100))
 
 # Floquet Hamiltonian
 
@@ -33,7 +26,7 @@ DeltaModel.diagonalise!(h, length(z), bounds)
 s = 2
 pumptype = :time
 H = DeltaModel.FloquetHamiltonian(h; s, λₛ, λₗ, ω, pumptype)
-DeltaModel.diagonalise!(H)
+DeltaModel.diagonalise!(H, reorder=true)
 
 skipbands = 2 # number of spatial bands that have been skipped by the choice if `bounds` above
 fig = plot();
@@ -104,7 +97,6 @@ scatter(real(Htb.H[1, 1, :]) - real(Htb.H[2, 2, :]), abs.(Htb.H[1, 2, :]) - abs.
         title=L"\lambda_S=%$λₛ, \lambda_L=%$λₗ, \omega=%$ω, \lambda=%$λ"*", constant basis", xlims=(-1, Inf))
 
 DeltaModel.diagonalise!(Htb)
-
 skipbands = 2
 fig = plot();
 for r in eachrow(Htb.E)

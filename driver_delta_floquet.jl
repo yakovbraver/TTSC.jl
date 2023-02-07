@@ -1,6 +1,4 @@
 using Plots, LaTeXStrings, ProgressMeter
-import IntervalRootFinding as iroots
-using IntervalArithmetic: (..)
 
 plotlyjs()
 pyplot()
@@ -29,19 +27,10 @@ function plot_dispersion(ε::AbstractVector; φ::Real, uh::DeltaModel.Unperturbe
     vline!(((1:30) .* pi ./ (uh.a/3)).^2, c=2, label=L"(\frac{\pi n}{a/3})^2", lw=0.5) # analytical energy for a single well of width `a/3`
 end
 
-ε = range(U, 5100, step=0.05)
-plot_dispersion(ε; φ=φₓ[1], uh=h)
-xlims!(340, 360)
-savefig("dispersion.pdf")
+ε = range(U, 6200, step=0.05)
+plot_dispersion(ε; φ=φₓ[6], uh=h)
 
-f(E) = DeltaModel.cos_ka(E; φ=0, uh=h)
-bounds = (45, 5100)
-rts = iroots.roots(f, bounds[1]..bounds[2])
-z = [rts[i].interval.lo for i in eachindex(rts)]
-sort!(z)
-scatter!(z, zeros(length(z)))
-
-DeltaModel.diagonalise!(h, length(z), bounds)
+DeltaModel.diagonalise!(h, bounds=(45, 5100))
 
 # spectrum
 
@@ -56,11 +45,11 @@ display(fig)
 
 ### Floquet Hamiltonian
 
-λₛ = 40; λₗ = 20; ω = 499.5
+λₛ = 10; λₗ = 5; ω = 499.5
 s = 2
-pumptype = :space
+pumptype = :time
 H = DeltaModel.FloquetHamiltonian(h; s, λₛ, λₗ, ω, pumptype)
-DeltaModel.diagonalise!(H)
+DeltaModel.diagonalise!(H, reorder=false)
 
 # Quasienergy spectrum
 skipbands = 2 # number of spatial bands that have been skipped by the choice if `bounds` above
@@ -77,7 +66,7 @@ plot!(xlabel=L"\varphi_x", title=L"\omega=%$ω, \lambda_S=%$λₛ, \lambda_L=%$�
 n_x = 50
 Ωt = range(0, 2π, length=40s)
 iφ = 1
-whichsubbands = range(61, length=3)
+whichsubbands = 5:6
 x, u = DeltaModel.make_eigenfunctions(H, n_x, Ωt, [iφ], whichsubbands)
 figs = [plot() for _ in 1:length(whichsubbands)*n_cells]
 for n in eachindex(whichsubbands)
@@ -88,7 +77,7 @@ end
 plot(figs...)
 
 # Wannier centres
-targetsubbands = [60, 63]
+targetsubbands = 5:6
 DeltaModel.compute_wanniers!(H; targetsubbands, slide_time=true)
 fig = plot();
 for (i, φ) in enumerate(φₓ)
@@ -141,7 +130,7 @@ function get_order(iφ::Integer; pumptype::Symbol)
     end
     return order
 end
-pyplot()
+
 n_x = 50
 Ωt = range(0, 2π, length=40s)
 x, _, w = DeltaModel.make_wannierfunctions(H, n_x, Ωt, eachindex(φₓ))
