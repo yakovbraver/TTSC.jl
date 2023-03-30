@@ -528,6 +528,7 @@ function diagonalise!(fh::FloquetHamiltonian; reorder::Bool=false)
                             ∫cos += 𝐹(fh.uh, i, ik, ik, m′, m, iφ, k₂)
                         end
                         ∫cos *= N # restore proper normalisation; `fh.uh.c` used in `𝐹` are normalised over all the cells, but we need one-cell normalisation here
+                        # println(abs(∫cos))
                         # if pumping is space-time, then also multiply by cis(-𝜑ₜ). `φ` runs over 𝜑ₓ, and we assume the pumping protocol 𝜑ₜ = 𝜑ₓ
                         H[m′, m] = (pumptype == :space ? λₗ/4 * ∫cos : λₗ/4 * ∫cos * cis(-φ))
                     elseif pumptype == :time 
@@ -545,10 +546,13 @@ function diagonalise!(fh::FloquetHamiltonian; reorder::Bool=false)
                             ∫cos += 𝐹(fh.uh, i, ik, ik, m′, m, iφ, k₂)
                         end
                         ∫cos *= N # restore proper normalisation; `fh.uh.c` used in `𝐹` are normalised over all the cells, but we need one-cell normalisation here
+                        # println(abs(∫cos))
                         H[m′, m] = λₛ/4 * ∫cos
                     end
                 end
             end
+            # # heatmap(real.(H), yaxis=:flip) |> display
+            # return H
             fh.E[:, ik, iφ], fh.b[:, :, ik, iφ] = eigen(Hermitian(H, :L))
             if reorder
                 perm = diag(H) .|> real |> sortperm |> invperm # get a permutation "restoring" the order of spatial bands
@@ -943,32 +947,34 @@ function make_wannierfunctions(tbh::TBFloquetHamiltonian, whichphases::AbstractV
     return w
 end
 
-"Return eigenspectrum of separated spatial TB Hamiltonian. Most useful when `tbh` describes space-only pumping."
-function separate_space_spectrum(tbh::TBFloquetHamiltonian; N::Integer, periodic::Bool)
-    n_t = 4
-    S_E = Matrix{Float64}(undef, 3N, size(tbh.H, 3))
+"Return separated spatial TB Hamiltonian. Most useful when `tbh` describes space-only pumping."
+function separate_space(tbh::TBFloquetHamiltonian; N::Integer, periodic::Bool)
+    n_t = 4 # total number of temporal sites
+    n_s = 3 # number of spatial sites per cell
+    H_S = Array{Float64, 3}(undef, n_s*N, n_s*N, size(tbh.H, 3))
     for (iφ, H) in enumerate(eachslice(tbh.H, dims=3))
-        J = fill(abs(H[1, n_t+1]), 3N-1)
+        J = fill(abs(H[1, n_t+1]), n_s*N-1)
         d = repeat(diag(H)[1:n_t:2n_t+1], N) |> real
-        S = diagm(0 => d, -1 => J, 1 => J)
-        periodic && (S[1, end] = S[end, 1] = J[1])
-        S_E[:, iφ] = eigvals(S)
+        H_S[:, :, iφ] = diagm(0 => d, -1 => J, 1 => J)
+        periodic && (H_S[1, end, iφ] = H_S[end, 1, iφ] = J[1])
     end
-    return S_E
+    return H_S
 end
 
-"Return eigenspectrum of separated temporal TB Hamiltonian. Most useful when `tbh` describes time-only pumping."
-function separate_time_spectrum(tbh::TBFloquetHamiltonian; N::Integer, periodic::Bool)
-    n_t = 4
-    T_E = Matrix{Float64}(undef, n_t*N, size(tbh.H, 3))
+"""
+Return separated temporal TB Hamiltonian. Most useful when `tbh` describes time-only pumping.
+The method is experimental because it's unclear how to repeat the pattern with phases.
+"""
+function separate_time(tbh::TBFloquetHamiltonian; N::Integer, periodic::Bool)
+    n_t = 2 # number of temporal sites per cell
+    H_T = Array{Float64, 3}(undef, n_t*N, n_t*N, size(tbh.H, 3))
     for (iφ, H) in enumerate(eachslice(tbh.H, dims=3))
-        J = [repeat([H[1, 2], H[2, 3]], 2N-1); H[1, 2]] .|> abs
-        d = repeat(diag(H[1:n_t, 1:n_t]), N) |> real
-        T = diagm(0 => d, -1 => J, 1 => J)
-        periodic && (T[1, end] = T[end, 1] = J[1])
-        T_E[:, iφ] = eigvals(T)
+        J = [repeat([H[1, 2], H[2, 3]], N-1); H[1, 2]]
+        d = repeat([H[1, 1], H[2, 2]], N) |> real
+        H_T[:, :, iφ] = diagm(0 => d, -1 => conj.(J), 1 => J)
+        periodic && (H_T[1, end, iφ] = J[2]; H_T[end, 1, iφ] = J[2]')
     end
-    return T_E
+    return H_T
 end
 
 "Bring the wannier functions contained in `w` to correct order for dispalying animation."

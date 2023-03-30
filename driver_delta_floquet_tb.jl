@@ -36,7 +36,7 @@ for m in axes(h.E, 2)
         plot!(fig2, φₓ, H.E[m, ik, :] .- ω/s*skipbands, label="$m (b $(H.ν[m])), $ik", c=H.ν[m], xlabel=L"\varphi_x", ylabel="Quasienergy", ticks=:native)
     end
 end
-plot!(xlabel=L"\varphi_t=\varphi_x", title=L"\omega=%$ω, \lambda_S=%$λₛ, \lambda_L=%$λₗ, \lambda=%$λ, U=%$U", ylims=(-7016, -6971))
+plot!(xlabel=L"\varphi_t=\varphi_x", title=L"\omega=%$ω, \lambda_S=%$λₛ, \lambda_L=%$λₗ, \lambda=%$λ, U=%$U")
 savefig("$λ-$U-$λₛ-$λₗ-$ω-timespace-spectrum.pdf")
 
 # calculate 4D bandwidth and bandgap
@@ -50,7 +50,7 @@ gap = 2mi - (hi + lo)
 
 # Construct Wanniers
 
-pumptype = :space
+pumptype = :time
 H = DeltaModel.FloquetHamiltonian(h; s, λₛ, λₗ, ω, pumptype)
 DeltaModel.diagonalise!(H, reorder=false)
 
@@ -58,8 +58,8 @@ startsubband = 1
 targetsubbands = range(startsubband, length=12)
 n_subbands = length(targetsubbands)
 
-DeltaModel.compute_wanniers!(H; targetsubbands, Ωt=0.35π)
-DeltaModel.order_wanniers!(H; optimise=false)
+DeltaModel.compute_wanniers!(H; targetsubbands, Ωt=0.35pi)
+DeltaModel.order_wanniers!(H; optimise=true)
 
 theme(:dark, size=(1000, 1000))
 iφ = 1
@@ -167,22 +167,30 @@ p = Progress(length(φₓ), 1)
 end
 
 # Separation
+using LinearAlgebra: eigvals, Hermitian
 
 # spatial part
-S_E = DeltaModel.separate_space_spectrum(Htb, N=5, periodic=false)
+H_S = DeltaModel.separate_space(Htb, N=5, periodic=false)
+S_E = Matrix{Float64}(size(H_S, 1), size(H_S, 3))
+for iφ in axes(H_S, 3)
+    S_E[:, iφ] = eigvals(Hermitian(H_S[:, :, iφ]))
+end
 fig = plot();
 for r in eachrow(S_E)
     plot!(φₓ, r, legend=false)
 end
 plot!(xlabel=L"\varphi_x", title="Spectrum of separated spatial lattice")
-savefig("$λ-$U-$λₛ-$λₗ-separated-spatial-nonperiodic-5.pdf")
+savefig("$λ-$U-$λₛ-$λₗ-separated-spatial-nonperiodic.pdf")
 
 # temporal part
-T_E = DeltaModel.separate_time_spectrum(Htb, N=5, periodic=false)
+T_E = Matrix{Float64}(undef, 4, size(Htb.H, 3))
+for iφ in eachindex(φₓ)
+    T_E[:, iφ] = eigvals(Htb.H[1:4, 1:4, iφ])
+end
 T_E .-= S_E[1, 1]
 fig = plot();
 for r in eachrow(T_E)
     plot!(φₓ, r, legend=false)
 end
-plot!(xlabel=L"\varphi_t", title="Spectrum of separated temporal lattice, 5 temporal cells")
-savefig("$λ-$U-$λₛ-$λₗ-separated-temporal_nonperiodic-5.pdf")
+plot!(xlabel=L"\varphi_t", title="Spectrum of separated temporal lattice")
+savefig("$λ-$U-$λₛ-$λₗ-separated-temporal_periodic.pdf")
