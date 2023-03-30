@@ -3,7 +3,7 @@ module DeltaModel
 using ProgressMeter: @showprogress
 import IntervalRootFinding as iroots
 using IntervalArithmetic: (..)
-using LinearAlgebra: eigvals, eigen, schur, ⋅, dot, svd, diag, diagm, diagind, Diagonal, Hermitian
+using LinearAlgebra: eigvals, eigvecs, eigen, schur, ⋅, dot, svd, diag, diagm, diagind, Diagonal, Hermitian
 using FLoops: @floop, @init
 import Optim
 
@@ -927,6 +927,29 @@ function compute_wanniers!(tbh::TBFloquetHamiltonian, targetlevels::AbstractVect
             E[:, iφ] = transpose(tbh.E[targetlevels, iφ]) * abs2.(d[:, :, iφ])
         end
     end
+end
+
+"Calculate Wannier centres for the specified levels of the given Hamiltonian matrix. `n_s` is the number of sites per cell."
+function compute_wanniers(H::Array{<:Number, 3}; targetlevels::AbstractVector{<:Integer}, n_s::Integer, isperiodic::Bool)
+    N = length(targetlevels)
+    pos = Matrix{Float64}(undef, N, size(H, 3))
+    if isperiodic
+        X = Diagonal(cis.(2π/(n_s*N) * (0:n_s*N-1)))
+        for iφ in axes(H, 3)
+            c = eigvecs(Hermitian(H[:, :, iφ]))
+            XE = c[:, targetlevels]' * X * c[:, targetlevels]
+            _, _, pos_complex = schur(XE)
+            pos[:, iφ] = (@. mod2pi(angle(pos_complex)) / 2π * n_s*N) |> sort # shift angle from [-π, π) to [0, 2π)
+        end
+    else
+        X = Diagonal(0:n_s*N-1)
+        for iφ in axes(H, 3)
+            c = eigvecs(Hermitian(H[:, :, iφ]))
+            XE = c[:, targetlevels]' * X * c[:, targetlevels]
+            pos[:, iφ] = eigvals(Hermitian(XE))
+        end
+    end
+    return pos
 end
 
 """
