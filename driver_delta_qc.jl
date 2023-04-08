@@ -27,8 +27,8 @@ end
 a = 4.0
 l = a/3
 σ = 100 / l
-λ = 500
-λₛ = 10; λₗ = 5; ω = 494
+λ = 1000
+λₛ = 20; λₗ = 10; ω = 676.8
 s = 2
 params = [σ, l, λ, λₛ, λₗ, ω]
 
@@ -45,7 +45,7 @@ function plot_actions(H::SpacetimeHamiltonian)
     I = Dierckx.get_knots(H.𝐸)
     figs[1] = vline([-l/2, l/2], c=:white, label=L"x = \pm l", legendposition=(0.5, 0.8))
     plot!(x, H.𝑈, xlabel=L"x", c=1, title=L"V(x)=\lambda e^{-\sigma l/2}\cosh\sigma x", label=L"V(x)", ylims=(-100, 5000))
-    figs[2] = plot(I, H.𝐸(I), xlabel=L"I", ylabel=L"E", label="numerical", legendposition=:topleft, ylims=(-10, 5000));
+    figs[2] = plot(I, H.𝐸(I), xlabel=L"I", ylabel=L"E", label="numerical", legendposition=:topleft, ylims=(-10, 6000));
     plot!(I, (π*I/l).^2, label="exact");
     figs[3] = plot(I, H.𝐸′, xlabel=L"I", ylabel=L"dE/dI", legend=false);
     plot!(I, 2(π/l)^2*I, label="exact");
@@ -80,7 +80,7 @@ plot(sol)
 
 ### Make a plot of the motion in the (𝐼, ϑ) phase-space in the secular approximation
 
-I_min = 23; I_max = 27
+I_min = 30; I_max = 40
 ϑ = range(0, 2π, length=100)
 I = range(I_min, I_max, length=50)
 E = Matrix{Float64}(undef, length(ϑ), length(I))
@@ -106,7 +106,7 @@ function point_to_angle(p, x, E, T)
 end
 
 figb = plot();
-for (I_min, χ₀) in zip([23, 23, 23], [0, 1, -1])
+for (I_min, χ₀) in zip([30, 30, 30], [0, 1, -1])
     for i in I_min:0.2:I_max
         display(i)
         I, Θ = compute_IΘ(H, i; n_T=100, χ₀, point_to_angle)
@@ -124,8 +124,8 @@ import .Bandsolvers
 
 φₜ = range(0, 2π, length=61)
 n_cells = s
-gₗ = -2λₛ*Aₛ
-Vₗ = 2λₗ*Aₗ
+gₗ = 2λₛ*Aₛ
+Vₗ = -2λₗ*Aₗ
 M = l^2 / 2π^2 # analytical result
 
 h = Bandsolvers.UnperturbedHamiltonian(n_cells; M, gₗ=gₗ, Vₗ=Vₗ, φₓ=-φₜ/2, maxband=4, isperiodic=true)

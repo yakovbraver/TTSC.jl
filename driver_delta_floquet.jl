@@ -13,7 +13,7 @@ import .DeltaModel
 ### Unperturbed Hamiltonian
 
 n_cells = 2
-a = 4; λ = 10000; U = 1
+a = 4; λ = 2000; U = 7
 φₓ = range(0, 2π, length=31)
 h = DeltaModel.UnperturbedHamiltonian(n_cells; a, λ, U, φₓ)
 
@@ -30,7 +30,7 @@ end
 ε = range(U, 6200, step=0.05)
 plot_dispersion(ε; φ=φₓ[6], uh=h)
 
-DeltaModel.diagonalise!(h, bounds=(45, 5100))
+DeltaModel.diagonalise!(h; bounds=(300, 10000))
 
 # spectrum
 
@@ -45,19 +45,19 @@ display(fig)
 
 ### Floquet Hamiltonian
 
-λₛ = 10; λₗ = 5; ω = 499.5
+λₛ = 20; λₗ = 10; ω = 676.8
 s = 2
 pumptype = :time
 H = DeltaModel.FloquetHamiltonian(h; s, λₛ, λₗ, ω, pumptype)
 DeltaModel.diagonalise!(H, reorder=false)
 
 # Quasienergy spectrum
-skipbands = 2 # number of spatial bands that have been skipped by the choice if `bounds` above
+skipbands = 7 # number of spatial bands that have been skipped by the choice if `bounds` above
 fig = plot();
 n_levels = size(h.E, 2)
 for m in 1:n_levels
     for ik in 1:n_cells
-        plot!(fig, φₓ, H.E[m, ik, :] .- ω/s*skipbands, label="sb $m (b $(H.ν[m])), k $ik", c=H.ν[m], xlabel=L"\varphi_x", ylabel="Quasienergy", ticks=:native)
+        plot!(fig, φₓ, H.E[m, ik, :] .- ω/s*skipbands, label="sb $m (b $(H.ν[m]+skipbands)), k $ik", c=H.ν[m], xlabel=L"\varphi_x", ylabel="Quasienergy", ticks=:native)
     end
 end
 plot!(xlabel=L"\varphi_x", title=L"\omega=%$ω, \lambda_S=%$λₛ, \lambda_L=%$λₗ")
@@ -66,7 +66,7 @@ plot!(xlabel=L"\varphi_x", title=L"\omega=%$ω, \lambda_S=%$λₛ, \lambda_L=%$�
 n_x = 50
 Ωt = range(0, 2π, length=40s)
 iφ = 1
-whichsubbands = 5:6
+whichsubbands = 1:2
 x, u = DeltaModel.make_eigenfunctions(H, n_x, Ωt, [iφ], whichsubbands)
 figs = [plot() for _ in 1:length(whichsubbands)*n_cells]
 for n in eachindex(whichsubbands)

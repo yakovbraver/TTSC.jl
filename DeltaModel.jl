@@ -528,7 +528,6 @@ function diagonalise!(fh::FloquetHamiltonian; reorder::Bool=false)
                             ∫cos += 𝐹(fh.uh, i, ik, ik, m′, m, iφ, k₂)
                         end
                         ∫cos *= N # restore proper normalisation; `fh.uh.c` used in `𝐹` are normalised over all the cells, but we need one-cell normalisation here
-                        # println(abs(∫cos))
                         # if pumping is space-time, then also multiply by cis(-𝜑ₜ). `φ` runs over 𝜑ₓ, and we assume the pumping protocol 𝜑ₜ = 𝜑ₓ
                         H[m′, m] = (pumptype == :space ? λₗ/4 * ∫cos : λₗ/4 * ∫cos * cis(-φ))
                     elseif pumptype == :time 
@@ -546,13 +545,10 @@ function diagonalise!(fh::FloquetHamiltonian; reorder::Bool=false)
                             ∫cos += 𝐹(fh.uh, i, ik, ik, m′, m, iφ, k₂)
                         end
                         ∫cos *= N # restore proper normalisation; `fh.uh.c` used in `𝐹` are normalised over all the cells, but we need one-cell normalisation here
-                        # println(abs(∫cos))
                         H[m′, m] = λₛ/4 * ∫cos
                     end
                 end
             end
-            # # heatmap(real.(H), yaxis=:flip) |> display
-            # return H
             fh.E[:, ik, iφ], fh.b[:, :, ik, iφ] = eigen(Hermitian(H, :L))
             if reorder
                 perm = diag(H) .|> real |> sortperm |> invperm # get a permutation "restoring" the order of spatial bands

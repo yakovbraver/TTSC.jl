@@ -42,8 +42,8 @@ function plot_potential(H; U::Real, U_title::Real=U, lift::Real=0, iφ::Union{No
     end
 end
 
-n_cells = 2
-a = 4; λ = 10000; U = 1
+n_cells = 3
+a = 4; λ = 2000; U = 7
 φₓ = range(0, 2π, length=31)
 h = DeltaModel.UnperturbedHamiltonian(n_cells; a, λ, U, φₓ)
 
@@ -66,7 +66,7 @@ plot_dispersion(ε; φ=φₓ[1], uh=h)
 savefig("dispersion.pdf")
 
 f(E) = DeltaModel.cos_ka(E; φ=0, uh=h)
-bounds = (45, 5100)
+bounds = (300, 5100)
 rts = iroots.roots(f, bounds[1]..bounds[2])
 z = [rts[i].interval.lo for i in eachindex(rts)]
 sort!(z)
@@ -114,7 +114,7 @@ savefig("bandgaps.pdf")
 
 iφ = 1
 n_x = 50
-whichband = 16
+whichband = 7
 x, ψ = DeltaModel.make_eigenfunctions(h, n_x, whichband, [iφ])
 fig = plot();
 for ik in 1:n_cells
@@ -123,6 +123,12 @@ for ik in 1:n_cells
     end
 end
 display(fig)
+
+l = a/3
+skipbands = 7 # number of spatial bands that have been skipped by the choice if `bounds` above
+sb = 7 # a subband of choice
+b = (sb-1)÷3 + 1 + skipbands # band number
+h.κ[1, 1, sb, 1] / (π/l) # this is approximately `b`
 
 trapz(f) = ( sum(f) - (f[1] + f[end]) / 2 ) * x[2]-x[1]
 trapz(ψ[:, 2, 3, 1] .* conj(ψ[:, 2, 1, 1]))
