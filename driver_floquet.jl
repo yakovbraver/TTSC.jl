@@ -21,7 +21,7 @@ n_cells = 2
 h = Bandsolvers.UnperturbedHamiltonian(n_cells; M=1/2, gₗ, Vₗ, φₓ, maxband=30, isperiodic=true)
 Bandsolvers.diagonalise!(h)
 
-# energy of the unperturbed Hamiltonian spectrum
+# unperturbed Hamiltonian spectrum
 fig = plot();
 plot!(range(0, π, length=200), x -> gₗ*cos(2x)^2 + Vₗ*cos(x)^2, lw=2, c=:white, label=false) # spatial potential
 for r in eachrow(h.E)
@@ -29,7 +29,7 @@ for r in eachrow(h.E)
 end
 plot!(xlabel=L"\phi_x", ylabel="Energy")
 
-H = Bandsolvers.FloquetHamiltonian(h; s, λₛ, λₗ, ω, pumptype=:space, minband=1)
+H = Bandsolvers.FloquetHamiltonian(h; s, λₛ, λₗ, ω, pumptype=:both, minband=1)
 Bandsolvers.diagonalise!(H)
 
 # Floquet quasienergy spectrum
@@ -51,12 +51,12 @@ plot!(xlabel=L"\phi_x", ylabel="Quasienergy")
 # Maps of Floquet modes
 x = range(0, n_cells*pi, length=50n_cells)
 Ωt = range(0, 2π, length=40s)
-iϕ = 1
+iϕ = 15
 whichstates = 1:4
 u = Bandsolvers.make_eigenfunctions(H, x, Ωt, [iϕ], whichstates) .|> abs2
 figs = [plot() for _ in eachindex(whichstates)]
 for (f, n) in enumerate(whichstates)
-    figs[f] = heatmap(x, Ωt, u[:, :, n, iϕ]', xlabel=L"x", ylabel=L"\Omega t", c=:viridis, title="Mode $n")
+    figs[f] = heatmap(x, Ωt, u[:, :, n, 1]', xlabel=L"x", ylabel=L"\Omega t", c=:viridis, title="Mode $n")
 end
 plot(figs...)
 
@@ -73,16 +73,44 @@ plot!(minorgrid=true, xlabel=L"x", ylabel=L"\phi_x")
 _, w = Bandsolvers.make_wannierfunctions(H, x, Ωt, [iϕ])
 figs = [plot() for _ in eachindex(targetlevels)]
 for f in eachindex(targetlevels)
-    figs[f] = heatmap(x, Ωt, abs2.(w[:, :, f, iϕ]'), xlabel=L"x", ylabel=L"\Omega t", c=:viridis, title="Wannier $f")
+    figs[f] = heatmap(x, Ωt, abs2.(w[:, :, f, 1]'), xlabel=L"x", ylabel=L"\Omega t", c=:viridis, title="Wannier $f")
 end
 plot(figs...)
+
+### TB Floquet Hamiltonian
+
+# Construct the Wanniers
+targetlevels = 1:4*2n_cells
+Bandsolvers.compute_wanniers!(H; targetlevels)
+
+# Plot the Wanniers
+x = range(0, n_cells*pi, length=50n_cells)
+Ωt = range(0, 2π, length=40s)
+iϕ = 1
+_, w = Bandsolvers.make_wannierfunctions(H, x, Ωt, [iϕ])
+figs = [plot() for _ in eachindex(targetlevels)]
+for f in eachindex(targetlevels)
+    figs[f] = heatmap(x, Ωt, abs2.(w[:, :, f, 1]'), xlabel=L"x", ylabel=L"\Omega t", c=:viridis, title="Wannier $f")
+end
+plot(figs...)
+
+# Construct and diagonalise TB Hamiltonian
+Htb = Bandsolvers.TBFloquetHamiltonian(H; targetband=1, pumptype=:space)
+Bandsolvers.diagonalise!(Htb)
+
+# Quasienergy spectrum
+fig = plot();
+for r in eachrow(Htb.E)
+    plot!(φₓ, r, label=false)
+end
+plot!(xlabel=L"\varphi_x", ylabel="Quasienergy", title="TB")
 
 ########## Non-periodic case
 
 h = Bandsolvers.UnperturbedHamiltonian(n_cells; M=1/2, gₗ, Vₗ, φₓ, maxband=30, isperiodic=false)
 Bandsolvers.diagonalise!(h)
 
-# energy of the unperturbed Hamiltonian spectrum
+# unperturbed Hamiltonian spectrum
 fig = plot();
 plot!(range(0, π, length=200), x -> gₗ*cos(2x)^2 + Vₗ*cos(x)^2, lw=2, c=:white, label=false) # spatial potential
 for r in eachrow(h.E)
@@ -117,6 +145,6 @@ whichstates = 1:3
 u = Bandsolvers.make_eigenfunctions(H, x, Ωt, [iϕ], whichstates) .|> abs2
 figs = [plot() for _ in eachindex(whichstates)]
 for (f, n) in enumerate(whichstates)
-    figs[f] = heatmap(x, Ωt, u[:, :, n, iϕ]', xlabel=L"x", ylabel=L"\Omega t", c=:viridis, title="Mode $n")
+    figs[f] = heatmap(x, Ωt, u[:, :, n, 1]', xlabel=L"x", ylabel=L"\Omega t", c=:viridis, title="Mode $n")
 end
 plot(figs...)

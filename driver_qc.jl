@@ -31,7 +31,21 @@ Vₗ = -2
 λₛ = 100; λₗ = 40; ω = 410
 s = 2
 params = [gₗ, l, Vₗ, λₛ, λₗ, ω]
-H = SpacetimeHamiltonian(𝐻₀, 𝐻, params, s, (1.5, 2), (2, 2.5))
+H = SpacetimeHamiltonian(𝐻₀, 𝐻, params, s, min_pos=(1.5, 2), max_pos=(2, 2.5))
+
+function plot_actions(H::SpacetimeHamiltonian)
+    figs = [plot() for _ in 1:4];
+    x = range(0, 2π, length=200);
+    I = Dierckx.get_knots(H.𝐸)
+    figs[1] = plot!(x, H.𝑈, xlabel=L"x", c=1, title=L"V(x)=\lambda e^{-\sigma l/2}\cosh\sigma x", label=L"V(x)")
+    figs[2] = plot(I, H.𝐸(I), xlabel=L"I", ylabel=L"E");
+    figs[3] = plot(I, H.𝐸′, xlabel=L"I", ylabel=L"dE/dI", legend=false);
+    figs[4] = plot(I, H.𝐸″, xlabel=L"I", ylabel=L"d^2E/dI^2", legend=false);
+    lay = @layout [a{0.5w} grid(3,1)]
+    plot(figs..., layout=lay)
+end
+
+plot_actions(H)
 
 Iₛ, M, coeffs = compute_parameters(H, Function[𝑄ₛ, 𝑄ₗ], [2s, s])
 

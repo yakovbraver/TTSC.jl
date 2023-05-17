@@ -3,7 +3,7 @@
 using Plots, LaTeXStrings
 pyplot()
 plotlyjs()
-theme(:dark, size=(700, 600))
+theme(:dark, size=(800, 500))
 
 include("SpacetimeHamiltonian.jl")
 
@@ -23,7 +23,7 @@ V₀ = 4320.0; ω = 240.0; λ = 0.01;
 s = 3
 params = [V₀, λ, ω]
 # plot(range(0, 2π, length=200), x -> 𝐻₀(0, x, params))
-H = SpacetimeHamiltonian(𝐻₀, 𝐻, params, s, (3.0, 3.2), (1.4, 1.6))
+H = SpacetimeHamiltonian(𝐻₀, 𝐻, params, s, min_pos=(3.0, 3.2), max_pos=(1.4, 1.6))
 
 function plot_actions(H::SpacetimeHamiltonian)
     figs = [plot() for _ in 1:4];
@@ -40,6 +40,36 @@ end
 
 plot_actions(H)
 savefig("h_0-parameters.pdf")
+
+### Check accuracy and stability
+
+# sample initial conditions
+p₀ = 0.0; x₀ = 2.0;
+
+# Calculate analytical period (ZP-2.2.3.18).
+# In our case the equation of motion is
+#     𝑞″ + 2𝑉₀sin(2𝑞) = 0,
+# and we choose the initial conditions 𝑞(0) = 𝑥₀, 𝑞′(0) = 0.
+# We let 2𝑞 = 𝑦 to get the standard form
+#     𝑦″ + 4𝑉₀sin(𝑦) = 0
+# with the initial condition 𝑦(0) = 2𝑥₀. The period is then
+#     𝑇 = 4 / √(4𝑉₀) 𝐾(𝑚²), where 𝑚 = sin(𝑦(0)/2) = sin(𝑥₀)
+import Elliptic
+m = sin(x₀)
+T = 2 / √V₀ * Elliptic.K(m^2)
+
+# calculate `n_T` periods of unperturbed motion to check accuracy
+n_T = 100
+tspan = (0, n_T*T)
+H_problem = HamiltonianProblem(𝐻₀, p₀, x₀, tspan, params)
+sol = DiffEq.solve(H_problem, DiffEq.McAte3(); dt=2e-4)
+plot(sol)
+vline!([i*T for i = 1:n_T], c=:white)
+
+# calculate `n_T` periods of perturbed motion to check stability
+H_problem = HamiltonianProblem(𝐻, p₀, x₀, tspan, params)
+sol = DiffEq.solve(H_problem, DiffEq.McAte3(); dt=2e-4)
+plot(sol)
 
 ### Make a plot of the motion in the (𝐼, ϑ) phase-space in the secular approximation
 
@@ -67,8 +97,9 @@ savefig("secular-isoenergies.pdf")
 
 fig = plot();
 for i in 25:0.5:40
+    display(i)
     I, Θ = compute_IΘ(H, i, χ₀=1, n_T=200)
-    scatter!(mod2pi.(Θ.+pi/2), I, xlabel=L"\theta", ylabel=L"I", markerstrokewidth=0, markeralpha=0.6, label=false)
+    scatter!(mod2pi.(Θ.+pi/2), I, xlabel=L"\theta", ylabel=L"I", markerstrokewidth=0, markeralpha=0.6, label=false, markersize=2)
 end
 display(fig)
 savefig("exact-isoenergies.pdf")
