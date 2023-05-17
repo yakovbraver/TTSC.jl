@@ -1,7 +1,7 @@
 module TTSC
 
-include("bandsolvers.jl")
+include("SineModel.jl")
 include("DeltaModel.jl")
-include("SpaceTimeHamiltonian.jl")
+include("Classical.jl")
 
 end

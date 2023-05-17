@@ -32,7 +32,7 @@ l = a/3
 s = 2
 params = [σ, l, λ, λₛ, λₗ, ω]
 
-H = SpacetimeHamiltonian(𝐻₀, 𝐻, params, s, left_tp=(-1.06l/2, 0.0), right_tp=(0.0, 1.06l/2))
+H = ClassicalHamiltonian(𝐻₀, 𝐻, params, s, left_tp=(-1.06l/2, 0.0), right_tp=(0.0, 1.06l/2))
 
 Iₛ, M, coeffs = compute_parameters(H, Function[𝑄ₛ, 𝑄ₗ], [2s, s])
 
@@ -40,7 +40,7 @@ Aₛ = abs(coeffs[1]); χₛ = angle(coeffs[1])
 Aₗ = abs(coeffs[2]); χₗ = angle(coeffs[2])
 
 import Dierckx
-function plot_actions(H::SpacetimeHamiltonian)
+function plot_actions(H::ClassicalHamiltonian)
     figs = [plot() for _ in 1:4];
     x = range(-1.2l/2, 1.2l/2, length=200);
     I = Dierckx.get_knots(H.𝐸)
@@ -121,7 +121,7 @@ savefig(figb, "exact.pdf")
 
 # Quantisation
 
-import TTSC.Bandsolvers as sm
+import TTSC.SineModel as sm
 
 φₜ = range(0, 2π, length=61)
 n_cells = s

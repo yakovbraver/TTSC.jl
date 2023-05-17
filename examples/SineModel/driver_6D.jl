@@ -21,9 +21,9 @@ V₀ = 4320.0; ω = 240.0; λ = 0.01;
 s = 3
 params = [V₀, λ, ω]
 # plot(range(0, 2π, length=200), x -> 𝐻₀(0, x, params))
-H = SpacetimeHamiltonian(𝐻₀, 𝐻, params, s, min_pos=(3.0, 3.2), max_pos=(1.4, 1.6))
+H = ClassicalHamiltonian(𝐻₀, 𝐻, params, s, min_pos=(3.0, 3.2), max_pos=(1.4, 1.6))
 
-function plot_actions(H::SpacetimeHamiltonian)
+function plot_actions(H::ClassicalHamiltonian)
     figs = [plot() for _ in 1:4];
     x = range(0, 2π, length=50);
     figs[1] = plot(x, H.𝑈, xlabel=L"x", ylabel=L"U(x)=V_0\sin^{2}(x)", legend=false);

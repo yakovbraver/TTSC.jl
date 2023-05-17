@@ -1,4 +1,4 @@
-module Bandsolvers
+module SineModel
 
 using LinearAlgebra: eigen, schur, diagm, diagind, eigvals, ⋅, mul!, Diagonal, Symmetric, Hermitian
 using FLoops: @floop, @init

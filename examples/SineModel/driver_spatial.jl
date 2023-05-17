@@ -1,4 +1,4 @@
-import TTSC.Bandsolvers as sm
+import TTSC.SineModel as sm
 using Plots, LaTeXStrings, ProgressMeter
 
 plotlyjs()

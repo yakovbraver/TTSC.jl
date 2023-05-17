@@ -1,5 +1,5 @@
 using TTSC.Classical
-import TTSC.Bandsolvers as sm
+import TTSC.SineModel as sm
 using Plots, LaTeXStrings, ProgressMeter
 
 plotlyjs()
@@ -29,9 +29,9 @@ Vₗ = -2
 λₛ = 100; λₗ = 40; ω = 410
 s = 2
 params = [gₗ, l, Vₗ, λₛ, λₗ, ω]
-H = SpacetimeHamiltonian(𝐻₀, 𝐻, params, s, min_pos=(1.5, 2), max_pos=(2, 2.5))
+H = ClassicalHamiltonian(𝐻₀, 𝐻, params, s, min_pos=(1.5, 2), max_pos=(2, 2.5))
 
-function plot_actions(H::SpacetimeHamiltonian)
+function plot_actions(H::ClassicalHamiltonian)
     figs = [plot() for _ in 1:4];
     x = range(0, 2π, length=200);
     I = Dierckx.get_knots(H.𝐸)
