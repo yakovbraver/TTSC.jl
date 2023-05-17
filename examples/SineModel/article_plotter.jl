@@ -1,6 +1,8 @@
+import TTSC.sm as sm
+using TTSC.Classical
 using Plots, Measures, LaTeXStrings
 
-pyplot()
+pythonplot()
 
 "Set plotting defaults and initialise the canvas size with the given `width` and `height` (in cm)"
 function set_defaults(;width, height)
@@ -19,8 +21,6 @@ BLUE2   = colorant"rgb(56, 111, 164)"
 GREY2  = colorant"rgb(180, 180, 180)"
 BLACK  = colorant"rgb(13, 19, 33)"
 CMAP = cgrad(:linear_grey_0_100_c0_n256, rev=true)
-
-include("bandsolvers.jl")
 
 l = 1
 gₗ = -7640
@@ -47,10 +47,10 @@ set_defaults(width=2*8.6, height=7.5)
 φₓ = range(0, pi, length=61)
 n_cells = 1
 
-h = Bandsolvers.UnperturbedHamiltonian(n_cells; M=1/2, gₗ, Vₗ, φₓ, maxband=34, isperiodic=true)
-Bandsolvers.diagonalise!(h)
-H = Bandsolvers.FloquetHamiltonian(h; s, λₛ, λₗ, ω, pumptype=:time, minband=1)
-Bandsolvers.diagonalise!(H)
+h = sm.UnperturbedHamiltonian(n_cells; M=1/2, gₗ, Vₗ, φₓ, maxband=34, isperiodic=true)
+sm.diagonalise!(h)
+H = sm.FloquetHamiltonian(h; s, λₛ, λₗ, ω, pumptype=:time, minband=1)
+sm.diagonalise!(H)
 
 figa = plot();
 for i in 1:8n_cells
@@ -76,11 +76,11 @@ function shadecells_2!(fig)
 end
 
 targetlevels = [1, 3]
-Bandsolvers.compute_wanniers!(H; targetlevels)
+sm.compute_wanniers!(H; targetlevels)
 
 x = range(0, n_cells*pi, length=50n_cells) # x's for wavefunctions
 Ωt = range(0, 2π, length=40s) # time moments for wavefunctions
-_, w_c = Bandsolvers.make_wannierfunctions(H, x, Ωt, 1:length(φₓ))
+_, w_c = sm.make_wannierfunctions(H, x, Ωt, 1:length(φₓ))
 w = abs2.(w_c)
 
 iϕ = 1
@@ -130,10 +130,10 @@ set_defaults(width=2*8.6, height=7.5)
 φₓ = [range(0, 0.7, length=10); range(0.75, 0.85, length=15); range(0.9, 2.2, length=10); range(2.3, 2.4, length=15); range(2.4, pi, length=10)]
 n_cells = 2
 
-h = Bandsolvers.UnperturbedHamiltonian(n_cells; M=1/2, gₗ, Vₗ, φₓ, maxband=34, isperiodic=true)
-Bandsolvers.diagonalise!(h)
-H = Bandsolvers.FloquetHamiltonian(h; s, λₛ, λₗ, ω, pumptype=:space, minband=1)
-Bandsolvers.diagonalise!(H)
+h = sm.UnperturbedHamiltonian(n_cells; M=1/2, gₗ, Vₗ, φₓ, maxband=34, isperiodic=true)
+sm.diagonalise!(h)
+H = sm.FloquetHamiltonian(h; s, λₛ, λₗ, ω, pumptype=:space, minband=1)
+sm.diagonalise!(H)
 
 figa = plot();
 for i in 1:8n_cells
@@ -146,11 +146,11 @@ lens!([0.225, 0.275], [-5696.41, -5696.25], inset = (1, bbox(0.35, 0.25, 0.5, 0.
 ### (b) Wannier functions
 
 targetlevels = [1, 2]
-Bandsolvers.compute_wanniers!(H; targetlevels)
+sm.compute_wanniers!(H; targetlevels)
 
 x = range(0, n_cells*pi, length=1000n_cells) # x's for wavefunctions
 Ωt = range(0, 2π, length=40s) # time moments for wavefunctions: 𝜔𝑡/𝑠 ∈ [0; 2π]
-_, w_c = Bandsolvers.make_wannierfunctions(H, x, Ωt, 1:length(φₓ))
+_, w_c = sm.make_wannierfunctions(H, x, Ωt, 1:length(φₓ))
 w = abs2.(w_c)
 
 i_t = 21
@@ -192,10 +192,10 @@ set_defaults(width=2*8.6, height=15)
 φₓ = [range(0, 0.7, length=10); range(0.75, 0.85, length=15); range(0.9, 2.2, length=10); range(2.3, 2.4, length=15); range(2.4, pi, length=10)]
 n_cells = 2
 
-h = Bandsolvers.UnperturbedHamiltonian(n_cells; M=1/2, gₗ, Vₗ, φₓ, maxband=34, isperiodic=true)
-Bandsolvers.diagonalise!(h)
-H = Bandsolvers.FloquetHamiltonian(h; s, λₛ, λₗ, ω, pumptype=:spacetime, minband=1)
-Bandsolvers.diagonalise!(H)
+h = sm.UnperturbedHamiltonian(n_cells; M=1/2, gₗ, Vₗ, φₓ, maxband=34, isperiodic=true)
+sm.diagonalise!(h)
+H = sm.FloquetHamiltonian(h; s, λₛ, λₗ, ω, pumptype=:spacetime, minband=1)
+sm.diagonalise!(H)
 
 fig1 = plot();
 for i in 1:8n_cells
@@ -250,11 +250,11 @@ function four_wanniers(w, iϕ, ϕ_str, addlabel=false)
 end
 
 targetlevels = [1, 2, 5, 6]
-Bandsolvers.compute_wanniers!(H; targetlevels)
+sm.compute_wanniers!(H; targetlevels)
 
 x = range(0, n_cells*pi, length=50n_cells)
 Ωt = range(0, 2π, length=40s)
-_, w_c = Bandsolvers.make_wannierfunctions(H, x, Ωt, 1:length(φₓ))
+_, w_c = sm.make_wannierfunctions(H, x, Ωt, 1:length(φₓ))
 w = abs2.(w_c)
 
 swap_wanniers!(w, 1, 2, 16)
@@ -277,8 +277,6 @@ savefig("fig3.pdf")
 ##########
 
 set_defaults(width=8.6, height=4.3)
-
-include("SpacetimeHamiltonian.jl")
 
 function 𝐻₀(p, x, params)
     p^2 + params[1]*cos(2x)^(2params[2]) + params[3]*cos(x)^2
@@ -352,8 +350,8 @@ n_cells = s
 gₗ = -2λₛ*Aₛ
 Vₗ = 2λₗ*Aₗ
 
-h = Bandsolvers.UnperturbedHamiltonian(n_cells; M, gₗ, Vₗ, φₓ=-φₜ/2, maxband=2, isperiodic=true)
-Bandsolvers.diagonalise!(h)
+h = sm.UnperturbedHamiltonian(n_cells; M, gₗ, Vₗ, φₓ=-φₜ/2, maxband=2, isperiodic=true)
+sm.diagonalise!(h)
 h.E .+= -(gₗ + Vₗ)/2 + H_classical.𝐸(Iₛ) - ω/s*Iₛ
 
 figa = plot();
@@ -365,9 +363,9 @@ plot!(xlabel=L"\varphi_t/\pi", ylabel=L"E_{\rm eff}"*" (recoil units)", legend=(
 
 ### (b) Quasiclassical Wannier functions
 
-Bandsolvers.compute_wanniers!(h, targetband=1)
+sm.compute_wanniers!(h; targetband=1, mixsubbands=false)
 θ = range(0, s*π, length=40s)
-_, w = Bandsolvers.make_wannierfunctions(h, θ, 1:length(φₜ))
+_, w = sm.make_wannierfunctions(h, θ, 1:length(φₜ))
 
 𝑈(iϕ) = @. -λₛ*Aₛ*cos(2s*θ) + λₗ*Aₗ*cos(s*θ - φₜ[iϕ]) + H_classical.𝐸(Iₛ) - ω/s*Iₛ
 

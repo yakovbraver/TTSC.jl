@@ -1,11 +1,9 @@
-# The driving script for the analysis of Hamiltonians (9) and (13) from arXiv:2012.02783
-
+# The driving script for the analysis of Hamiltonians (S2) fom https://doi.org/10.1103/PhysRevB.103.L100301 (https://arxiv.org/abs/2012.02783)
+using TTSC.Classical
 using Plots, LaTeXStrings
-pyplot()
+
 plotlyjs()
 theme(:dark, size=(800, 500))
-
-include("SpacetimeHamiltonian.jl")
 
 function 𝐻₀(p, x, params)
     p^2 + params[1]*sin(x)^2
@@ -54,6 +52,8 @@ p₀ = 0.0; x₀ = 2.0;
 #     𝑦″ + 4𝑉₀sin(𝑦) = 0
 # with the initial condition 𝑦(0) = 2𝑥₀. The period is then
 #     𝑇 = 4 / √(4𝑉₀) 𝐾(𝑚²), where 𝑚 = sin(𝑦(0)/2) = sin(𝑥₀)
+import DifferentialEquations as DiffEq
+using DiffEqPhysics: HamiltonianProblem
 import Elliptic
 m = sin(x₀)
 T = 2 / √V₀ * Elliptic.K(m^2)

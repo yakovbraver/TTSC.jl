@@ -1,13 +1,9 @@
+import TTSC.DeltaModel as dm
 using Plots, LaTeXStrings, ProgressMeter
-import IntervalRootFinding as iroots
-using IntervalArithmetic: (..)
 
 plotlyjs()
-pyplot()
+pythonplot()
 theme(:dark, size=(800, 500))
-
-includet("DeltaModel.jl")
-import .DeltaModel
 
 "Produce an animation of potential if `iφ == nothing`; otherwise, plot the potential at phase number `iφ`."
 function plot_potential(H; U::Real, U_title::Real=U, lift::Real=0, iφ::Union{Nothing, <:Real}=nothing)
@@ -27,7 +23,7 @@ function plot_potential(H; U::Real, U_title::Real=U, lift::Real=0, iφ::Union{No
                 V .+= 𝑈[n].(x) .* cos(φ + 2π*(n-1)/3)
             end
             plot(x, V.+lift, ylims=(-1.1U, 2U).+lift, lw=2, c=:white, label=false, xlabel=L"x", ylabel="Energy",
-                title=L"a=%$a, U=%$U_title, \lambda=%$(uh.λ), \varphi=%$(round(φ, digits=3))", titlepos=:left)
+                title=L"a=%$a, U=%$U_title, \lambda=%$(h.λ), \varphi=%$(round(φ, digits=3))", titlepos=:left)
             vspan!(barriers, c=:grey, label=false)
         end
     else
@@ -45,7 +41,7 @@ end
 n_cells = 3
 a = 4; λ = 2000; U = 7
 φₓ = range(0, 2π, length=31)
-h = DeltaModel.UnperturbedHamiltonian(n_cells; a, λ, U, φₓ)
+h = dm.UnperturbedHamiltonian(n_cells; a, λ, U, φₓ)
 
 plot_potential(h; U, lift=0)
 plot_potential(h; U, iφ=16)
@@ -65,14 +61,16 @@ end
 plot_dispersion(ε; φ=φₓ[1], uh=h)
 savefig("dispersion.pdf")
 
-f(E) = DeltaModel.cos_ka(E; φ=0, uh=h)
+f(E) = dm.cos_ka(E; φ=0, uh=h)
 bounds = (300, 5100)
+import IntervalRootFinding as iroots
+using IntervalArithmetic: (..)
 rts = iroots.roots(f, bounds[1]..bounds[2])
 z = [rts[i].interval.lo for i in eachindex(rts)]
 sort!(z)
 scatter!(z, zeros(length(z)))
 
-DeltaModel.diagonalise!(h; bounds)
+dm.diagonalise!(h; bounds)
 
 # spectrum
 
@@ -82,7 +80,7 @@ for m in axes(h.E, 2)
         plot!(φₓ, h.E[ik, m, :], xlabel=L"\varphi_x")
     end
 end
-plot!(legend=false, title="Full")
+plot!(legend=false)
 savefig("spatial-spectrum.pdf")
 
 # bandgaps
@@ -90,7 +88,7 @@ savefig("spatial-spectrum.pdf")
 """
 Return gaps between the highest and middle subband of each band in energy spectrum `E`. Number of cells has to be even for correct results.
 Assume 2D or 3D system depending on `type` (`2` or `3`).
-`iφ` is the phase of minimum of the lowest leve of the highest subband.
+`iφ` is the phase of minimum of the lowest level of the highest subband.
 """
 function get_bandgaps(E; type::Integer, iφ) 
     gaps = Vector{Float64}(undef, size(E, 2)÷3)
@@ -115,7 +113,7 @@ savefig("bandgaps.pdf")
 iφ = 1
 n_x = 50
 whichband = 7
-x, ψ = DeltaModel.make_eigenfunctions(h, n_x, whichband, [iφ])
+x, ψ = dm.make_eigenfunctions(h, n_x, whichband, [iφ])
 fig = plot();
 for ik in 1:n_cells
     for b in 1:3
@@ -127,7 +125,7 @@ display(fig)
 l = a/3
 skipbands = 7 # number of spatial bands that have been skipped by the choice if `bounds` above
 sb = 7 # a subband of choice
-b = (sb-1)÷3 + 1 + skipbands # band number
+b = (sb-1)÷3 + 1 + skipbands # band number which subband `sb` belongs to
 h.κ[1, 1, sb, 1] / (π/l) # this is approximately `b`
 
 trapz(f) = ( sum(f) - (f[1] + f[end]) / 2 ) * x[2]-x[1]
@@ -136,7 +134,7 @@ trapz(ψ[:, 2, 3, 1] .* conj(ψ[:, 2, 1, 1]))
 # Wannier centres
 
 targetband = 16
-DeltaModel.compute_wanniers!(h, targetband)
+dm.compute_wanniers!(h, targetband)
 
 fig = plot();
 for (i, φ) in enumerate(φₓ)
@@ -149,7 +147,7 @@ plot!(minorgrid=true, xlabel=L"x", ylabel=L"\varphi_x", cbtitle="Energy", title=
 # Wannier functions
 
 n_x = 50
-x, _, w = DeltaModel.make_wannierfunctions(h, n_x, 1:length(φₓ))
+x, _, w = dm.make_wannierfunctions(h, n_x, 1:length(φₓ))
 
 lift = minimum(h.w.E) - 1
 lims = (lift-2, maximum(h.w.E)+2)
@@ -167,7 +165,7 @@ end
 
 ###### TB Hamiltonian with implicit phase
 
-function plot_wanniercentres(htb::DeltaModel.AbstractTBHamiltonian)
+function plot_wanniercentres(htb::dm.AbstractTBHamiltonian)
     plot();
     for (iφ, φ) in enumerate(φₓ)
         for b in 1:3
@@ -177,8 +175,8 @@ function plot_wanniercentres(htb::DeltaModel.AbstractTBHamiltonian)
     plot!(minorgrid=true, xlabel=L"x", ylabel=L"\varphi_x", cbtitle="Energy")
 end
 
-function plot_pumping(htb::DeltaModel.AbstractTBHamiltonian)
-    wanniers = DeltaModel.make_wannierfunctions(htb, 1:length(φₓ))
+function plot_pumping(htb::dm.AbstractTBHamiltonian)
+    wanniers = dm.make_wannierfunctions(htb, 1:length(φₓ))
     lift = minimum(htb.w.E) - 1
     lims = (lift-2, maximum(htb.w.E)+2)
     x = range(start=a/6, step=a/3, length=3htb.N)
@@ -198,9 +196,9 @@ end
 # Construct Wanniers at a single phase (any phase is OK)
 iφ₀ = 1
 targetband = 16
-d, pos, E = DeltaModel.compute_wanniers(h; targetband, iφ₀)
+d, pos, E = dm.compute_wanniers(h; targetband, iφ₀)
 n_x = 50
-x, ψ = DeltaModel.make_eigenfunctions(h, n_x, targetband, [iφ₀])
+x, ψ = dm.make_eigenfunctions(h, n_x, targetband, [iφ₀])
 ws = Matrix{ComplexF64}(undef, length(x), 3n_cells)
 fig = plot();
 for j in 1:3n_cells
@@ -211,15 +209,15 @@ scatter!(pos, E, c=1:3n_cells, markerstrokewidth=0, xlabel=L"x", ylabel="Energy"
 savefig("tb-wanniers.pdf")
 
 # Construct and diagonalise the TB Hamiltonian
-htb = DeltaModel.TBHamiltonian(h; d, isperiodic=true, targetband)
-DeltaModel.diagonalise!(htb)
+htb = dm.TBHamiltonian(h; d, isperiodic=true, targetband)
+dm.diagonalise!(htb)
 
 # Energy spectrum
 fig = plot();
 for r in eachrow(htb.E)
     plot!(φₓ, r, xlabel=L"\varphi_x", ylabel="Energy", legend=false)
 end
-plot!(ylims=(1797, 1799.5), title="TB")
+plot!(title="TB")
 savefig("tb-spectrum.pdf")
 
 plot(φₓ, real(htb.H[1, 1, :]))
@@ -227,7 +225,7 @@ plot!(φₓ, real(htb.H[2, 2, :]))
 plot!(φₓ, real(htb.H[3, 3, :]))
 
 # Wannier centres
-DeltaModel.compute_wanniers!(htb)
+dm.compute_wanniers!(htb)
 plot_wanniercentres(htb)
 
 # Pumping animation
@@ -239,8 +237,8 @@ plot_pumping(htb)
 iφ = 1
 J = [d[:, i+1]' * (d[:, i] .* h.E[range((iφ-1)size(h.E, 2)size(h.E, 1) + 3(targetband-1)size(h.E, 1) + 1, length=3n_cells)]) for i in 1:3]
 # construct TB Hamiltonian using only the modulus of 𝐽₁₂
-htb = DeltaModel.SimpleTBHamiltonian(8; a, U, J=fill(abs(J[1]), 3), isperiodic=false, φₓ)
-DeltaModel.diagonalise!(htb)
+htb = dm.SimpleTBHamiltonian(8; a, U, J=fill(abs(J[1]), 3), isperiodic=false, φₓ)
+dm.diagonalise!(htb)
 
 # Energy spectrum
 shift = h.E[1, 3targetband, 1] - htb.E[end, 1]
@@ -256,7 +254,7 @@ savefig("explicit-tb-spectrum.pdf")
 # Energy spectrum calculated using k-space representation
 
 ka = [0, pi]
-E = DeltaModel.diagonalise_kspace(htb, ka)
+E = dm.diagonalise_kspace(htb, ka)
 fig2 = plot();
 for ik in eachindex(ka)
     for m = 1:3
@@ -266,7 +264,7 @@ end
 title!("TB: "*L"J=%$(abs(J[1])), U=%$U")
 
 # Wannier centres
-DeltaModel.compute_wanniers!(htb)
+dm.compute_wanniers!(htb)
 plot_wanniercentres(htb)
 
 # Pumping animation

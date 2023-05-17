@@ -1,3 +1,5 @@
+module Classical
+
 import Roots
 import Optim
 import Dierckx
@@ -244,4 +246,11 @@ function compute_IΘ(H::SpacetimeHamiltonian, I_target::Real; χ₀::Real=0, n_T
         end
     end
     return I, Θ
+end
+
+export SpacetimeHamiltonian,
+    make_action_functions,
+    compute_parameters,
+    compute_IΘ
+
 end

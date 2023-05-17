@@ -1,9 +1,8 @@
+import TTSC.Bandsolvers as sm
 using Plots, LaTeXStrings, ProgressMeter
+
 plotlyjs()
 theme(:dark, size=(800, 600))
-
-includet("bandsolvers.jl")
-import .Bandsolvers
 
 l = 1
 gₗ = -7640
@@ -18,8 +17,8 @@ s = 2
       range(3pi/4+0.1, pi, length=10)]
 n_cells = 2
 
-h = Bandsolvers.UnperturbedHamiltonian(n_cells; M=1/2, gₗ, Vₗ, φₓ, maxband=30, isperiodic=true)
-Bandsolvers.diagonalise!(h)
+h = sm.UnperturbedHamiltonian(n_cells; M=1/2, gₗ, Vₗ, φₓ, maxband=30, isperiodic=true)
+sm.diagonalise!(h)
 
 # unperturbed Hamiltonian spectrum
 fig = plot();
@@ -29,8 +28,8 @@ for r in eachrow(h.E)
 end
 plot!(xlabel=L"\phi_x", ylabel="Energy")
 
-H = Bandsolvers.FloquetHamiltonian(h; s, λₛ, λₗ, ω, pumptype=:both, minband=1)
-Bandsolvers.diagonalise!(H)
+H = sm.FloquetHamiltonian(h; s, λₛ, λₗ, ω, pumptype=:both, minband=1)
+sm.diagonalise!(H)
 
 # Floquet quasienergy spectrum
 fig = plot();
@@ -40,7 +39,7 @@ end
 plot!(xlabel=L"\phi_x", ylabel="Quasienergy")
 
 # Ordered quasienergy spectrum
-E_ordered = Bandsolvers.order_floquet_levels(H)
+E_ordered = sm.order_floquet_levels(H)
 fig = plot();
 for (i, r) in enumerate(eachrow(E_ordered))
     m = i + H.minlevel - 1
@@ -53,7 +52,7 @@ x = range(0, n_cells*pi, length=50n_cells)
 Ωt = range(0, 2π, length=40s)
 iϕ = 15
 whichstates = 1:4
-u = Bandsolvers.make_eigenfunctions(H, x, Ωt, [iϕ], whichstates) .|> abs2
+u = sm.make_eigenfunctions(H, x, Ωt, [iϕ], whichstates) .|> abs2
 figs = [plot() for _ in eachindex(whichstates)]
 for (f, n) in enumerate(whichstates)
     figs[f] = heatmap(x, Ωt, u[:, :, n, 1]', xlabel=L"x", ylabel=L"\Omega t", c=:viridis, title="Mode $n")
@@ -62,7 +61,7 @@ plot(figs...)
 
 # Wannier centres
 targetlevels = [1, 2, 5, 6]
-Bandsolvers.compute_wanniers!(H; targetlevels)
+sm.compute_wanniers!(H; targetlevels)
 fig = plot();
 for (i, ϕ) in enumerate(φₓ)
     scatter!(H.uh.w.pos[:, i], fill(ϕ, length(targetlevels)); label=false, markerstrokewidth=0, c=1)
@@ -70,7 +69,7 @@ end
 plot!(minorgrid=true, xlabel=L"x", ylabel=L"\phi_x")
 
 # Maps of Wannier functions
-_, w = Bandsolvers.make_wannierfunctions(H, x, Ωt, [iϕ])
+_, w = sm.make_wannierfunctions(H, x, Ωt, [iϕ])
 figs = [plot() for _ in eachindex(targetlevels)]
 for f in eachindex(targetlevels)
     figs[f] = heatmap(x, Ωt, abs2.(w[:, :, f, 1]'), xlabel=L"x", ylabel=L"\Omega t", c=:viridis, title="Wannier $f")
@@ -81,13 +80,13 @@ plot(figs...)
 
 # Construct the Wanniers
 targetlevels = 1:4*2n_cells
-Bandsolvers.compute_wanniers!(H; targetlevels)
+sm.compute_wanniers!(H; targetlevels)
 
 # Plot the Wanniers
 x = range(0, n_cells*pi, length=50n_cells)
 Ωt = range(0, 2π, length=40s)
 iϕ = 1
-_, w = Bandsolvers.make_wannierfunctions(H, x, Ωt, [iϕ])
+_, w = sm.make_wannierfunctions(H, x, Ωt, [iϕ])
 figs = [plot() for _ in eachindex(targetlevels)]
 for f in eachindex(targetlevels)
     figs[f] = heatmap(x, Ωt, abs2.(w[:, :, f, 1]'), xlabel=L"x", ylabel=L"\Omega t", c=:viridis, title="Wannier $f")
@@ -95,8 +94,8 @@ end
 plot(figs...)
 
 # Construct and diagonalise TB Hamiltonian
-Htb = Bandsolvers.TBFloquetHamiltonian(H; targetband=1, pumptype=:space)
-Bandsolvers.diagonalise!(Htb)
+Htb = sm.TBFloquetHamiltonian(H; targetband=1, pumptype=:space)
+sm.diagonalise!(Htb)
 
 # Quasienergy spectrum
 fig = plot();
@@ -107,8 +106,8 @@ plot!(xlabel=L"\varphi_x", ylabel="Quasienergy", title="TB")
 
 ########## Non-periodic case
 
-h = Bandsolvers.UnperturbedHamiltonian(n_cells; M=1/2, gₗ, Vₗ, φₓ, maxband=30, isperiodic=false)
-Bandsolvers.diagonalise!(h)
+h = sm.UnperturbedHamiltonian(n_cells; M=1/2, gₗ, Vₗ, φₓ, maxband=30, isperiodic=false)
+sm.diagonalise!(h)
 
 # unperturbed Hamiltonian spectrum
 fig = plot();
@@ -118,8 +117,8 @@ for r in eachrow(h.E)
 end
 plot!(xlabel=L"\phi_x", ylabel="Energy")
 
-H = Bandsolvers.FloquetHamiltonian(h; s, λₛ, λₗ, ω, pumptype=:space, minband=1)
-Bandsolvers.diagonalise!(H)
+H = sm.FloquetHamiltonian(h; s, λₛ, λₗ, ω, pumptype=:space, minband=1)
+sm.diagonalise!(H)
 
 # Floquet quasienergy spectrum
 fig = plot();
@@ -129,7 +128,7 @@ end
 plot!(xlabel=L"\phi_x", ylabel="Quasienergy")
 
 # Ordered quasienergy spectrum
-E_ordered = Bandsolvers.order_floquet_levels(H)
+E_ordered = sm.order_floquet_levels(H)
 fig = plot();
 for (i, r) in enumerate(eachrow(E_ordered))
     m = i + H.minlevel - 1
@@ -142,7 +141,7 @@ x = range(0, n_cells*pi, length=50n_cells)
 Ωt = range(0, 2π, length=40s)
 iϕ = 1
 whichstates = 1:3
-u = Bandsolvers.make_eigenfunctions(H, x, Ωt, [iϕ], whichstates) .|> abs2
+u = sm.make_eigenfunctions(H, x, Ωt, [iϕ], whichstates) .|> abs2
 figs = [plot() for _ in eachindex(whichstates)]
 for (f, n) in enumerate(whichstates)
     figs[f] = heatmap(x, Ωt, u[:, :, n, 1]', xlabel=L"x", ylabel=L"\Omega t", c=:viridis, title="Mode $n")

@@ -1,3 +1,4 @@
+import TTSC.DeltaModel as dm
 using Plots, Measures, LaTeXStrings
 using LinearAlgebra
 
@@ -25,9 +26,6 @@ CMAP = cgrad(:linear_grey_0_100_c0_n256, rev=true)
 using LinearAlgebra.BLAS: set_num_threads
 set_num_threads(1)
 
-include("DeltaModel.jl")
-import .DeltaModel
-
 ##########
 ########## FIG S2
 ##########
@@ -40,29 +38,29 @@ n_cells = 2
 a = 4; λ = 2000; U = 7
 n_φₓ = 401 # use many phases to resolve the anticrossings in the Floquet spectrum
 φₓ = range(0, 2pi, n_φₓ)
-h = DeltaModel.UnperturbedHamiltonian(n_cells; a, λ, U, φₓ)
-DeltaModel.diagonalise!(h; bounds=(300, 10000))
+h = dm.UnperturbedHamiltonian(n_cells; a, λ, U, φₓ)
+dm.diagonalise!(h; bounds=(300, 10000))
 skipbands = 7 # number of spatial bands that have been skipped by the choice if `bounds` above
 λₛ = 20; λₗ = 10; ω = 676.8
 s = 2
 pumptype = :spacetime
-H = DeltaModel.FloquetHamiltonian(h; s, λₛ, λₗ, ω, pumptype)
-DeltaModel.diagonalise!(H, reorder=true)
+H = dm.FloquetHamiltonian(h; s, λₛ, λₗ, ω, pumptype)
+dm.diagonalise!(H, reorder=true)
 
 ind = [44:91; 178:201]
-DeltaModel.swap_eigenstates!(H, 69, 74, [1], [ind; n_φₓ+1 .- ind])
+dm.swap_eigenstates!(H, 69, 74, [1], [ind; n_φₓ+1 .- ind])
 ind = [21:24; 111:132; 144:157]
-DeltaModel.swap_eigenstates!(H, 72, 74, [1], [ind; n_φₓ+1 .- ind])
+dm.swap_eigenstates!(H, 72, 74, [1], [ind; n_φₓ+1 .- ind])
 ind = [44:91; 178:201]
-DeltaModel.swap_eigenstates!(H, 71, 73, [1], [ind; n_φₓ+1 .- ind])
+dm.swap_eigenstates!(H, 71, 73, [1], [ind; n_φₓ+1 .- ind])
 ind = 183:201
-DeltaModel.swap_eigenstates!(H, 64, 71, [1], [ind; n_φₓ+1 .- ind])
+dm.swap_eigenstates!(H, 64, 71, [1], [ind; n_φₓ+1 .- ind])
 ind = [13:42; 48:87; 91:123; 146:174; 182:201]
-DeltaModel.swap_eigenstates!(H, 64, 73, [1], [ind; n_φₓ+1 .- ind])
+dm.swap_eigenstates!(H, 64, 73, [1], [ind; n_φₓ+1 .- ind])
 ind = [28:108; 161:201]
-DeltaModel.swap_eigenstates!(H, 65, 72, [2], [ind; n_φₓ+1 .- ind])
+dm.swap_eigenstates!(H, 65, 72, [2], [ind; n_φₓ+1 .- ind])
 ind = [19:117; 152:201]
-DeltaModel.swap_eigenstates!(H, 68, 73, [2], [ind; n_φₓ+1 .- ind])
+dm.swap_eigenstates!(H, 68, 73, [2], [ind; n_φₓ+1 .- ind])
 
 m1 = 64
 figS2a = plot();
@@ -108,15 +106,15 @@ function four_wanniers(w, φ_str, order)
 end
 
 targetsubbands = [m1+2, m1+11]
-DeltaModel.compute_wanniers!(H; targetsubbands)
+dm.compute_wanniers!(H; targetsubbands)
 iφ = 1
 n_x = 50
 Ωt = range(0, 2π, length=40s)
-x, _, w = DeltaModel.make_wannierfunctions(H, n_x, Ωt, [iφ])
+x, _, w = dm.make_wannierfunctions(H, n_x, Ωt, [iφ])
 figb = four_wanniers(w, "0", 1:4)
 
 iφ = 68
-x, _, w = DeltaModel.make_wannierfunctions(H, n_x, Ωt, [iφ])
+x, _, w = dm.make_wannierfunctions(H, n_x, Ωt, [iφ])
 figc = four_wanniers(w, L"\pi/3", [3, 4, 2, 1])
 
 plot(figS2a, figb, figc, layout=grid(1, 3, widths=[0.285, 0.35, 0.35]), plot_title="", dpi=600)
@@ -145,21 +143,21 @@ end
 
 n_φₓ = 2 # we are only interested in 𝜑ₓ = 0
 φₓ = range(0, 2pi, n_φₓ)
-h = DeltaModel.UnperturbedHamiltonian(n_cells; a, λ, U, φₓ)
-DeltaModel.diagonalise!(h; bounds=(300, 10000))
+h = dm.UnperturbedHamiltonian(n_cells; a, λ, U, φₓ)
+dm.diagonalise!(h; bounds=(300, 10000))
 pumptype = :spacetime
-H = DeltaModel.FloquetHamiltonian(h; s, λₛ, λₗ, ω, pumptype)
-DeltaModel.diagonalise!(H, reorder=false)
+H = dm.FloquetHamiltonian(h; s, λₛ, λₗ, ω, pumptype)
+dm.diagonalise!(H, reorder=false)
 
 startsubband = 1
 targetsubbands = range(startsubband, length=12)
 n_subbands = length(targetsubbands)
 
-DeltaModel.compute_wanniers!(H; targetsubbands, Ωt=0.35π)
-DeltaModel.order_wanniers!(H; optimise=true)
+dm.compute_wanniers!(H; targetsubbands, Ωt=0.35π)
+dm.order_wanniers!(H; optimise=true)
 
 iφ = 1
-x, _, w = DeltaModel.make_wannierfunctions(H, n_x, Ωt, [iφ])
+x, _, w = dm.make_wannierfunctions(H, n_x, Ωt, [iφ])
 fig = wanniers12(w)
 savefig("figS3.png")
 
@@ -170,7 +168,7 @@ savefig("figS3.png")
 set_defaults(width=8.6, height=7.5)
 
 # using `H` from Fig S3
-Htb = DeltaModel.TBFloquetHamiltonian(H, periodicity=:both)
+Htb = dm.TBFloquetHamiltonian(H, periodicity=:both)
 
 M = copy(Htb.H[:, :, 1])
 M[diagind(M)] .= 0
@@ -195,23 +193,23 @@ end
 
 n_φₓ = 61
 φₓ = range(0, 2pi, n_φₓ)
-h = DeltaModel.UnperturbedHamiltonian(n_cells; a, λ, U, φₓ)
-DeltaModel.diagonalise!(h; bounds=(300, 10000))
+h = dm.UnperturbedHamiltonian(n_cells; a, λ, U, φₓ)
+dm.diagonalise!(h; bounds=(300, 10000))
 
 pumptype = :space
-H = DeltaModel.FloquetHamiltonian(h; s, λₛ, λₗ, ω, pumptype)
-DeltaModel.diagonalise!(H, reorder=false)
+H = dm.FloquetHamiltonian(h; s, λₛ, λₗ, ω, pumptype)
+dm.diagonalise!(H, reorder=false)
 H.E .+= 8ω - ω/s*skipbands
 startsubband = 1
 targetsubbands = range(startsubband, length=12)
 n_subbands = length(targetsubbands)
-DeltaModel.compute_wanniers!(H; targetsubbands, Ωt=0.35π)
-DeltaModel.order_wanniers!(H; optimise=true)
+dm.compute_wanniers!(H; targetsubbands, Ωt=0.35π)
+dm.order_wanniers!(H; optimise=true)
 
 iφ = 7
 n_x = 500
 Ωt = [7π/4]
-x, _, w = DeltaModel.make_wannierfunctions(H, n_x, Ωt, [iφ])
+x, _, w = dm.make_wannierfunctions(H, n_x, Ωt, [iφ])
 
 colours = [GREEN2, RED, ORANGE, BLUE3]
 fig = plot_potential(;U, lift=253, iφ)
@@ -249,10 +247,10 @@ set_defaults(width=2*8.6, height=10)
 ### (a) Separated spatial spectrum
 
 # using `H` from Fig 1
-Htb = DeltaModel.TBFloquetHamiltonian(H, periodicity=:both)
+Htb = dm.TBFloquetHamiltonian(H, periodicity=:both)
 
 # spatial part
-H_S = DeltaModel.separate_space(Htb; N=n_cells, periodic=true)
+H_S = dm.separate_space(Htb; N=n_cells, periodic=true)
 S_E = Matrix{Float64}(undef, size(H_S, 1), size(H_S, 3))
 for iφ in axes(H_S, 3)
     S_E[:, iφ] = eigvals(Hermitian(H_S[:, :, iφ])) #.+ 8ω .- ω/s*skipbands
@@ -269,11 +267,11 @@ annotate!(0.7, 267, (L"\nu_1=-1", RED))
 ### (b) Separated temporal spectrum
 
 pumptype = :time
-H = DeltaModel.FloquetHamiltonian(h; s, λₛ, λₗ, ω, pumptype)
-DeltaModel.diagonalise!(H, reorder=false)
-DeltaModel.compute_wanniers!(H; targetsubbands, Ωt=0.35π)
-DeltaModel.order_wanniers!(H; optimise=false)
-Htb = DeltaModel.TBFloquetHamiltonian(H, periodicity=:both)
+H = dm.FloquetHamiltonian(h; s, λₛ, λₗ, ω, pumptype)
+dm.diagonalise!(H, reorder=false)
+dm.compute_wanniers!(H; targetsubbands, Ωt=0.35π)
+dm.order_wanniers!(H; optimise=false)
+Htb = dm.TBFloquetHamiltonian(H, periodicity=:both)
 
 T_E = Matrix{Float64}(undef, 4, size(Htb.H, 3))
 for iφ in eachindex(φₓ)
@@ -346,12 +344,12 @@ hspan!([maximum(E4D[4, :]), minimum(E4D[5, :])], c=RED, alpha=0.5)
 ### (f) 4D/8D spectrum
 
 pumptype = :spacetime
-H = DeltaModel.FloquetHamiltonian(h; s, λₛ, λₗ, ω, pumptype)
-DeltaModel.diagonalise!(H, reorder=false)
-DeltaModel.compute_wanniers!(H; targetsubbands, Ωt=0.35π)
-DeltaModel.order_wanniers!(H; optimise=false)
-Htb = DeltaModel.TBFloquetHamiltonian(H, periodicity=:both)
-DeltaModel.diagonalise!(Htb)
+H = dm.FloquetHamiltonian(h; s, λₛ, λₗ, ω, pumptype)
+dm.diagonalise!(H, reorder=false)
+dm.compute_wanniers!(H; targetsubbands, Ωt=0.35π)
+dm.order_wanniers!(H; optimise=false)
+Htb = dm.TBFloquetHamiltonian(H, periodicity=:both)
+dm.diagonalise!(Htb)
 Htb.E .+= 8ω - ω/s*skipbands
 
 E8D = Matrix{Float64}(undef, 6, length(φₓ))
@@ -382,10 +380,10 @@ set_defaults(width=8.6, height=7.5)
 pumptype = :spacetime
 M = 2 * 3n_cells*s
 S = Array{Float64, 3}(undef, M, length(φₓ), length(φₓ)) # Spectrum of H_TB in the format S[n, φₓ, φₜ]
-H = DeltaModel.FloquetHamiltonian(h; s, λₛ, λₗ, ω, pumptype)
+H = dm.FloquetHamiltonian(h; s, λₛ, λₗ, ω, pumptype)
 using ProgressMeter
 @showprogress for iφ in eachindex(φₓ)
-    DeltaModel.diagonalise!(H; reorder=false, φₜ=fill(φₓ[iφ], length(φₓ)))
+    dm.diagonalise!(H; reorder=false, φₜ=fill(φₓ[iφ], length(φₓ)))
     S[1:end÷2, :, iφ] = H.E[1:M÷2, 1, :] # save first M levels at ik = 1
     S[end÷2+1:end, :, iφ] = H.E[1:M÷2, 2, :] # save first M levels at ik = 2
 end
@@ -426,19 +424,19 @@ set_defaults(width=8.6, height=5)
 ### (a) Spatial pumping
 
 pumptype = :space
-H = DeltaModel.FloquetHamiltonian(h; s, λₛ, λₗ, ω, pumptype)
-DeltaModel.diagonalise!(H, reorder=false)
+H = dm.FloquetHamiltonian(h; s, λₛ, λₗ, ω, pumptype)
+dm.diagonalise!(H, reorder=false)
 startsubband = 1
 targetsubbands = range(startsubband, length=12)
 n_subbands = length(targetsubbands)
-DeltaModel.compute_wanniers!(H; targetsubbands, Ωt=0.35π)
-DeltaModel.order_wanniers!(H; optimise=true)
-Htb = DeltaModel.TBFloquetHamiltonian(H, periodicity=:both)
+dm.compute_wanniers!(H; targetsubbands, Ωt=0.35π)
+dm.order_wanniers!(H; optimise=true)
+Htb = dm.TBFloquetHamiltonian(H, periodicity=:both)
 
-H_S = DeltaModel.separate_space(Htb; N=n_cells, periodic=true)
+H_S = dm.separate_space(Htb; N=n_cells, periodic=true)
 figa = plot();
 for (targetlevels, c) in zip([1:2, 3:4, 5:6], [BLACK, RED, BLUE2])
-    pos = DeltaModel.compute_wanniers(H_S; targetlevels, isperiodic=true, n_s=3)
+    pos = dm.compute_wanniers(H_S; targetlevels, isperiodic=true, n_s=3)
     for r in eachrow(pos)
         scatter!(r, φₓ ./ π; c, legend=false, markerstrokewidth=0, markersize=2)
     end
@@ -448,15 +446,15 @@ plot!(figa, xlabel=L"j", ylabel=L"\varphi_x/\pi", widen=false, xlims=(0, 6))
 ### (b) Temporal pumping
 
 pumptype = :time
-H = DeltaModel.FloquetHamiltonian(h; s, λₛ, λₗ, ω, pumptype)
-DeltaModel.diagonalise!(H, reorder=false)
-DeltaModel.compute_wanniers!(H; targetsubbands, Ωt=0.35π)
-DeltaModel.order_wanniers!(H; optimise=true)
-Htb = DeltaModel.TBFloquetHamiltonian(H, periodicity=:both)
+H = dm.FloquetHamiltonian(h; s, λₛ, λₗ, ω, pumptype)
+dm.diagonalise!(H, reorder=false)
+dm.compute_wanniers!(H; targetsubbands, Ωt=0.35π)
+dm.order_wanniers!(H; optimise=true)
+Htb = dm.TBFloquetHamiltonian(H, periodicity=:both)
 
 figb = plot();
 for (targetlevels, c) in zip([1:2, 3:4], [BLACK, BLUE2])
-    pos = DeltaModel.compute_wanniers(Htb.H[1:4, 1:4, :]; targetlevels, isperiodic=true, n_s=2)
+    pos = dm.compute_wanniers(Htb.H[1:4, 1:4, :]; targetlevels, isperiodic=true, n_s=2)
     for r in eachrow(pos)
         scatter!(r, φₓ ./ π; c, legend=false, markerstrokewidth=0, markersize=2)
     end

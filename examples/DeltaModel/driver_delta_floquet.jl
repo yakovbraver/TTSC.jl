@@ -1,26 +1,24 @@
+import TTSC.DeltaModel as dm
 using Plots, LaTeXStrings, ProgressMeter
 
 plotlyjs()
-pyplot()
+pythonplot()
 theme(:dark, size=(800, 500))
 
 using LinearAlgebra.BLAS: set_num_threads
 set_num_threads(1)
-
-includet("DeltaModel.jl")
-import .DeltaModel
 
 ### Unperturbed Hamiltonian
 
 n_cells = 2
 a = 4; λ = 2000; U = 7
 φₓ = range(0, 2π, length=31)
-h = DeltaModel.UnperturbedHamiltonian(n_cells; a, λ, U, φₓ)
+h = dm.UnperturbedHamiltonian(n_cells; a, λ, U, φₓ)
 
 # dispersion
 
-function plot_dispersion(ε::AbstractVector; φ::Real, uh::DeltaModel.UnperturbedHamiltonian)
-    cos_kL = [DeltaModel.cos_ka_tm(E; φ, uh) for E in ε]
+function plot_dispersion(ε::AbstractVector; φ::Real, uh::dm.UnperturbedHamiltonian)
+    cos_kL = [dm.cos_ka_tm(E; φ, uh) for E in ε]
     plot(ε, cos_kL, xlabel=L"\varepsilon", ylabel=L"\cos(ka)", ylims=(-4, 4), ticks=:native, xlims=(0, ε[end]),
          title=L"U=%$U, a=%$a, \lambda=%$λ, \varphi=%$(round(φ, digits=3))", titlepos=:left, label=false)
     hline!([-1, 1], c=:white, label=false)
@@ -30,7 +28,7 @@ end
 ε = range(U, 6200, step=0.05)
 plot_dispersion(ε; φ=φₓ[6], uh=h)
 
-DeltaModel.diagonalise!(h; bounds=(300, 10000))
+dm.diagonalise!(h; bounds=(300, 10000))
 
 # spectrum
 
@@ -48,8 +46,8 @@ display(fig)
 λₛ = 20; λₗ = 10; ω = 676.8
 s = 2
 pumptype = :time
-H = DeltaModel.FloquetHamiltonian(h; s, λₛ, λₗ, ω, pumptype)
-DeltaModel.diagonalise!(H, reorder=false)
+H = dm.FloquetHamiltonian(h; s, λₛ, λₗ, ω, pumptype)
+dm.diagonalise!(H, reorder=false)
 
 # Quasienergy spectrum
 skipbands = 7 # number of spatial bands that have been skipped by the choice if `bounds` above
@@ -67,7 +65,7 @@ n_x = 50
 Ωt = range(0, 2π, length=40s)
 iφ = 1
 whichsubbands = 1:2
-x, u = DeltaModel.make_eigenfunctions(H, n_x, Ωt, [iφ], whichsubbands)
+x, u = dm.make_eigenfunctions(H, n_x, Ωt, [iφ], whichsubbands)
 figs = [plot() for _ in 1:length(whichsubbands)*n_cells]
 for n in eachindex(whichsubbands)
     for ik in 1:n_cells
@@ -78,7 +76,7 @@ plot(figs...)
 
 # Wannier centres
 targetsubbands = 5:6
-DeltaModel.compute_wanniers!(H; targetsubbands, slide_time=true)
+dm.compute_wanniers!(H; targetsubbands, slide_time=true)
 fig = plot();
 for (i, φ) in enumerate(φₓ)
     scatter!(H.w.pos[:, i], fill(φ, length(targetsubbands)*n_cells); label=false, markerstrokewidth=0, c=1)
@@ -87,7 +85,7 @@ plot!(minorgrid=true, xlabel=L"x", ylabel=L"\varphi_x")
 
 # Maps of Wannier functions
 iφ = 1
-x, _, w = DeltaModel.make_wannierfunctions(H, n_x, Ωt, [iφ])
+x, _, w = dm.make_wannierfunctions(H, n_x, Ωt, [iφ])
 figs = [plot() for _ in 1:length(targetsubbands)*n_cells]
 for f in eachindex(figs)
     figs[f] = heatmap(x, Ωt, abs2.(w[:, :, f, 1]'), xlabel=L"x", ylabel=L"\Omega t", c=:viridis, title="Wannier $f")
@@ -133,7 +131,7 @@ end
 
 n_x = 50
 Ωt = range(0, 2π, length=40s)
-x, _, w = DeltaModel.make_wannierfunctions(H, n_x, Ωt, eachindex(φₓ))
+x, _, w = dm.make_wannierfunctions(H, n_x, Ωt, eachindex(φₓ))
 p = Progress(length(φₓ), 1)
 @gif for iφ in eachindex(φₓ)
     figs = [plot() for _ in 1:length(targetsubbands)*n_cells]

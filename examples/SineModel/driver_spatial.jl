@@ -1,12 +1,11 @@
+import TTSC.Bandsolvers as sm
 using Plots, LaTeXStrings, ProgressMeter
+
 plotlyjs()
 theme(:dark, size=(800, 600))
 
 using LinearAlgebra.BLAS: set_num_threads
 set_num_threads(1)
-
-includet("bandsolvers.jl")
-import .Bandsolvers
 
 ########## Periodic case
 
@@ -14,10 +13,11 @@ import .Bandsolvers
       range(pi/4+0.1, 3pi/4-0.1, length=20); range(3pi/4-0.01, 3pi/4+0.01, length=10);
       range(3pi/4+0.1, pi, length=10)]
 n_cells = 4
-gₗ = -7640; Vₗ = -2  # gₗ = -20; Vₗ = -30 corresponds exactly to the system in Nakajima et al. (https://www.nature.com/articles/nphys3622)
+gₗ = -7640; Vₗ = -2
+# gₗ = -20; Vₗ = -30 corresponds exactly to the system in Nakajima et al. (https://www.nature.com/articles/nphys3622)
 
-h = Bandsolvers.UnperturbedHamiltonian(n_cells; M=1/2, gₗ, Vₗ, φₓ, maxband=30, isperiodic=true)
-Bandsolvers.diagonalise!(h)
+h = sm.UnperturbedHamiltonian(n_cells; M=1/2, gₗ, Vₗ, φₓ, maxband=30, isperiodic=true)
+sm.diagonalise!(h)
 
 # Energy spectrum
 fig = plot();
@@ -32,14 +32,14 @@ x = range(0, n_cells*π, length=1000n_cells)
 U = @. gₗ*cos(2x)^2 + Vₗ*cos(x + φₓ[iφ])^2
 fig = plot(x ./ π, U, label=false, c=:white, lw=1)
 for i in 145:150
-    ψ = 4abs2.(Bandsolvers.make_eigenfunctions(h, x, [iφ], [i])) .+ h.E[i, iφ]
+    ψ = 4abs2.(sm.make_eigenfunctions(h, x, [iφ], [i])) .+ h.E[i, iφ]
     hline!([h.E[i, iφ]], c=:white, ls=:dot, lw=0.5, label=false)
     plot!(x ./ π, ψ[:, 1, 1], xlabel=L"x", ylabel="Energy", c=i, label="$i")
 end
 display(fig)
 
 # Wannier centres
-Bandsolvers.compute_wanniers!(h, targetband=25, mixsubbands=false)
+sm.compute_wanniers!(h, targetband=25, mixsubbands=false)
 fig = plot();
 for (i, φ) in enumerate(φₓ)
     scatter!(h.w.pos[:, i], fill(φ, 2n_cells); marker_z=h.w.E[:, i], c=:coolwarm, label=false, markerstrokewidth=0)
@@ -48,7 +48,7 @@ plot!(minorgrid=true, xlabel=L"x", ylabel=L"\varphi_x", cbtitle="Energy")
 
 # Wannier functions
 x = range(0, n_cells*π, length=50n_cells)
-_, w = Bandsolvers.make_wannierfunctions(h, x, 1:length(φₓ))
+_, w = sm.make_wannierfunctions(h, x, 1:length(φₓ))
 lims = (minimum(h.w.E)-0.5, maximum(h.w.E)+2)
 p = Progress(length(φₓ), 1)
 @gif for (i, φ) in enumerate(φₓ)
@@ -65,11 +65,11 @@ end
 
 # Compute Wanniers by mixing the two subbands of `targetband` together. Wanniers are construced at all phases,
 # even though we need them at only one phase when constructing the TB Hamiltonian.
-Bandsolvers.compute_wanniers!(h, targetband=25, mixsubbands=true)
+sm.compute_wanniers!(h, targetband=25, mixsubbands=true)
 
 # Plot the Wanniers
 x = range(0, n_cells*π, length=50n_cells)
-_, w = Bandsolvers.make_wannierfunctions(h, x, 1:length(φₓ))
+_, w = sm.make_wannierfunctions(h, x, 1:length(φₓ))
 lims = (minimum(h.w.E)-0.5, maximum(h.w.E)+2)
 iφ = 2
 U = @. gₗ*cos(2x)^2 + Vₗ*cos(x + φₓ[iφ])^2
@@ -81,8 +81,8 @@ end
 display(fig)
 
 # Construct the TB Hamiltonian
-htb = Bandsolvers.TBHamiltonian(h)
-Bandsolvers.diagonalise!(htb)
+htb = sm.TBHamiltonian(h)
+sm.diagonalise!(htb)
 
 fig = plot();
 for r in eachrow(htb.E)
@@ -91,7 +91,7 @@ end
 plot!(xlabel=L"\varphi_x", ylabel="Energy")
 
 # Wannier centres
-Bandsolvers.compute_wanniers!(htb)
+sm.compute_wanniers!(htb)
 fig2 = plot();
 for (iφ, φ) in enumerate(φₓ)
     scatter!(htb.w.pos[:, iφ], fill(φ, size(htb.w.pos, 1)); marker_z=htb.w.E[:, iφ], c=:coolwarm, label=false, markerstrokewidth=0)
@@ -100,7 +100,7 @@ plot!(minorgrid=true, xlabel=L"x", ylabel=L"\varphi_x", cbtitle="Energy")
 
 # Wannier functions
 whichphases = 1:length(φₓ)
-wanniers = Bandsolvers.make_wannierfunctions(htb, whichphases)
+wanniers = sm.make_wannierfunctions(htb, whichphases)
 
 lims = (minimum(htb.w.E)-1, maximum(htb.w.E)+1)
 x_U = range(0, n_cells*π, length=1000n_cells)
@@ -122,8 +122,8 @@ end
 # φₓ = [range(0, 0.005, length=10); range(0.006, 3.11, length=40); range(3.14, pi, length=10)] # good for the system of Nakajima et al.
 n_cells = 4
 gₗ = -7640; Vₗ = -2
-h = Bandsolvers.UnperturbedHamiltonian(n_cells; M=1/2, gₗ, Vₗ, φₓ, maxband=30, isperiodic=false)
-Bandsolvers.diagonalise!(h)
+h = sm.UnperturbedHamiltonian(n_cells; M=1/2, gₗ, Vₗ, φₓ, maxband=30, isperiodic=false)
+sm.diagonalise!(h)
 
 # Energy spectrum
 fig = plot();
@@ -140,12 +140,12 @@ U = @. gₗ*cos(2x)^2 + Vₗ*cos(x + φₓ[iφ])^2
 fig = plot(x ./ π, U, label=false, c=:white, lw=1)
 
 i = 3 # state number
-ψ = 4abs2.(Bandsolvers.make_eigenfunctions(h, x, [iφ], [i])) .+ h.E[i, iφ]
+ψ = 4abs2.(sm.make_eigenfunctions(h, x, [iφ], [i])) .+ h.E[i, iφ]
 hline!([h.E[i, iφ]], c=:white, ls=:dot, lw=0.5, label=false)
 plot!(x ./ π, ψ[:, 1, 1], label=false, title=φ_str, xlabel="z", ylabel="Energy")
 
 # Wannier centres
-Bandsolvers.compute_wanniers!(h, targetband=25, mixsubbands=false)
+sm.compute_wanniers!(h, targetband=25, mixsubbands=false)
 
 fig = plot();
 for (i, φ) in enumerate(φₓ)
@@ -155,7 +155,7 @@ plot!(minorgrid=true, xlabel=L"x", ylabel=L"\varphi_x", cbtitle="Energy")
 
 # Wannier functions
 x = range(0, n_cells*π, length=50n_cells)
-_, w = Bandsolvers.make_wannierfunctions(h, x, 1:length(φₓ))
+_, w = sm.make_wannierfunctions(h, x, 1:length(φₓ))
 lims = (minimum(h.w.E)-0.5, maximum(h.w.E)+2)
 p = Progress(length(φₓ), 1)
 @gif for (i, φ) in enumerate(φₓ)
@@ -170,10 +170,10 @@ end
 
 ##### Wannier functions obtained by mixing all subbands
 
-Bandsolvers.compute_wanniers!(h, targetband=25, mixsubbands=true)
+sm.compute_wanniers!(h, targetband=25, mixsubbands=true)
 
 x = range(0, n_cells*π, length=50n_cells)
-_, w = Bandsolvers.make_wannierfunctions(h, x, 1:length(φₓ))
+_, w = sm.make_wannierfunctions(h, x, 1:length(φₓ))
 lims = (minimum(h.w.E)-0.5, maximum(h.w.E)+2)
 iφ = 1
 U = @. gₗ*cos(2x)^2 + Vₗ*cos(x + φₓ[iφ])^2

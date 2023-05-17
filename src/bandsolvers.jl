@@ -708,4 +708,15 @@ function diagonalise!(tbh::TBFloquetHamiltonian)
     end
 end
 
+export Wanniers,
+    UnperturbedHamiltonian,
+    diagonalise!,
+    make_eigenfunctions,
+    compute_wanniers!,
+    make_wannierfunctions,
+    TBHamiltonian,
+    FloquetHamiltonian,
+    order_floquet_levels,
+    TBFloquetHamiltonian
+
 end

@@ -1,11 +1,9 @@
+using TTSC.Classical
+import TTSC.Bandsolvers as sm
 using Plots, LaTeXStrings, ProgressMeter
+
 plotlyjs()
 theme(:dark, size=(800, 600))
-
-includet("bandsolvers.jl")
-import .Bandsolvers
-
-include("SpacetimeHamiltonian.jl")
 
 function 𝐻₀(p, x, params)
     p^2 + params[1]*cos(2x)^(2params[2]) + params[3]*cos(x)^2
@@ -59,8 +57,8 @@ n_cells = s
 gₗ = -2λₛ*Aₛ
 Vₗ = 2λₗ*Aₗ
 
-h = Bandsolvers.UnperturbedHamiltonian(n_cells; M, gₗ, Vₗ, φₓ=-φₜ/2, maxband=2, isperiodic=true)
-Bandsolvers.diagonalise!(h)
+h = sm.UnperturbedHamiltonian(n_cells; M, gₗ, Vₗ, φₓ=-φₜ/2, maxband=2, isperiodic=true)
+sm.diagonalise!(h)
 h.E .+= -(gₗ + Vₗ)/2 + H.𝐸(Iₛ) - ω/s*Iₛ
 
 # Energy spectrum
@@ -71,8 +69,7 @@ end
 plot!(xlabel=L"\phi_t", ylabel="Energy")
 
 # Wannier centres
-pyplot()
-Bandsolvers.compute_wanniers!(h; targetband=1)
+sm.compute_wanniers!(h; targetband=1, mixsubbands=false)
 fig = plot();
 for (i, ϕ) in enumerate(φₜ)
     scatter!(h.w.pos[:, i], fill(ϕ, 2n_cells); marker_z=h.w.E[:, i], c=:coolwarm, label=false, markerstrokewidth=0)
@@ -81,7 +78,7 @@ plot!(minorgrid=true, xlabel=L"x", ylabel=L"\phi_t", cbtitle="Energy")
 
 # Wannier functions
 x = range(0, n_cells*π, length=50n_cells)
-_, w = Bandsolvers.make_wannierfunctions(h, x, 1:length(φₜ))
+_, w = sm.make_wannierfunctions(h, x, 1:length(φₜ))
 p = Progress(length(φₜ), 1)
 @gif for (i, ϕ) in enumerate(φₜ)
     U = @. -λₛ*Aₛ*cos(4x) + λₗ*Aₗ*cos(2x - ϕ) + H.𝐸(Iₛ) - ω/s*Iₛ
@@ -95,8 +92,8 @@ end
 
 ########## Non-periodic case
 
-h = Bandsolvers.UnperturbedHamiltonian(n_cells; M, gₗ, Vₗ, φₓ=-φₜ/2, maxband=2, isperiodic=false)
-Bandsolvers.diagonalise!(h)
+h = sm.UnperturbedHamiltonian(n_cells; M, gₗ, Vₗ, φₓ=-φₜ/2, maxband=2, isperiodic=false)
+sm.diagonalise!(h)
 h.E .+= -(gₗ + Vₗ)/2 + H.𝐸(Iₛ) - ω/s*Iₛ
 
 # Energy spectrum
@@ -107,7 +104,7 @@ end
 plot!(xlabel=L"\phi_t", ylabel="Energy")
 
 # Wannier centres
-Bandsolvers.compute_wanniers!(h; targetband=1)
+sm.compute_wanniers!(h; targetband=1, mixsubbands=false)
 
 fig = plot();
 for (i, ϕ) in enumerate(φₜ)
@@ -116,7 +113,7 @@ end
 plot!(minorgrid=true, xlabel=L"z", ylabel=L"\phi_t", cbtitle="Energy")
 
 x = range(0, n_cells*π, length=50n_cells)
-_, w = Bandsolvers.make_wannierfunctions(h, x, 1:length(φₜ))
+_, w = sm.make_wannierfunctions(h, x, 1:length(φₜ))
 p = Progress(length(φₜ), 1)
 @gif for (i, ϕ) in enumerate(φₜ)
     U = @. -λₛ*Aₛ*cos(4x) + λₗ*Aₗ*cos(2x - ϕ) + H.𝐸(Iₛ) - ω/s*Iₛ

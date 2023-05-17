@@ -1023,4 +1023,26 @@ function order_wannierfunctions!(w::Array{Float64, 4}, whichphases::AbstractVect
     end
 end
 
+export Wanniers,
+    UnperturbedHamiltonian,
+    diagonalise!,
+    make_eigenfunctions,
+    compute_wanniers!,
+    compute_wanniers,
+    make_wannierfunctions,
+    SimpleTBHamiltonian,
+    kspace_hamiltonian,
+    diagonalise_kspace,
+    TBHamiltonian,
+    FloquetWanniers,
+    swap_wanniers!,
+    FloquetHamiltonian,
+    swap_eigenstates!,
+    optimise_wanniers!,
+    order_wanniers!,
+    TBFloquetHamiltonian,
+    separate_space,
+    separate_time,
+    order_wannierfunctions!
+    
 end
