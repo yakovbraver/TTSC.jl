@@ -502,8 +502,12 @@ function FloquetHamiltonian(uh::UnperturbedHamiltonian; s::Integer, λₛ::Real,
     FloquetHamiltonian(uh, Int(s), Float64(λₛ), Float64(λₗ), Float64(ω), pumptype, E, b, ν, FloquetWanniers())
 end
 
-"Diagonalise the Floquet Hamiltonian `fh` at each phase. If `reorder=true`, then reorder the eigenstates according to the unperturbed order."
-function diagonalise!(fh::FloquetHamiltonian; reorder::Bool=false)
+"""
+Diagonalise the Floquet Hamiltonian `fh` at each phase. If `reorder=true`, then reorder the eigenstates according to the unperturbed order.
+By default, the pumping protocol 𝜑ₜ = 𝜑ₓ is assumed. Alternatively, you can pass a vector `φₜ` of temporal phases, whose length matches that of `fh.uh.φₓ`.
+"""
+function diagonalise!(fh::FloquetHamiltonian; reorder::Bool=false, φₜ::AbstractVector{<:Real}=fh.uh.φₓ)
+    length(fh.uh.φₓ) != length(φₜ) && (@error "length(fh.uh.φₓ) != length(φₜ). Aborting."; return)
     (;N, a, φₓ, E) = fh.uh
     (;s, ω, λₛ, λₗ, pumptype, ν) = fh
 
@@ -512,7 +516,7 @@ function diagonalise!(fh::FloquetHamiltonian; reorder::Bool=false)
     H = zeros(ComplexF64, n_levels, n_levels) # ℋ matrix, will only fill the lower triangle
 
     for ik in 1:N
-        for (iφ, φ) in enumerate(φₓ)
+        for iφ in eachindex(φₓ)
             for m in 1:n_levels
                 # for time-only pumping, always take the eigenenergies at the first phase, which is asssumed to correspond to 𝜑ₓ = 0
                 p = (pumptype == :time ? 1 : iφ)
@@ -528,10 +532,10 @@ function diagonalise!(fh::FloquetHamiltonian; reorder::Bool=false)
                             ∫cos += 𝐹(fh.uh, i, ik, ik, m′, m, iφ, k₂)
                         end
                         ∫cos *= N # restore proper normalisation; `fh.uh.c` used in `𝐹` are normalised over all the cells, but we need one-cell normalisation here
-                        # if pumping is space-time, then also multiply by cis(-𝜑ₜ). `φ` runs over 𝜑ₓ, and we assume the pumping protocol 𝜑ₜ = 𝜑ₓ
-                        H[m′, m] = (pumptype == :space ? λₗ/4 * ∫cos : λₗ/4 * ∫cos * cis(-φ))
+                        # if pumping is space-time, then also multiply by cis(-𝜑ₜ)
+                        H[m′, m] = (pumptype == :space ? λₗ/4 * ∫cos : λₗ/4 * ∫cos * cis(-φₜ[iφ]))
                     elseif pumptype == :time 
-                        H[m′, m] *= cis(-(φₓ[iφ]-φₓ[iφ-1]))
+                        H[m′, m] *= cis(-(φₜ[iφ]-φₜ[iφ-1]))
                     end
                 end
                 
