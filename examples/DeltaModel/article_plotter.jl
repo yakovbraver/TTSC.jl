@@ -1,9 +1,9 @@
+# A script for producing all the figures for https://arxiv.org/abs/2305.07668
 import TTSC.DeltaModel as dm
 using Plots, Measures, LaTeXStrings
 using LinearAlgebra
 
 pythonplot()
-plotlyjs()
 
 "Set plotting defaults and initialise the canvas size with the given `width` and `height` (in cm)"
 function set_defaults(;width, height)

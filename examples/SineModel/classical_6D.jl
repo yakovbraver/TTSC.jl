@@ -1,4 +1,4 @@
-# The driving script for the analysis of Hamiltonians (S2) fom https://doi.org/10.1103/PhysRevB.103.L100301 (https://arxiv.org/abs/2012.02783)
+# A driving script for analysing classical Hamiltonian (S2) from https://doi.org/10.1103/PhysRevB.103.L100301 (https://arxiv.org/abs/2012.02783)
 using TTSC.Classical
 using Plots, LaTeXStrings
 

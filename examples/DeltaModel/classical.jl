@@ -1,3 +1,4 @@
+# A driving script for the classical analysis of Hamiltonian (2) from https://arxiv.org/abs/2305.07668
 using TTSC.Classical
 using Plots, LaTeXStrings, ProgressMeter
 

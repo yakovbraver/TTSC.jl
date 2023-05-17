@@ -1,3 +1,4 @@
+# A driving script for analysing the tight-binding Hamiltonian (4) from https://arxiv.org/abs/2305.07668
 import TTSC.DeltaModel as dm
 using Plots, LaTeXStrings, ProgressMeter
 using LinearAlgebra: diagind

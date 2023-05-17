@@ -1,3 +1,4 @@
+# A driving script for analysing unperturbed spatial Hamiltonian (2) from https://doi.org/10.1103/PhysRevB.106.144301 (https://arxiv.org/abs/2206.14804)
 import TTSC.SineModel as sm
 using Plots, LaTeXStrings, ProgressMeter
 

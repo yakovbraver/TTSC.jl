@@ -1,8 +1,8 @@
+# A driving script for analysing Hamiltonian (2) from https://arxiv.org/abs/2305.07668
 import TTSC.DeltaModel as dm
 using Plots, LaTeXStrings, ProgressMeter
 
 plotlyjs()
-pythonplot()
 theme(:dark, size=(800, 500))
 
 "Produce an animation of potential if `iφ == nothing`; otherwise, plot the potential at phase number `iφ`."

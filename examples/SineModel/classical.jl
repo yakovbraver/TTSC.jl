@@ -1,3 +1,4 @@
+# A driving script for analysing classical Hamiltonian (B1) from https://doi.org/10.1103/PhysRevB.106.144301 (https://arxiv.org/abs/2206.14804)
 using TTSC.Classical
 import TTSC.SineModel as sm
 using Plots, LaTeXStrings, ProgressMeter
@@ -49,6 +50,8 @@ Iₛ, M, coeffs = compute_parameters(H, Function[𝑄ₛ, 𝑄ₗ], [2s, s])
 
 Aₛ = abs(coeffs[1]); χₛ = angle(coeffs[1])
 Aₗ = abs(coeffs[2]); χₗ = angle(coeffs[2])
+
+# Below is the analysis of quantised classical Hamiltonian (B11)
 
 ########## Periodic case
 

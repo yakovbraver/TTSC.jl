@@ -1,3 +1,4 @@
+# A script for producing all the figures for https://doi.org/10.1103/PhysRevB.106.144301 (https://arxiv.org/abs/2206.14804)
 import TTSC.SineModel as sm
 using TTSC.Classical
 using Plots, Measures, LaTeXStrings

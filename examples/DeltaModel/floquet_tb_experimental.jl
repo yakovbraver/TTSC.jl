@@ -1,9 +1,10 @@
+# An experimental version of `floquet_tb.jl`: Wannier functions are constructed only once (for a fixed value of 𝜑ₓ = 𝜑ₜ)
+# instead of construncting repeatedly for all the phases of the pumping protocol
 import TTSC.DeltaModel as dm
 using Plots, LaTeXStrings, ProgressMeter
 using LinearAlgebra: diagind
 
 plotlyjs()
-pythonplot()
 theme(:dark, size=(800, 500))
 
 using LinearAlgebra.BLAS: set_num_threads
