@@ -67,7 +67,7 @@ dm.swap_wanniers!(H.w, 9, 10, eachindex(φₓ))
 
 # Construct the TB Floquet Hamiltonian
 
-pumptype = :time
+pumptype = :space
 Htb = dm.TBFloquetHamiltonian(H, startsubband, pumptype)
 
 # plot the Hamiltonian matrix
@@ -106,17 +106,17 @@ plot!(xlabel=L"\varphi_t", ylabel="Quasienergy", title="TB", legend=false)
 "Return proper order of states depending on pumping type."
 function get_order_tb(iφ::Integer; pumptype::Symbol)
     if pumptype == :time
-        if iφ < 17
+        if iφ < 23
             order = [1, 2]
         else
             order = [2, 1]
         end
     else
-        if iφ < 6
+        if iφ < 7
             order = [1, 2]
-        elseif iφ < 16
+        elseif iφ < 18
             order = [2, 1]
-        elseif iφ < 27
+        elseif iφ < 26
             order = [1, 2]
         else
             order = [2, 1]
