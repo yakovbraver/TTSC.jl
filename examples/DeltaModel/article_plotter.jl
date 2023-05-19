@@ -40,7 +40,7 @@ n_φₓ = 401 # use many phases to resolve the anticrossings in the Floquet spec
 φₓ = range(0, 2pi, n_φₓ)
 h = dm.UnperturbedHamiltonian(n_cells; a, λ, U, φₓ)
 dm.diagonalise!(h; bounds=(300, 10000))
-skipbands = 7 # number of spatial bands that have been skipped by the choice if `bounds` above
+skipbands = 7 # number of spatial bands that have been skipped by the choice of `bounds` above
 λₛ = 20; λₗ = 10; ω = 676.8
 s = 2
 pumptype = :spacetime
@@ -384,8 +384,8 @@ H = dm.FloquetHamiltonian(h; s, λₛ, λₗ, ω, pumptype)
 using ProgressMeter
 @showprogress for iφ in eachindex(φₓ)
     dm.diagonalise!(H; reorder=false, φₜ=fill(φₓ[iφ], length(φₓ)))
-    S[1:end÷2, :, iφ] = H.E[1:M÷2, 1, :] # save first M levels at ik = 1
-    S[end÷2+1:end, :, iφ] = H.E[1:M÷2, 2, :] # save first M levels at ik = 2
+    S[1:end÷2, :, iφ] = H.E[1:M÷2, 1, :] # save all levels at ik = 1
+    S[end÷2+1:end, :, iφ] = H.E[1:M÷2, 2, :] # save all levels at ik = 2
 end
 S.+= 8ω - ω/s*skipbands
 fig2e = plot();
