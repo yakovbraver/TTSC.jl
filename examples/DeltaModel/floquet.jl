@@ -44,7 +44,7 @@ display(fig)
 
 λₛ = 20; λₗ = 10; ω = 676.8
 s = 2
-pumptype = :spacetime
+pumptype = :space
 H = dm.FloquetHamiltonian(h; s, λₛ, λₗ, ω, pumptype)
 dm.diagonalise!(H, reorder=false)
 
@@ -163,7 +163,13 @@ function plot_wanniers(w, iφ)
     phase = iφ > length(φₓ) ? iφ - length(φₓ) : iφ
     for (f, o) in enumerate(get_order(phase; pumptype))
         if iφ > length(φₓ)
+            if pumptype == :space
             f = (f == 1 ? 4 : f == 4 ? 1 : f == 2 ? 3 : 2)
+            elseif pumptype == :time
+                f = (f == 1 ? 2 : f == 2 ? 1 : f == 3 ? 4 : 3)
+            else 
+                f = (f == 1 ? 3 : f == 2 ? 4 : f == 3 ? 1 : 2)
+            end
         end
         figs[f] = heatmap(x/a, Ωt/π, abs2.(w[:, :, o, phase]'), xlabel=L"x/a", ylabel=L"\Omega t/\pi", c=CMAP, title="Wannier $f", clims=(0, 3), xlims=(0, n_cells), ylims=(0, 2))
         shadecells!(figs[f])
