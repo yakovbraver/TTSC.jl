@@ -2,8 +2,6 @@
 import TTSC.DeltaModel as dm
 using Plots, LaTeXStrings, ProgressMeter
 
-plotlyjs()
-pythonplot()
 theme(:dark, size=(800, 500))
 
 using LinearAlgebra.BLAS: set_num_threads
@@ -46,7 +44,7 @@ display(fig)
 
 λₛ = 20; λₗ = 10; ω = 676.8
 s = 2
-pumptype = :time
+pumptype = :spacetime
 H = dm.FloquetHamiltonian(h; s, λₛ, λₗ, ω, pumptype)
 dm.diagonalise!(H, reorder=false)
 
@@ -65,7 +63,7 @@ plot!(xlabel=L"\varphi_x", title=L"\omega=%$ω, \lambda_S=%$λₛ, \lambda_L=%$�
 n_x = 50
 Ωt = range(0, 2π, length=40s)
 iφ = 1
-whichsubbands = 1:2
+whichsubbands = 11:12
 x, u = dm.make_eigenfunctions(H, n_x, Ωt, [iφ], whichsubbands)
 figs = [plot() for _ in 1:length(whichsubbands)*n_cells]
 for n in eachindex(whichsubbands)
@@ -76,7 +74,7 @@ end
 plot(figs...)
 
 # Wannier centres
-targetsubbands = 5:6
+targetsubbands = 11:12
 dm.compute_wanniers!(H; targetsubbands, slide_time=true)
 fig = plot();
 for (i, φ) in enumerate(φₓ)
@@ -95,26 +93,41 @@ plot(figs..., plot_title="φ = $(round(φₓ[iφ], sigdigits=3))")
 
 # Pumping animation
 
-GREEN = colorant"rgb(132, 221, 99)"
-RED   = colorant"rgb(237, 71, 74)"
+YELLOW = colorant"rgb(219, 173, 106)"
+RED    = colorant"rgb(237, 71, 74)"
+GREEN  = colorant"rgb(132, 221, 99)"
+BLUE   = colorant"rgb(54, 201, 198)"
 CMAP = cgrad(:linear_grey_0_100_c0_n256, rev=true)
 
 function shadecells!(fig)
     fillalpha = 0.3; alpha = 0;
-    x = a/6
-    for i in 0:2:6n_cells-1
-        plot!(fig, [i*x, (i+1)x], [2, 2]; fillrange=1.7, fillalpha, alpha, c=GREEN)
-        plot!(fig, [i*x, (i+1)x], [0.7, 0.7]; fillrange=0, fillalpha, alpha, c=GREEN)
-        plot!(fig, [(i+1)x, (i+2)x], [1.7, 1.7]; fillrange=0.7, fillalpha, alpha, c=GREEN, legend=false)
-        vline!([i*x], c=RED)
+    top = [2, 1.5, 1, 0.5]
+    bot = [1.5, 1, 0.5, 0]
+    colours = [GREEN, RED, YELLOW, BLUE]
+    for i in 0:4
+        for j in 1:4
+            plot!(fig, [1/6 + i*1/3, 1/6 + (i+1)*1/3], [top[j], top[j]]; fillrange=bot[j], fillalpha, alpha, c=colours[j])
+        end
+        colours .= circshift(colours, 2)
     end
+    for j in 1:4
+        plot!(fig, [0, 1/6], [top[j], top[j]]; fillrange=bot[j], fillalpha, alpha, c=colours[j])
+        plot!(fig, [11/6, 2], [top[j], top[j]]; fillrange=bot[j], fillalpha, alpha, c=colours[j])
+    end
+    vline!([i/3 for i in 1:5], c=:black, lw=0.3)
 end
 
-"Return proper order of states depending on pumping type."
+"Return proper order of states depending on pumping type. (Hardcoded for `length(φₓ) == 31`.)"
 function get_order(iφ::Integer; pumptype::Symbol)
     if pumptype == :time
-        order = [1, 2, 3, 4]
-    else
+        if iφ < 5
+            order = [1, 2, 3, 4]
+        elseif iφ < 20
+            order = [2, 1, 4, 3]
+        else
+            order = [1, 2, 3, 4]
+        end
+    elseif pumptype == :space
         if iφ < 6
             order = [1, 2, 3, 4]
         elseif iφ < 8
@@ -126,20 +139,45 @@ function get_order(iφ::Integer; pumptype::Symbol)
         else
             order = [3, 4, 1, 2]
         end
+    else
+        if iφ < 4
+            order = [1, 2, 3, 4]
+        elseif iφ < 6
+            order = [2, 1, 4, 3]
+        elseif iφ < 16
+            order = [3, 4, 1, 2]
+        elseif iφ < 20
+            order = [4, 3, 2, 1]
+        elseif iφ < 26
+            order = [3, 4, 1, 2]
+        else
+            order = [4, 3, 2, 1]
+        end
     end
     return order
 end
 
+"Plot Wanniers at phase `iφ`. Pass values `iφ` > `length(φₓ)` to go beyound one period."
+function plot_wanniers(w, iφ)
+    figs = [plot() for _ in 1:length(targetsubbands)*n_cells]
+    phase = iφ > length(φₓ) ? iφ - length(φₓ) : iφ
+    for (f, o) in enumerate(get_order(phase; pumptype))
+        if iφ > length(φₓ)
+            f = (f == 1 ? 4 : f == 4 ? 1 : f == 2 ? 3 : 2)
+        end
+        figs[f] = heatmap(x/a, Ωt/π, abs2.(w[:, :, o, phase]'), xlabel=L"x/a", ylabel=L"\Omega t/\pi", c=CMAP, title="Wannier $f", clims=(0, 3), xlims=(0, n_cells), ylims=(0, 2))
+        shadecells!(figs[f])
+    end
+    plot(figs..., plot_title=L"\varphi_x=\varphi_t = %$(round(φₓ[phase]+2pi*(iφ > length(φₓ)), sigdigits=3))", plot_titlelocation=:left, legend=false)
+end
+
+gr()
 n_x = 50
 Ωt = range(0, 2π, length=40s)
 x, _, w = dm.make_wannierfunctions(H, n_x, Ωt, eachindex(φₓ))
-p = Progress(length(φₓ), 1)
-@gif for iφ in eachindex(φₓ)
-    figs = [plot() for _ in 1:length(targetsubbands)*n_cells]
-    for (f, o) in enumerate(get_order(iφ; pumptype))
-        figs[f] = heatmap(x, Ωt/π, abs2.(w[:, :, o, iφ]'), xlabel=L"x", ylabel=L"\Omega t/\pi", c=CMAP, title="Wannier $f", clims=(0, 3), xlims=(0, a*n_cells), ylims=(0, 2))
-        shadecells!(figs[f])
-    end
-    plot(figs..., plot_title=L"\varphi_x=\varphi_t = %$(round(φₓ[iφ], sigdigits=3))")
+
+p = Progress(2length(φₓ), 1)
+@gif for iφ in 1:2length(φₓ)
+    plot_wanniers(w, iφ)
     next!(p)
 end
