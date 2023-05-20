@@ -32,8 +32,8 @@ function plot_potential(H; U::Real, U_title::Real=U, lift::Real=0, iφ::Union{No
         for n in 1:3
             V .+= 𝑈[n].(x) .* cos(φ + 2π*(n-1)/3)
         end
-        plot(x, V.+lift, ylims=(-1.1U, 2U).+lift, lw=2, c=:white, label=false, xlabel=L"x/a", ylabel="Energy",
-            title=L"a=%$a, U=%$U_title, \lambda=%$(λ), \varphi_x=%$(round(φ, sigdigits=3))", titlepos=:left)
+        plot(x, V.+lift, ylims=(-1.1U, 2U).+lift, xlims=(0, n_cells), lw=2, c=:white, label=false, xlabel=L"x/a", ylabel="Energy",
+             title=L"a=%$a, U=%$U_title, \lambda=%$(λ), \varphi_x=%$(round(φ, sigdigits=3))", titlepos=:left)
         vspan!(barriers, c=:grey, label=false)
     end
 end
@@ -197,6 +197,7 @@ end
 iφ₀ = 1
 targetband = 16
 d, pos, E = dm.compute_wanniers(h; targetband, iφ₀)
+
 n_x = 50
 x, ψ = dm.make_eigenfunctions(h, n_x, targetband, [iφ₀])
 ws = Matrix{ComplexF64}(undef, length(x), 3n_cells)

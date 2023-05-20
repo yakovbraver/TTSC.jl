@@ -60,7 +60,7 @@ p = Progress(length(φₓ), 1)
     for j in axes(w, 2)
         plot!(x ./ π, abs2.(w[:, j, i]) .+ h.w.E[j, i], label=false, c=j)
     end
-    plot!(xlabel=L"x/\pi", ylabel="Energy", title=L"V_{{\rm S}} = %$gₗ, V_{{\rm L}} = %$Vₗ; \varphi_x = %$(round(φ, sigdigits=3))", titlepos=:left)
+    plot!(xlabel=L"x/\pi", ylabel="Energy", title=L"V_{{\rm S}} = %$gₗ, V_{{\rm L}} = %$Vₗ; \varphi_x = %$(round(φ, sigdigits=3))", titlepos=:left, xlims=(0, n_cells))
     next!(p)
 end
 
