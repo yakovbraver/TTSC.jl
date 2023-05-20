@@ -11,19 +11,19 @@ function plot_potential(H; U::Real, U_title::Real=U, lift::Real=0, iφ::Union{No
     x = Float64[]
     barriers = Float64[]
     for i = 0:3N-1
-        append!(barriers, [i*a/3 - 0.01, i*a/3 + 0.01])
-        append!(x, [i*a/3 + 0.005, (i+1)*a/3 - 0.005])
+        append!(barriers, [i/3 - 0.01, i/3 + 0.01])
+        append!(x, [i/3 + 0.005, (i+1)/3 - 0.005])
     end
-    append!(barriers, [3N*a/3 - 0.01, 3N*a/3 + 0.01])
-    𝑈 = [x -> U * dm.𝑔(x; n, a) for n = 0:2]
+    append!(barriers, [3N/3 - 0.01, 3N/3 + 0.01])
+    𝑈 = [x -> U * dm.𝑔(x; n, a=1) for n = 0:2]
     if iφ === nothing
         @gif for φ in φₓ
             V = zeros(length(x))
             for n in 1:3
                 V .+= 𝑈[n].(x) .* cos(φ + 2π*(n-1)/3)
             end
-            plot(x, V.+lift, ylims=(-1.1U, 2U).+lift, lw=2, c=:white, label=false, xlabel=L"x", ylabel="Energy",
-                title=L"a=%$a, U=%$U_title, \lambda=%$(h.λ), \varphi=%$(round(φ, digits=3))", titlepos=:left)
+            plot(x, V.+lift, ylims=(-1.1U, 2U).+lift, lw=2, c=:white, label=false, xlabel=L"x/a", ylabel="Energy",
+                title=L"a=%$a, U=%$U_title, \lambda=%$(h.λ), \varphi_x=%$(round(φ, sigdigits=3))", titlepos=:left)
             vspan!(barriers, c=:grey, label=false)
         end
     else
@@ -32,8 +32,8 @@ function plot_potential(H; U::Real, U_title::Real=U, lift::Real=0, iφ::Union{No
         for n in 1:3
             V .+= 𝑈[n].(x) .* cos(φ + 2π*(n-1)/3)
         end
-        plot(x, V.+lift, ylims=(-1.1U, 2U).+lift, lw=2, c=:white, label=false, xlabel=L"x", ylabel="Energy",
-            title=L"a=%$a, U=%$U_title, \lambda=%$(λ), \varphi=%$(round(φ, digits=3))", titlepos=:left)
+        plot(x, V.+lift, ylims=(-1.1U, 2U).+lift, lw=2, c=:white, label=false, xlabel=L"x/a", ylabel="Energy",
+            title=L"a=%$a, U=%$U_title, \lambda=%$(λ), \varphi_x=%$(round(φ, sigdigits=3))", titlepos=:left)
         vspan!(barriers, c=:grey, label=false)
     end
 end
@@ -155,9 +155,9 @@ p = Progress(length(φₓ), 1)
 @gif for iφ in eachindex(φₓ)
     fig = plot_potential(h; U=0.5, U_title=U, lift, iφ)
     for b in 1:3
-        scatter!(h.w.pos[:, b, iφ], h.w.E[:, b, iφ]; label=false, markerstrokewidth=0, ylims=lims, c=1:n_cells, markersize=5)
+        scatter!(h.w.pos[:, b, iφ] ./ a, h.w.E[:, b, iφ]; label=false, markerstrokewidth=0, ylims=lims, c=1:n_cells, markersize=5)
         for j in 1:n_cells
-            plot!(x, 0.5abs2.(w[:, j, b, iφ]) .+ h.w.E[j, b, iφ], label=false, c=j)
+            plot!(x ./ a, 0.5abs2.(w[:, j, b, iφ]) .+ h.w.E[j, b, iφ], label=false, c=j)
         end
     end
     next!(p)
@@ -169,22 +169,22 @@ function plot_wanniercentres(htb::dm.AbstractTBHamiltonian)
     plot();
     for (iφ, φ) in enumerate(φₓ)
         for b in 1:3
-            scatter!((htb.w.pos[:, b, iφ].+a/6).%(a*htb.N), fill(φ, size(htb.w.pos, 1)); marker_z=htb.w.E[:, b, iφ], c=:coolwarm, label=false, markerstrokewidth=0)
+            scatter!((htb.w.pos[:, b, iφ].+1/6).%htb.N, fill(φ, size(htb.w.pos, 1)); marker_z=htb.w.E[:, b, iφ], c=:coolwarm, label=false, markerstrokewidth=0)
         end
     end
-    plot!(minorgrid=true, xlabel=L"x", ylabel=L"\varphi_x", cbtitle="Energy")
+    plot!(minorgrid=true, xlabel=L"x/a", ylabel=L"\varphi_x", cbtitle="Energy")
 end
 
 function plot_pumping(htb::dm.AbstractTBHamiltonian)
     wanniers = dm.make_wannierfunctions(htb, 1:length(φₓ))
     lift = minimum(htb.w.E) - 1
     lims = (lift-2, maximum(htb.w.E)+2)
-    x = range(start=a/6, step=a/3, length=3htb.N)
+    x = range(start=1/6, step=1/3, length=3htb.N)
     p = Progress(length(φₓ), 1)
     @gif for iφ in eachindex(φₓ)
         fig = plot_potential(htb; U=0.5, U_title=U, lift, iφ)
         for b in 1:3
-            scatter!((htb.w.pos[:, b, iφ].+a/6).%(a*htb.N), htb.w.E[:, b, iφ]; label=false, markerstrokewidth=0, ylims=lims, markersize=5, c=1:htb.N)
+            scatter!((htb.w.pos[:, b, iφ].+1/6).%htb.N, htb.w.E[:, b, iφ]; label=false, markerstrokewidth=0, ylims=lims, markersize=5, c=1:htb.N)
             for j in 1:htb.N
                 plot!(x, abs2.(wanniers[:, j, b, iφ]) .+ htb.w.E[j, b, iφ], label=false, c=j)
             end
@@ -209,7 +209,7 @@ scatter!(pos, E, c=1:3n_cells, markerstrokewidth=0, xlabel=L"x", ylabel="Energy"
 savefig("tb-wanniers.pdf")
 
 # Construct and diagonalise the TB Hamiltonian
-htb = dm.TBHamiltonian(h; d, isperiodic=true, targetband)
+htb = dm.TBHamiltonian(h; d, isperiodic=false, targetband)
 dm.diagonalise!(htb)
 
 # Energy spectrum

@@ -385,6 +385,8 @@ function TBHamiltonian(uh::UnperturbedHamiltonian; d::Matrix{ComplexF64}, iφ₀
         H[:, :, iφ] = H₀ + U * d' * ψ∑ψ * d
     end
 
+    !isperiodic && (H[1, end, :] .= H[end, 1, :] .= 0)
+
     E = Matrix{Float64}(undef, n_w, n_φₓ)
     c = Array{ComplexF64, 3}(undef, n_w, n_w, n_φₓ)
     w = Wanniers(0, Array{Float64,3}(undef, N, 3, length(φₓ)), Array{Float64,3}(undef, N, 3, length(φₓ)),
@@ -401,22 +403,22 @@ end
 
 "Calculate Wannier vectors for each of the three subbands for the TB Hamiltonian `tbh`."
 function compute_wanniers!(tbh::AbstractTBHamiltonian)
-    (;N, a, φₓ) = tbh
+    (;N, φₓ) = tbh
     for b in 1:3
         levels = N*(b-1)+1:N*b
         if tbh.isperiodic
-            X = Diagonal([cis(2π/(N*a) * n*a/3) for n in 0:3N-1]) # position operator in coordinate representation
+                X = Diagonal(cis.(2π/3N .* (0:3N-1))) # position operator in coordinate representation
             for iφ in eachindex(φₓ)
                 XE = tbh.c[:, levels, iφ]' * X * tbh.c[:, levels, iφ] # position operator in energy representation
                 _, tbh.w.d[:, :, b, iφ], pos_complex = schur(XE)
-                pos_real = @. mod2pi(angle(pos_complex)) / 2π * N*a # shift angle from [-π, π) to [0, 2π)
+                pos_real = @. mod2pi(angle(pos_complex)) / 2π * N # shift angle from [-π, π) to [0, 2π)
                 sp = sortperm(pos_real)                        # sort the eigenvalues
                 tbh.w.pos[:, b, iφ] = pos_real[sp]
                 @views Base.permutecols!!(tbh.w.d[:, :, b, iφ], sp) # sort the eigenvectors in the same way
                 tbh.w.E[:, b, iφ] = transpose(tbh.E[levels, iφ]) * abs2.(tbh.w.d[:, :, b, iφ])
             end
         else
-            X = Diagonal([n*a/3 for n in 0:3N-1]) # position operator in coordinate representation
+            X = Diagonal((0:3N-1)./3) # position operator in coordinate representation
             for iφ in eachindex(φₓ)
                 XE = tbh.c[:, levels, iφ]' * X * tbh.c[:, levels, iφ] # position operator in energy representation
                 tbh.w.pos[:, b, iφ], tbh.w.d[:, :, b, iφ] = eigen(Hermitian(XE))
