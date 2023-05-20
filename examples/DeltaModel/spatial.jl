@@ -15,7 +15,7 @@ function plot_potential(H; U::Real, U_title::Real=U, lift::Real=0, iφ::Union{No
         append!(x, [i*a/3 + 0.005, (i+1)*a/3 - 0.005])
     end
     append!(barriers, [3N*a/3 - 0.01, 3N*a/3 + 0.01])
-    𝑈 = [x -> U * DeltaModel.𝑔(x; n, a) for n = 0:2]
+    𝑈 = [x -> U * dm.𝑔(x; n, a) for n = 0:2]
     if iφ === nothing
         @gif for φ in φₓ
             V = zeros(length(x))
@@ -49,8 +49,8 @@ savefig("potential.pdf")
 
 # dispersion
 
-function plot_dispersion(ε::AbstractVector; φ::Real, uh::DeltaModel.UnperturbedHamiltonian)
-    cos_kL = [DeltaModel.cos_ka_tm(E; φ, uh) for E in ε]
+function plot_dispersion(ε::AbstractVector; φ::Real, uh::dm.UnperturbedHamiltonian)
+    cos_kL = [dm.cos_ka_tm(E; φ, uh) for E in ε]
     plot(ε, cos_kL, xlabel=L"\varepsilon", ylabel=L"\cos(ka)", ylims=(-4, 4), ticks=:native, xlims=(0, ε[end]),
          title=L"U=%$U, a=%$a, \lambda=%$λ, \varphi=%$(round(φ, digits=3))", titlepos=:left, label=false)
     hline!([-1, 1], c=:white, label=false)
