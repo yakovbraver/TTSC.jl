@@ -1,4 +1,4 @@
-module Bandsolvers
+module SineModel
 
 using LinearAlgebra: eigen, schur, diagm, diagind, eigvals, ⋅, mul!, Diagonal, Symmetric, Hermitian
 using FLoops: @floop, @init
@@ -707,5 +707,16 @@ function diagonalise!(tbh::TBFloquetHamiltonian)
         tbh.E[:, iφ], tbh.c[:, :, iφ] = eigen(Hermitian(tbh.H[:, :, iφ]))
     end
 end
+
+export Wanniers,
+    UnperturbedHamiltonian,
+    diagonalise!,
+    make_eigenfunctions,
+    compute_wanniers!,
+    make_wannierfunctions,
+    TBHamiltonian,
+    FloquetHamiltonian,
+    order_floquet_levels,
+    TBFloquetHamiltonian
 
 end

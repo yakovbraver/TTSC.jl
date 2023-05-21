@@ -1,3 +1,5 @@
+module Classical
+
 import Roots
 import Optim
 import Dierckx
@@ -5,8 +7,8 @@ using QuadGK: quadgk
 import DifferentialEquations as DiffEq
 using DiffEqPhysics: HamiltonianProblem, DynamicalODEProblem
 
-"A type representing a space-time Hamiltonian."
-mutable struct SpacetimeHamiltonian
+"A type representing a classical Hamiltonian."
+mutable struct ClassicalHamiltonian
     𝐻₀::Function    # free (unperturbed) Hamiltonian
     𝐻::Function     # full Hamiltonian, including time-dependent perturbation
     𝑈::Function     # spatial potential
@@ -20,11 +22,11 @@ mutable struct SpacetimeHamiltonian
 end
 
 """
-Construct a `SpacetimeHamiltonian` object. Either known intervals for the turning points have to be provided (`left_tp` and `right_tp`),
+Construct a `ClassicalHamiltonian` object. Either known intervals for the turning points have to be provided (`left_tp` and `right_tp`),
 or the bracketing intervals for the minimum and the maximum (`min_pos` and `max_pos`) of the spatial potential so that the turning point
 intervals are determined automatically. In the latter case, `turnpoint` is required if the potential is not symmetric, see [`turning_point_intervals`](@ref).
 """
-function SpacetimeHamiltonian(𝐻₀::Function, 𝐻::Function, params::AbstractVector, s::Integer;
+function ClassicalHamiltonian(𝐻₀::Function, 𝐻::Function, params::AbstractVector, s::Integer;
                               left_tp::Union{Nothing, Tuple{Real, Real}}=nothing, right_tp::Union{Nothing, Tuple{Real, Real}}=nothing,
                               min_pos::Union{Nothing, Tuple{Real, Real}}=nothing, max_pos::Union{Nothing, Tuple{Real, Real}}=nothing,
                               turnpoint::Union{Real, Nothing}=nothing)
@@ -33,7 +35,7 @@ function SpacetimeHamiltonian(𝐻₀::Function, 𝐻::Function, params::Abstrac
         left_tp, right_tp = turning_point_intervals(𝑈, min_pos, max_pos, turnpoint)
     end
     𝐸, 𝐸′, 𝐸″ = make_action_functions(𝑈, left_tp, right_tp)
-    SpacetimeHamiltonian(𝐻₀, 𝐻, 𝑈, Float64.(left_tp), Float64.(right_tp), 𝐸, 𝐸′, 𝐸″, params, s)
+    ClassicalHamiltonian(𝐻₀, 𝐻, 𝑈, Float64.(left_tp), Float64.(right_tp), 𝐸, 𝐸′, 𝐸″, params, s)
 end
 
 """
@@ -106,7 +108,7 @@ end
 Return action for the given energy `E` as the integral of momentum over a period of motion.
 The turning points will be determined using the bracketing intervals `H.left_tp` and `H.right_tp`.
 """
-function 𝐼(H::SpacetimeHamiltonian, E::Real)
+function 𝐼(H::ClassicalHamiltonian, E::Real)
     x_min, x_max = turning_points(H.𝑈, E, H.left_tp, H.right_tp)
     # calculate ∫𝑝d𝑥 for a half-period; the second half is the same, hence no division by 2
     return quadgk(x -> 𝑝(H.𝑈, E, x), x_min, x_max, rtol=1e-4)[1] / π # `[1]` contains the integral, `[2]` contains error
@@ -117,7 +119,7 @@ Return the action and mass at the working point. Also return the 𝑚th Fourier 
 where the integer numbers 𝑚 are specified in `m`. `perturbations` are the spatial functions that couple the temporal perturbations;
 Their signature is `f(p, x) = ...`.
 """
-function compute_parameters(H::SpacetimeHamiltonian, perturbations::Vector{Function}, m::Vector{<:Integer})
+function compute_parameters(H::ClassicalHamiltonian, perturbations::Vector{Function}, m::Vector{<:Integer})
     ω = H.params[end]
     Ω = ω / H.s # our choice of the oscillation frequency (of the unperturbed system)
     Iₛ::Float64 = Roots.find_zero(x -> H.𝐸′(x) - Ω, 0.8last(Dierckx.get_knots(H.𝐸)), atol=1e-5) # find which 𝐼ₛ gives the frequency Ω
@@ -163,7 +165,7 @@ Note that some energy 𝐸ⱼ may be such large (due to the perturbation) that t
 no corresponding action 𝐼(𝐸ⱼ) exists. This will happen if `I_target` is too large. In that case, an info message will be printed,
 and energies starting with 𝐸ⱼ will be ignored.
 """
-function compute_IΘ(H::SpacetimeHamiltonian, I_target::Real; χ₀::Real=0, n_T::Integer=100, point_to_angle::Union{Function, Nothing}=nothing)
+function compute_IΘ(H::ClassicalHamiltonian, I_target::Real; χ₀::Real=0, n_T::Integer=100, point_to_angle::Union{Function, Nothing}=nothing)
     abs(χ₀) > 1 && begin @warn "|χ₀| ≤ 1 not satisfied. Setting χ₀ to 0."; χ₀ = 0 end
     
     ω = H.params[end]
@@ -244,4 +246,11 @@ function compute_IΘ(H::SpacetimeHamiltonian, I_target::Real; χ₀::Real=0, n_T
         end
     end
     return I, Θ
+end
+
+export ClassicalHamiltonian,
+    make_action_functions,
+    compute_parameters,
+    compute_IΘ
+
 end

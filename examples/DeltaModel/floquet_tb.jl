@@ -1,35 +1,33 @@
+# A driving script for analysing the tight-binding Hamiltonian (4) from https://arxiv.org/abs/2305.07668
+import TTSC.DeltaModel as dm
 using Plots, LaTeXStrings, ProgressMeter
 using LinearAlgebra: diagind
 
 plotlyjs()
-pyplot()
 theme(:dark, size=(800, 500))
 CMAP = cgrad(:linear_grey_0_100_c0_n256, rev=true)
 
 using LinearAlgebra.BLAS: set_num_threads
 set_num_threads(1)
 
-includet("DeltaModel.jl")
-import .DeltaModel
-
 # Unperturbed Hamiltonian
 
 n_cells = 2
 a = 4; λ = 2000; U = 7
 φₓ = range(0, 2pi, length=31)
-h = DeltaModel.UnperturbedHamiltonian(n_cells; a, λ, U, φₓ)
+h = dm.UnperturbedHamiltonian(n_cells; a, λ, U, φₓ)
 
-DeltaModel.diagonalise!(h; bounds=(300, 10000))
+dm.diagonalise!(h; bounds=(300, 10000))
 
 # Floquet Hamiltonian
 λₛ = 20; λₗ = 10; ω = 676.8
 s = 2
-pumptype = :space
-H = DeltaModel.FloquetHamiltonian(h; s, λₛ, λₗ, ω, pumptype)
-DeltaModel.diagonalise!(H, reorder=true)
+pumptype = :spacetime
+H = dm.FloquetHamiltonian(h; s, λₛ, λₗ, ω, pumptype)
+dm.diagonalise!(H, reorder=true)
 
 # Quasienergy spectrum
-skipbands = 7 # number of spatial bands that have been skipped by the choice if `bounds` above
+skipbands = 7 # number of spatial bands that have been skipped by the choice of `bounds` above
 fig2 = plot();
 for m in axes(h.E, 2)
     for ik in 1:n_cells
@@ -39,33 +37,26 @@ end
 plot!(xlabel=L"\varphi_t=\varphi_x", title=L"\omega=%$ω, \lambda_S=%$λₛ, \lambda_L=%$λₗ, \lambda=%$λ, U=%$U")
 savefig("$λ-$U-$λₛ-$λₗ-$ω-timespace-spectrum.pdf")
 
-# calculate 4D bandwidth and bandgap
-hi = maximum(H.E[90, 2, :])
-mi = minimum(H.E[90, 1, :])
-lo = maximum(H.E[80, 2, :])
-width = 2hi - 2mi
-gap = 2mi - (hi + lo)
-
 ### Floquet TB
 
 # Construct Wanniers
 
-pumptype = :time
-H = DeltaModel.FloquetHamiltonian(h; s, λₛ, λₗ, ω, pumptype)
-DeltaModel.diagonalise!(H, reorder=false)
+pumptype = :spacetime
+H = dm.FloquetHamiltonian(h; s, λₛ, λₗ, ω, pumptype)
+dm.diagonalise!(H, reorder=false)
 
 startsubband = 1
 targetsubbands = range(startsubband, length=12)
 n_subbands = length(targetsubbands)
 
-DeltaModel.compute_wanniers!(H; targetsubbands, Ωt=0.35pi)
-DeltaModel.order_wanniers!(H; optimise=true)
+dm.compute_wanniers!(H; targetsubbands, Ωt=0.35pi)
+dm.order_wanniers!(H; optimise=true)
 
 theme(:dark, size=(1000, 1000))
 iφ = 1
 n_x = 50
 Ωt = range(0, 2π, length=40s)
-x, _, w = DeltaModel.make_wannierfunctions(H, n_x, Ωt, [iφ])
+x, _, w = dm.make_wannierfunctions(H, n_x, Ωt, [iφ])
 figs = [plot() for _ in 1:length(targetsubbands)*n_cells]
 for f in eachindex(figs)
     figs[f] = heatmap(x, Ωt, abs2.(w[:, :, f, 1]'), xlabel=L"x", ylabel=L"\Omega t", c=CMAP, title="Wannier $f")
@@ -74,7 +65,7 @@ plot(figs..., layout=(length(figs)÷4, 4), plot_title=L"\lambda_S=%$λₛ, \lamb
 savefig("$λ-$U-$λₛ-$λₗ-wanniers-odd-problem.png")
 
 # Construct the TB Floquet Hamiltonian
-Htb = DeltaModel.TBFloquetHamiltonian(H, periodicity=:both)
+Htb = dm.TBFloquetHamiltonian(H, periodicity=:both)
 
 # plot the Hamiltonian matrix
 M = copy(Htb.H[:, :, 1])
@@ -95,7 +86,7 @@ plot!(title="Temporal couplings", xlabel=L"\varphi_t", ylabel="Quasienergy")
 savefig("$λ-$U-$λₛ-$λₗ-temporal-couplings.pdf")
 
 # Diagonalise TB Hamiltonian
-DeltaModel.diagonalise!(Htb)
+dm.diagonalise!(Htb)
 skipbands = 2
 fig = plot();
 for r in eachrow(Htb.E)
@@ -104,29 +95,31 @@ end
 plot!(xlabel=L"\varphi_t=\varphi_x", ylabel="Quasienergy", title="Time-space pumping, periodic in both time and space", legend=false)
 savefig("$λ-$U-$λₛ-$λₗ-time-spectrum_periodic.pdf")
 
-"Return proper order of states depending on pumping type."
+"Return proper order of states depending on pumping type. (Hardcoded for `length(φₓ) == 31`.)"
 function get_order_tb(iφ::Integer; pumptype::Symbol)
     if pumptype == :time
-        if iφ < 17
+        if iφ < 9
             order = [1, 2, 3, 4]
+        elseif iφ < 18
+            order = [4, 3, 1, 2]
         else
             order = [2, 1, 4, 3]
         end
     elseif pumptype == :space
-        if iφ < 5
+        if iφ < 6
             order = [1, 2, 3, 4]
         elseif iφ < 7
-            order = [4, 1, 2, 3]
+            order = [1, 4, 3, 2]
         else
             order = [3, 4, 1, 2]
         end
     else
-        if iφ < 7
+        if iφ < 6
             order = [1, 2, 3, 4]
         elseif iφ < 16
-            order = [2, 1, 4, 3]
+            order = [3, 4, 1, 2]
         elseif iφ < 20
-            order = [1, 4, 3, 2]
+            order = [1, 2, 4, 3]
         else
             order = [4, 3, 2, 1]
         end
@@ -141,28 +134,33 @@ function plot_tb_wanniers(w, iφ)
     phase = iφ > length(φₓ) ? iφ - length(φₓ) : iφ
     for (f, o) in enumerate(get_order_tb(phase; pumptype))
         if iφ > length(φₓ)
-            f = (f == 1 ? 4 : f == 4 ? 1 : f == 2 ? 3 : 2)
+            if pumptype == :space
+                f = (f == 1 ? 3 : f == 2 ? 4 : f == 3 ? 1 : 2)
+            elseif pumptype == :time
+                f = (f == 1 ? 2 : f == 2 ? 1 : f == 3 ? 4 : 3)
+            else
+                f = (f == 1 ? 4 : f == 4 ? 1 : f == 2 ? 3 : 2)
+            end
         end
         figs[f] = heatmap(1:3n_cells, 1:n_t, w[:, :, o, phase]; clims=extrema(w), c=CMAP, xticks=1:3n_cells, yticks=1:n_t,
-        xlabel="spatial site", ylabel="temporal site", title="Wannier $f")
+                          xlabel="spatial site", ylabel="temporal site", title="Wannier $f")
     end
-    plot(figs..., plot_title=L"\varphi_x=\varphi_t = %$(round(φₓ[phase]+2pi*(iφ > length(φₓ)), sigdigits=3))")
-    # plot(figs..., plot_title=L"\varphi_t = %$(round(φₓ[iφ], sigdigits=3))")
+    plot(figs..., plot_title=L"\varphi_x=\varphi_t = %$(round(φₓ[phase]+2pi*(iφ > length(φₓ)), sigdigits=3))", plot_titlelocation=:left)
 end
 
 targetlevels = 21:24
-DeltaModel.compute_wanniers!(Htb, targetlevels)
+dm.compute_wanniers!(Htb, targetlevels)
+dm.swap_wanniers!(Htb.w, 2, 3, eachindex(φₓ)) # swap wanniers 2 and 3 so that 1 and 2 (also 3 and 4) occupy the same spatial sites
 whichphases = eachindex(φₓ)
-w = abs2.(DeltaModel.make_wannierfunctions(Htb, whichphases))
+w = abs2.(dm.make_wannierfunctions(Htb, whichphases))
 plot(Htb.w.pos')
 
-iφ = 5
+iφ = 1
 plot_tb_wanniers(w, iφ)
 
-pyplot()
-p = Progress(length(φₓ), 1)
-@gif for iφ in eachindex(φₓ)
-    plot_tb_wanniers(w, iφ)    
+p = Progress(2length(φₓ), 1)
+@gif for iφ in 1:2length(φₓ)
+    plot_tb_wanniers(w, iφ)
     next!(p)
 end
 
@@ -170,14 +168,14 @@ end
 using LinearAlgebra: eigvals, Hermitian
 
 # spatial part
-H_S = DeltaModel.separate_space(Htb, N=5, periodic=false)
-S_E = Matrix{Float64}(size(H_S, 1), size(H_S, 3))
+H_S = dm.separate_space(Htb; N=5, periodic=false)
+S_E = Matrix{Float64}(undef, size(H_S, 1), size(H_S, 3))
 for iφ in axes(H_S, 3)
-    S_E[:, iφ] = eigvals(Hermitian(H_S[:, :, iφ]))
+    S_E[:, iφ] = eigvals(Hermitian(H_S[:, :, iφ])) #.+ 8ω .- ω/s*skipbands
 end
-fig = plot();
+figa = plot();
 for r in eachrow(S_E)
-    plot!(φₓ, r, legend=false)
+    plot!(φₓ ./ π, r, legend=false)
 end
 plot!(xlabel=L"\varphi_x", title="Spectrum of separated spatial lattice")
 savefig("$λ-$U-$λₛ-$λₗ-separated-spatial-nonperiodic.pdf")

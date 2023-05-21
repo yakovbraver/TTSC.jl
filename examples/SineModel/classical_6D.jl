@@ -1,11 +1,9 @@
-# The driving script for the analysis of Hamiltonians (9) and (13) from arXiv:2012.02783
-
+# A driving script for analysing classical Hamiltonian (S2) from https://doi.org/10.1103/PhysRevB.103.L100301 (https://arxiv.org/abs/2012.02783)
+using TTSC.Classical
 using Plots, LaTeXStrings
-pyplot()
+
 plotlyjs()
 theme(:dark, size=(800, 500))
-
-include("SpacetimeHamiltonian.jl")
 
 function 𝐻₀(p, x, params)
     p^2 + params[1]*sin(x)^2
@@ -23,9 +21,9 @@ V₀ = 4320.0; ω = 240.0; λ = 0.01;
 s = 3
 params = [V₀, λ, ω]
 # plot(range(0, 2π, length=200), x -> 𝐻₀(0, x, params))
-H = SpacetimeHamiltonian(𝐻₀, 𝐻, params, s, min_pos=(3.0, 3.2), max_pos=(1.4, 1.6))
+H = ClassicalHamiltonian(𝐻₀, 𝐻, params, s, min_pos=(3.0, 3.2), max_pos=(1.4, 1.6))
 
-function plot_actions(H::SpacetimeHamiltonian)
+function plot_actions(H::ClassicalHamiltonian)
     figs = [plot() for _ in 1:4];
     x = range(0, 2π, length=50);
     figs[1] = plot(x, H.𝑈, xlabel=L"x", ylabel=L"U(x)=V_0\sin^{2}(x)", legend=false);
@@ -54,6 +52,8 @@ p₀ = 0.0; x₀ = 2.0;
 #     𝑦″ + 4𝑉₀sin(𝑦) = 0
 # with the initial condition 𝑦(0) = 2𝑥₀. The period is then
 #     𝑇 = 4 / √(4𝑉₀) 𝐾(𝑚²), where 𝑚 = sin(𝑦(0)/2) = sin(𝑥₀)
+import DifferentialEquations as DiffEq
+using DiffEqPhysics: HamiltonianProblem
 import Elliptic
 m = sin(x₀)
 T = 2 / √V₀ * Elliptic.K(m^2)

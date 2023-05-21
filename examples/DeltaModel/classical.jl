@@ -1,8 +1,9 @@
+# A driving script for the classical analysis of Hamiltonian (2) from https://arxiv.org/abs/2305.07668
+using TTSC.Classical
 using Plots, LaTeXStrings, ProgressMeter
+
 plotlyjs()
 theme(:dark, size=(800, 600))
-
-include("SpacetimeHamiltonian.jl")
 
 function 𝐻₀(p, x, params)
     σ, l, λ = params
@@ -32,14 +33,15 @@ l = a/3
 s = 2
 params = [σ, l, λ, λₛ, λₗ, ω]
 
-H = SpacetimeHamiltonian(𝐻₀, 𝐻, params, s, left_tp=(-1.06l/2, 0.0), right_tp=(0.0, 1.06l/2))
+H = ClassicalHamiltonian(𝐻₀, 𝐻, params, s, left_tp=(-1.06l/2, 0.0), right_tp=(0.0, 1.06l/2))
 
 Iₛ, M, coeffs = compute_parameters(H, Function[𝑄ₛ, 𝑄ₗ], [2s, s])
 
 Aₛ = abs(coeffs[1]); χₛ = angle(coeffs[1])
 Aₗ = abs(coeffs[2]); χₗ = angle(coeffs[2])
 
-function plot_actions(H::SpacetimeHamiltonian)
+import Dierckx
+function plot_actions(H::ClassicalHamiltonian)
     figs = [plot() for _ in 1:4];
     x = range(-1.2l/2, 1.2l/2, length=200);
     I = Dierckx.get_knots(H.𝐸)
@@ -65,6 +67,9 @@ x₀ = -1.04l/2
 p₀ = 0.0
 
 # calculate `n_T` periods of unperturbed motion to check accuracy
+import DifferentialEquations as DiffEq
+using DiffEqPhysics: HamiltonianProblem
+
 T =  l/sqrt(𝐻₀(p₀, x₀, params)) # analytical period 
 n_T = 100
 tspan = (0, n_T*T)
@@ -89,7 +94,6 @@ for i in eachindex(I), t in eachindex(ϑ)
     E[t, i] = h₀ + (I[i]-Iₛ)^2/2M + λₛ*Aₛ*cos(2s*ϑ[t] - χₛ) + λₗ*Aₗ*cos(s*ϑ[t] - χₗ)
 end
 figa = contour(ϑ ./ π, I, E', xlabel=L"\Theta/\pi", ylabel=L"I", minorgrid=true, c=[:white], colorbar=false)
-ylims!(figa, (17.5, 30))
 savefig(figa, "secular.pdf")
 
 ### Make an "exact" plot of the motion in the (𝐼, ϑ) phase-space
@@ -118,9 +122,7 @@ savefig(figb, "exact.pdf")
 
 # Quantisation
 
-include("bandsolvers.jl")
-
-import .Bandsolvers
+import TTSC.SineModel as sm
 
 φₜ = range(0, 2π, length=61)
 n_cells = s
@@ -128,8 +130,8 @@ gₗ = 2λₛ*Aₛ
 Vₗ = -2λₗ*Aₗ
 M = l^2 / 2π^2 # analytical result
 
-h = Bandsolvers.UnperturbedHamiltonian(n_cells; M, gₗ=gₗ, Vₗ=Vₗ, φₓ=-φₜ/2, maxband=4, isperiodic=true)
-Bandsolvers.diagonalise!(h)
+h = sm.UnperturbedHamiltonian(n_cells; M, gₗ=gₗ, Vₗ=Vₗ, φₓ=-φₜ/2, maxband=4, isperiodic=true)
+sm.diagonalise!(h)
 h.E .+= -(gₗ + Vₗ)/2 + H.𝐸(Iₛ) - ω/s*Iₛ
 
 # Energy spectrum
@@ -138,12 +140,11 @@ for r in eachrow(h.E)
     plot!(φₜ, r, label=false)
 end
 plot!(xlabel=L"\varphi_t", ylabel="Energy")
-ylims!(-2960, -2936)
 savefig("qc-spectrum.pdf")
 
 # Wannier centres
 
-Bandsolvers.compute_wanniers!(h; targetband=1)
+sm.compute_wanniers!(h; targetband=1, mixsubbands=false)
 fig = plot();
 for (i, φ) in enumerate(φₜ)
     scatter!(h.w.pos[:, i], fill(φ, 2n_cells); marker_z=h.w.E[:, i], c=:coolwarm, label=false, markerstrokewidth=0)
@@ -153,7 +154,7 @@ savefig("qc-centres.pdf")
 
 # Wannier functions
 x = range(0, n_cells*π, length=50n_cells)
-_, w = Bandsolvers.make_wannierfunctions(h, x, 1:length(φₜ))
+_, w = sm.make_wannierfunctions(h, x, 1:length(φₜ))
 p = Progress(length(φₜ), 1)
 @gif for (i, φ) in enumerate(φₜ)
     U = @. gₗ*cos(4x) + Vₗ*cos(2x - φ) + H.𝐸(Iₛ) - ω/s*Iₛ
