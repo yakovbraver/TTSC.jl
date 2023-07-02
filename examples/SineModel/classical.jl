@@ -32,6 +32,7 @@ s = 2
 params = [gₗ, l, Vₗ, λₛ, λₗ, ω]
 H = ClassicalHamiltonian(𝐻₀, 𝐻, params, s, min_pos=(1.5, 2), max_pos=(2, 2.5))
 
+import Dierckx
 function plot_actions(H::ClassicalHamiltonian)
     figs = [plot() for _ in 1:4];
     x = range(0, 2π, length=200);

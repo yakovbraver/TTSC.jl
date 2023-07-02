@@ -67,7 +67,7 @@ x₀ = -1.04l/2
 p₀ = 0.0
 
 # calculate `n_T` periods of unperturbed motion to check accuracy
-import DifferentialEquations as DiffEq
+import OrdinaryDiffEq as DiffEq
 using DiffEqPhysics: HamiltonianProblem
 
 T =  l/sqrt(𝐻₀(p₀, x₀, params)) # analytical period 
