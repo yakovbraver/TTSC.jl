@@ -88,7 +88,7 @@ p = Progress(length(φₜ), 1)
     U = @. -λₛ*Aₛ*cos(4x) + λₗ*Aₗ*cos(2x - ϕ) + H.𝐸(Iₛ) - ω/s*Iₛ
     plot(x, U, label=false, ylims=(-5610, -5575))
     scatter!(h.w.pos[:, i], h.w.E[:, i]; marker_z=h.w.E[:, i], c=:coolwarm, label=false, markerstrokewidth=0, clims=(-5610, -5575))
-    for j in 1:size(w, 2)
+    for j in axes(w, 2)
         plot!(x, 4abs2.(w[:, j, i]) .+ h.w.E[j, i], label=false)
     end
     next!(p)
@@ -123,7 +123,7 @@ p = Progress(length(φₜ), 1)
     U = @. -λₛ*Aₛ*cos(4x) + λₗ*Aₗ*cos(2x - ϕ) + H.𝐸(Iₛ) - ω/s*Iₛ
     plot(x, U, label=false, ylims=(-5610, -5575))
     scatter!(h.w.pos[:, i], h.w.E[:, i]; marker_z=h.w.E[:, i], c=:coolwarm, label=false, markerstrokewidth=0, clims=(-5610, -5575))
-    for j in 1:size(w, 2)
+    for j in axes(w, 2)
         plot!(x, 4abs2.(w[:, j, i]) .+ h.w.E[j, i], label=false)
     end
     next!(p)
