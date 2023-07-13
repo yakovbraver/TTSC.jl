@@ -23,6 +23,7 @@ params = [V₀, λ, ω]
 # plot(range(0, 2π, length=200), x -> 𝐻₀(0, x, params))
 H = ClassicalHamiltonian(𝐻₀, 𝐻, params, s, min_pos=(3.0, 3.2), max_pos=(1.4, 1.6))
 
+import Dierckx
 function plot_actions(H::ClassicalHamiltonian)
     figs = [plot() for _ in 1:4];
     x = range(0, 2π, length=50);
@@ -52,7 +53,7 @@ p₀ = 0.0; x₀ = 2.0;
 #     𝑦″ + 4𝑉₀sin(𝑦) = 0
 # with the initial condition 𝑦(0) = 2𝑥₀. The period is then
 #     𝑇 = 4 / √(4𝑉₀) 𝐾(𝑚²), where 𝑚 = sin(𝑦(0)/2) = sin(𝑥₀)
-import DifferentialEquations as DiffEq
+import OrdinaryDiffEq as DiffEq
 using DiffEqPhysics: HamiltonianProblem
 import Elliptic
 m = sin(x₀)
