@@ -1,4 +1,4 @@
-# A driving script for the classical analysis of Hamiltonian (2) from https://arxiv.org/abs/2305.07668
+# A driving script for the classical analysis of Hamiltonian (1) from https://doi.org/10.1103/physrevb.108.l020303 (https://arxiv.org/abs/2305.07668)
 using TTSC.Classical
 using Plots, LaTeXStrings, ProgressMeter
 
@@ -67,7 +67,7 @@ x₀ = -1.04l/2
 p₀ = 0.0
 
 # calculate `n_T` periods of unperturbed motion to check accuracy
-import DifferentialEquations as DiffEq
+import OrdinaryDiffEq as DiffEq
 using DiffEqPhysics: HamiltonianProblem
 
 T =  l/sqrt(𝐻₀(p₀, x₀, params)) # analytical period 

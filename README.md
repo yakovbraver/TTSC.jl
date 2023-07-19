@@ -7,7 +7,7 @@ For usage examples, see the `examples` folder.
 For further details, please refer to:
 
 * [Phys. Rev. B **106**, 144301 (2022)](https://journals.aps.org/prb/abstract/10.1103/PhysRevB.106.144301) or [arXiv:2206.14804](https://arxiv.org/abs/2206.14804)
-* [arXiv:2305.07668](https://arxiv.org/abs/2305.07668)
+* [Phys. Rev. B **108**, L020303 (2023)](https://journals.aps.org/prb/abstract/10.1103/PhysRevB.108.L020303) or [arXiv:2305.07668](https://arxiv.org/abs/2305.07668)
 
 ## Visualisation of Thouless pumping using the Wannier states
 

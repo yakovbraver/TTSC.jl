@@ -4,8 +4,8 @@ import Roots
 import Optim
 import Dierckx
 using QuadGK: quadgk
-import DifferentialEquations as DiffEq
-using DiffEqPhysics: HamiltonianProblem, DynamicalODEProblem
+import OrdinaryDiffEq as DiffEq
+using DiffEqPhysics: HamiltonianProblem
 
 "A type representing a classical Hamiltonian."
 mutable struct ClassicalHamiltonian

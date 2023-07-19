@@ -1,4 +1,4 @@
-# A driving script for analysing Hamiltonian (2) from https://arxiv.org/abs/2305.07668
+# A driving script for analysing Hamiltonian (2) from https://doi.org/10.1103/physrevb.108.l020303 (https://arxiv.org/abs/2305.07668)
 import TTSC.DeltaModel as dm
 using Plots, LaTeXStrings, ProgressMeter
 
