@@ -1,7 +1,7 @@
 name = "TTSC"
 uuid = "f8e47de0-90c4-48ec-a6c2-713e7f641db1"
 authors = ["Yakov Braver jakovbraver@gmail.com"]
-version = "1.0.0-DEV"
+version = "1.0.0"
 
 [deps]
 Dierckx = "39dd38d3-220a-591b-8e3c-4c3a8c710a94"

@@ -1,4 +1,4 @@
-# A script for producing all the figures for https://arxiv.org/abs/2305.07668
+# A script for producing all the figures for https://doi.org/10.1103/physrevb.108.l020303 (https://arxiv.org/abs/2305.07668)
 import TTSC.DeltaModel as dm
 using Plots, Measures, LaTeXStrings
 using LinearAlgebra
