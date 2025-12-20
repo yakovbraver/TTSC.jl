@@ -117,7 +117,7 @@ iφ = 68
 x, _, w = dm.make_wannierfunctions(H, n_x, Ωt, [iφ])
 figc = four_wanniers(w, L"\pi/3", [3, 4, 2, 1])
 
-plot(figS2a, figb, figc, layout=grid(1, 3, widths=[0.285, 0.35, 0.35]), plot_title="", dpi=600)
+plot(figS2a, figb, figc, layout=grid(1, 3, widths=[0.28, 0.36, 0.36]), plot_title="", dpi=600)
 savefig("figS2.png")
 
 ##########

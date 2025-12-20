@@ -22,7 +22,7 @@ BLUE2   = colorant"rgb(56, 111, 164)"
 GREY2  = colorant"rgb(180, 180, 180)"
 BLACK  = colorant"rgb(13, 19, 33)"
 CMAP = cgrad(:linear_grey_0_100_c0_n256, rev=true)
-hideaxis(x) = "" # use `yformatter=hideaxis` when `yformatter=_->""` randomly doesn't work
+hideaxis(x) = "" # use `yformatter=hideaxis` when `yformatter=hideaxis` randomly doesn't work
 
 l = 1
 gₗ = -7640
@@ -88,7 +88,7 @@ w = abs2.(w_c)
 iϕ = 1
 fig1 = heatmap(x ./ π, Ωt ./ π, w[:, :, 1, iϕ]', xlabel=L"x/\pi", ylabel=L"\Omega t/\pi", title=L"|w_{1}(x,t)|^2", c=CMAP, cbar=false)
 shadecells_2!(fig1)
-fig2 = heatmap(x ./ π, Ωt ./ π, w[:, :, 2, iϕ]', xlabel=L"x/\pi", yformatter=_->"", title=L"|w_{2}(x,t)|^2", c=CMAP, cbar=false)
+fig2 = heatmap(x ./ π, Ωt ./ π, w[:, :, 2, iϕ]', xlabel=L"x/\pi", yformatter=hideaxis, title=L"|w_{2}(x,t)|^2", c=CMAP, cbar=false)
 shadecells_2!(fig2)
 
 # with these widths the two plots come out the same in the final plot (probably because the left one has `ylabel` while the right doesn't)
@@ -99,7 +99,7 @@ figab = plot(figa, figb, layout=grid(2, 1, heights=[0.7, 0.3]))
 
 iϕ = 1
 i_x = 16
-fig1 = plot(Ωt ./ π, w[i_x, :, 1, iϕ], c=BLACK, xformatter=_->"", ylabel=L"|w_\alpha(x_0,t)|^2", label=L"\alpha=1")
+fig1 = plot(Ωt ./ π, w[i_x, :, 1, iϕ], c=BLACK, xformatter=hideaxis, ylabel=L"|w_\alpha(x_0,t)|^2", label=L"\alpha=1")
 plot!(Ωt ./ π, w[i_x, :, 2, iϕ], c=GREY2, label=L"\alpha=2", title=L"\varphi_t=0", bgcolorlegend=RGBA(1, 1, 1, 0.3), fgcolorlegend=RGBA(0, 0, 0, 0.3))
 
 iϕ = 16
@@ -110,9 +110,9 @@ figc = plot(fig1, fig2, layout=(2,1), link=:x)
 
 ### Maps of Wannier functions
 
-fig1 = heatmap(Ωt ./ π, 2φₓ ./ π, w[i_x, :, 1, :]', xformatter=_->"", ylabel=L"\varphi_t/\pi", title="x", cbartitle=L"|w_1(x_0,t)|^2", c=CMAP, rightmargin=-10mm)
+fig1 = heatmap(Ωt ./ π, 2φₓ ./ π, w[i_x, :, 1, :]', xformatter=hideaxis, ylabel=L"\varphi_t/\pi", title="x", cbartitle=L"|w_1(x_0,t)|^2", c=CMAP, rightmargin=-10mm)
 vspan!([0, 1], c=GREEN, label=L"\gamma=1", alpha=0.3)
-vspan!([1, 2], xformatter=_->"", c=RED, label=L"\gamma=2", alpha=0.3, widen=false, xlims=(0, 2))
+vspan!([1, 2], xformatter=hideaxis, c=RED, label=L"\gamma=2", alpha=0.3, widen=false, xlims=(0, 2))
 fig2 = heatmap(Ωt ./ π, 2φₓ ./ π, w[i_x, :, 2, :]', xlabel=L"\Omega t/\pi", ylabel=L"\varphi_t/\pi", cbartitle=L"|w_2(x_0,t)|^2", c=CMAP, rightmargin=-10mm)
 vspan!([0, 1], c=GREEN, label=false, alpha=0.3)
 vspan!([1, 2], c=RED, label=false, alpha=0.3, widen=false, xlims=(0, 2))
@@ -160,7 +160,7 @@ i_t = 21
 swap_wanniers!(w, 1, 2, 31:lastindex(φₓ))
 
 iϕ = 1
-fig1 = plot(x ./ π, w[:, i_t, 1, iϕ], c=BLACK, xformatter=_->"", ylabel=L"|w_{i,1}(x,t_0)|^2", label=L"i=1", lw=0.5)
+fig1 = plot(x ./ π, w[:, i_t, 1, iϕ], c=BLACK, xformatter=hideaxis, ylabel=L"|w_{i,1}(x,t_0)|^2", label=L"i=1", lw=0.5)
 plot!(x ./ π, w[:, i_t, 2, iϕ], c=GREY2, label=L"i=2", title=L"\varphi_x=0", bgcolorlegend=RGBA(1, 1, 1, 0.3), fgcolorlegend=RGBA(0, 0, 0, 0.3), lw=0.5)
 
 iϕ = 16
@@ -173,7 +173,7 @@ figb = plot(fig1, fig2, layout=(2,1), link=:x)
 
 fig1 = heatmap(x ./ π, φₓ ./ π, w[:, i_t, 1, :]', ylabel=L"\varphi_x/\pi", title="x", cbartitle=L"|w_{1,1}(x,t_0)|^2", c=CMAP, rightmargin=-10mm)
 vspan!([0, 1/4-0.02, 5/4+0.02, 7/4-0.02, 7/4+0.02, 2], c=GREEN, label=L"k=1", alpha=0.3)
-vspan!([1/4+0.02, 3/4-0.02, 3/4+0.02, 5/4-0.02], xformatter=_->"", c=BLUE, label=L"k=2", alpha=0.3, widen=false, xlims=(0, 2))
+vspan!([1/4+0.02, 3/4-0.02, 3/4+0.02, 5/4-0.02], xformatter=hideaxis, c=BLUE, label=L"k=2", alpha=0.3, widen=false, xlims=(0, 2))
 fig2 = heatmap(x ./ π, φₓ ./ π, w[:, i_t, 2, :]', xlabel=L"x/\pi", ylabel=L"\varphi_x/\pi", cbartitle=L"|w_{2,1}(x,t_0)|^2", c=CMAP, rightmargin=-10mm)
 vspan!([0, 1/4-0.02, 5/4+0.02, 7/4-0.02, 7/4+0.02, 2], c=GREEN, label=false, alpha=0.3)
 vspan!([1/4+0.02, 3/4-0.02, 3/4+0.02, 5/4-0.02], c=BLUE, label=false, alpha=0.3, widen=false, xlims=(0, 2))
@@ -240,13 +240,13 @@ function shadecells!(fig; addlabel)
 end
 
 function four_wanniers(w, iϕ, ϕ_str, addlabel=false)
-    figa = heatmap(x ./ π, Ωt ./ π, w[:, :, 1, iϕ]', xformatter=_->"", ylabel=L"\Omega t/\pi", title=L"|w_{1,1}(x,t)|^2", c=CMAP, cbar=false)
+    figa = heatmap(x ./ π, Ωt ./ π, w[:, :, 1, iϕ]', xformatter=hideaxis, ylabel=L"\Omega t/\pi", title=L"|w_{1,1}(x,t)|^2", c=CMAP, cbar=false)
     shadecells!(figa; addlabel)
-    figb = heatmap(x ./ π, Ωt ./ π, w[:, :, 2, iϕ]', xformatter=_->"", yformatter=_->"", title=L"|w_{1,2}(x,t)|^2", c=CMAP, cbar=false)
+    figb = heatmap(x ./ π, Ωt ./ π, w[:, :, 2, iϕ]', xformatter=hideaxis, yformatter=hideaxis, title=L"|w_{1,2}(x,t)|^2", c=CMAP, cbar=false)
     shadecells!(figb; addlabel=false)
     figc = heatmap(x ./ π, Ωt ./ π, w[:, :, 3, iϕ]', xlabel=L"x/\pi", ylabel=L"\Omega t/\pi", title=L"|w_{2,1}(x,t)|^2", c=CMAP, cbar=false)
     shadecells!(figc; addlabel=false)
-    figd = heatmap(x ./ π, Ωt ./ π, w[:, :, 4, iϕ]', xlabel=L"x/\pi", yformatter=_->"", title=L"|w_{2,2}(x,t)|^2", c=CMAP, cbar=false)
+    figd = heatmap(x ./ π, Ωt ./ π, w[:, :, 4, iϕ]', xlabel=L"x/\pi", yformatter=hideaxis, title=L"|w_{2,2}(x,t)|^2", c=CMAP, cbar=false)
     shadecells!(figd; addlabel=false)
     return plot(figa, figb, figc, figd, layout=(2, 2), link=:both, plot_title=L"\varphi_t=2\varphi_x="*ϕ_str, xaxis=((0, 2), 0:1:2), yaxis=((0, 2), 0:1:2))
 end
@@ -270,8 +270,12 @@ figd = four_wanniers(w, 31, L"\pi")
 fige = four_wanniers(w, 44, L"3\pi/2")
 figf = four_wanniers(w, 60, L"2\pi")
 
-# if widths are not specified, then the first column is 1.23 times wider than the others. 
-plot(figa, figb, figc, figd, fige, figf, layout=grid(2, 3, widths=[0.285, 0.35, 0.35, 0.285, 0.35, 0.35]), plot_title="")
+# if widths are not specified, then the first column is wider than the others
+l = @layout [
+     a{0.28w} b{0.36w} c{0.36w}
+     d{0.28w} e{0.36w} f{0.36w}
+    ]
+plot(figa, figb, figc, figd, fige, figf, layout=l, plot_title="")
 savefig("fig3.pdf")
 
 ##########
@@ -375,7 +379,7 @@ iϕ = 1
 fig1 = plot(θ ./ π, 𝑈(iϕ), label=false, c=BLUE2, lw=2)
 plot!(θ ./ π, 4abs2.(w[:, 1, iϕ]) .+ h.w.E[1, iϕ], c=BLACK, label=L"|w_1|^2")
 plot!(θ ./ π, 4abs2.(w[:, 2, iϕ]) .+ h.w.E[2, iϕ], c=GREY2, label=L"|w_2|^2", ylims=(-5610, -5575))
-plot!(xformatter=_->"", ylabel=L"E_{\rm eff}"*" (recoil units)", title=L"\varphi_t=0", legend=(0.01, 0.001), bgcolorlegend=RGBA(1, 1, 1, 0.3), fgcolorlegend=RGBA(0, 0, 0, 0.3))
+plot!(xformatter=hideaxis, ylabel=L"E_{\rm eff}"*" (recoil units)", title=L"\varphi_t=0", legend=(0.01, 0.001), bgcolorlegend=RGBA(1, 1, 1, 0.3), fgcolorlegend=RGBA(0, 0, 0, 0.3))
 
 iϕ = 16
 fig2 = plot(θ ./ π, 𝑈(iϕ), label=false, c=BLUE2, lw=2)
@@ -387,9 +391,9 @@ figb = plot(fig1, fig2, layout=(2,1), link=:x)
 
 ### (c) Maps of quasiclassical Wannier functions
 
-fig1 = heatmap(θ ./ π, φₜ ./ π, abs2.(w[:, 1, :])', xformatter=_->"", ylabel=L"\varphi_t/\pi", title="x", cbartitle=L"|w_1(\Theta)|^2", c=CMAP, rightmargin=-10mm)
+fig1 = heatmap(θ ./ π, φₜ ./ π, abs2.(w[:, 1, :])', xformatter=hideaxis, ylabel=L"\varphi_t/\pi", title="x", cbartitle=L"|w_1(\Theta)|^2", c=CMAP, rightmargin=-10mm)
 vspan!([0, 0.5, 1.5, 2], c=GREEN, label=L"\gamma=1", alpha=0.3)
-vspan!([0.5, 1.5], xformatter=_->"", c=BLUE, label=L"\gamma=2", alpha=0.3, widen=false, xlims=(0, 2), legend=(0.4, 0.2))
+vspan!([0.5, 1.5], xformatter=hideaxis, c=BLUE, label=L"\gamma=2", alpha=0.3, widen=false, xlims=(0, 2), legend=(0.4, 0.2))
 fig2 = heatmap(θ ./ π, φₜ ./ π, abs2.(w[:, 2, :])', xlabel=L"\Theta/\pi", ylabel=L"\varphi_t/\pi", cbartitle=L"|w_2(\Theta)|^2", c=CMAP, rightmargin=-10mm)
 vspan!([0, 0.5, 1.5, 2], c=GREEN, label=false, alpha=0.3)
 vspan!([0.5, 1.5], c=BLUE, label=false, alpha=0.3, widen=false, xlims=(0, 2))
