@@ -1,8 +1,8 @@
 module DeltaModel
 
 using ProgressMeter: @showprogress
-import IntervalRootFinding as iroots
-using IntervalArithmetic: (..)
+import IntervalRootFinding as RF
+using IntervalArithmetic.Symbols # contains `..`
 using LinearAlgebra: eigvals, eigvecs, eigen, schur, ⋅, dot, svd, diag, diagm, diagind, Diagonal, Hermitian
 using FLoops: @floop, @init
 import Optim
@@ -94,7 +94,7 @@ function diagonalise!(uh::UnperturbedHamiltonian; bounds::Tuple{<:Real, <:Real})
     (;N, a, U, φₓ) = uh
 
     # perform root-finding once to find the number of subbands in the bounded interval
-    rts = iroots.roots(ε -> cos_ka(ε; φ=φₓ[1], uh), bounds[1]..bounds[2])
+    rts = RF.roots(ε -> cos_ka(ε; φ=φₓ[1], uh), bounds[1]..bounds[2])
     n_subbands = length(rts)
 
     uh.E = Array{Float64, 3}(undef, N, n_subbands, length(φₓ)) # the number of different 𝑘's is equal to `N`
@@ -106,8 +106,8 @@ function diagonalise!(uh::UnperturbedHamiltonian; bounds::Tuple{<:Real, <:Real})
             ka = 2π*(ik-1)/N
 
             if ik <= N÷2 + 1
-                rts = iroots.roots(ε -> cos_ka(ε; φ, uh) - cos(ka), bounds[1]..bounds[2])
-                uh.E[ik, :, iφ] = sort([rts[i].interval.lo for i in eachindex(rts)])
+                rts = RF.roots(ε -> cos_ka(ε; φ, uh) - cos(ka), bounds[1]..bounds[2])
+                uh.E[ik, :, iφ] = rts .|> RF.root_region .|> RF.mid |> sort
             else
                 uh.E[ik, :, iφ] = uh.E[N-ik+2, :, iφ]
             end

@@ -47,7 +47,7 @@ plot_potential(h; U, lift=0)
 plot_potential(h; U, iφ=16)
 savefig("potential.pdf")
 
-# dispersion
+### Plot dispersion cos(𝑘𝑎)
 
 function plot_dispersion(ε::AbstractVector; φ::Real, uh::dm.UnperturbedHamiltonian)
     cos_kL = [dm.cos_ka_tm(E; φ, uh) for E in ε]
@@ -61,18 +61,20 @@ end
 plot_dispersion(ε; φ=φₓ[1], uh=h)
 savefig("dispersion.pdf")
 
+# try root finding
+
 f(E) = dm.cos_ka(E; φ=0, uh=h)
 bounds = (300, 5100)
-import IntervalRootFinding as iroots
-using IntervalArithmetic: (..)
-rts = iroots.roots(f, bounds[1]..bounds[2])
-z = [rts[i].interval.lo for i in eachindex(rts)]
-sort!(z)
+import IntervalRootFinding as RF
+using IntervalArithmetic.Symbols # contains `..`
+rts = RF.roots(f, bounds[1]..bounds[2])
+rts[1]
+z = rts .|> RF.root_region .|> RF.mid |> sort
 scatter!(z, zeros(length(z)))
 
-dm.diagonalise!(h; bounds)
-
 # spectrum
+
+dm.diagonalise!(h; bounds)
 
 fig = plot();
 for m in axes(h.E, 2)
@@ -128,7 +130,7 @@ sb = 7 # a subband of choice
 b = (sb-1)÷3 + 1 + skipbands # band number which subband `sb` belongs to
 h.κ[1, 1, sb, 1] / (π/l) # this is approximately `b`
 
-trapz(f) = ( sum(f) - (f[1] + f[end]) / 2 ) * x[2]-x[1]
+trapz(f) = ( sum(f) - (f[1] + f[end]) / 2 ) * (x[2]-x[1])
 trapz(ψ[:, 2, 3, 1] .* conj(ψ[:, 2, 1, 1]))
 
 # Wannier centres
