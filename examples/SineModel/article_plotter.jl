@@ -22,6 +22,7 @@ BLUE2   = colorant"rgb(56, 111, 164)"
 GREY2  = colorant"rgb(180, 180, 180)"
 BLACK  = colorant"rgb(13, 19, 33)"
 CMAP = cgrad(:linear_grey_0_100_c0_n256, rev=true)
+hideaxis(x) = "" # use `yformatter=hideaxis` when `yformatter=_->""` randomly doesn't work
 
 l = 1
 gₗ = -7640
@@ -333,7 +334,7 @@ for (I_min, χ₀) in zip([20, 22.5, 23.5], [0, 0.75, -0.75])
         scatter!(Θ ./ π, I, xlabel=L"\theta, rad", markerstrokewidth=0, markeralpha=0.6, label=false, minorgrid=true, c=GREY, markersize=1)
     end
 end
-plot!(xlabel=L"\Theta/\pi", xlims=(0, 2), yformatter=_->"")
+plot!(xlabel=L"\Theta/\pi", xlims=(0, 2), yformatter=hideaxis)
 
 plot(figa, figb, link=:y, ylims=(19.5, Inf))
 savefig("figS1.pdf")
